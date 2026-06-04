@@ -356,8 +356,6 @@ final class JarvisShellModel: ObservableObject {
             let response: CommandResponse
             if Self.shouldUseNativeOutlookRead(commandText) {
                 response = try await runNativeOutlookRead(commandText)
-            } else if Self.shouldUseWorkerMailRead(commandText) {
-                response = try await runWorkerMailRead(commandText)
             } else {
                 var streamedReply = ""
                 response = try await client.sendStreaming(command: commandText) { delta in
@@ -849,12 +847,6 @@ final class JarvisShellModel: ObservableObject {
                 diagnostics: JarvisNativeOutlookReader.failureDiagnostics(for: error)
             )
         }
-    }
-
-    private func runWorkerMailRead(_ commandText: String) async throws -> CommandResponse {
-        state = "Checking Mail"
-        tool = "outlook.visible_summary"
-        return try await client.send(command: commandText)
     }
 
     private func assistantReply(for response: CommandResponse) -> String {
@@ -1437,81 +1429,15 @@ final class JarvisShellModel: ObservableObject {
         return names
     }
 
-    private static func workingReply(for commandText: String) -> String {
-        let lower = commandText.lowercased()
-        if lower.contains("hotkey") || lower.contains("shortcut") {
-            return "Sure. Let me check the shortcut..."
-        }
-        if lower.contains("tts") || lower.contains("text-to-speech") || lower.contains("speech output") || lower.contains("spoken repl") {
-            return "Sure. Let me check speech output..."
-        }
-        if lower.contains("voice") || lower.contains("speech") || lower.contains("microphone") || lower.contains("tts") || lower.contains("stt") {
-            return "Sure. Let me check voice readiness..."
-        }
-        if lower.contains("test") || lower.contains("smoke") {
-            return "Sure. Let me check the test list..."
-        }
-        if lower.contains("screen status") || lower.contains("screen capture status") || lower.contains("screenshot status") || lower.contains("ocr status") {
-            return "Sure. Let me check screen readiness..."
-        }
-        if lower.contains("permission") || lower.contains("screen recording") || lower.contains("accessibility") {
-            return "Sure. Let me check permissions..."
-        }
-        if lower.contains("email") || lower.contains("mail") || lower.contains("outlook") {
-            return "Sure. Let me check your email..."
-        }
-        if lower.contains("codex") || lower.contains("code") || lower.contains("review") || lower.contains("debug") {
-            return "Sure. I am handing this to Codex. This can take a while..."
-        }
-        if lower.contains("status") {
-            return "Sure. Let me check status..."
-        }
-        if lower.contains("screenshot") || lower.contains("screen") {
-            return "Sure. Let me check the screen route..."
-        }
-        return "Sure. I am working on it..."
+    private static func workingReply(for _: String) -> String {
+        return "Sure. Let me understand the request and choose the right tool..."
     }
 
-    private static func progressReplies(for commandText: String) -> [(delayNanoseconds: UInt64, text: String)] {
-        let lower = commandText.lowercased()
-        if lower.contains("email") || lower.contains("mail") || lower.contains("outlook") {
-            return [
-                (4_000_000_000, "Still checking your inbox. Wait a sec..."),
-                (10_000_000_000, "This is taking longer than usual; I am still trying the local mail routes."),
-            ]
-        }
-        if lower.contains("codex") || lower.contains("code") || lower.contains("review") || lower.contains("debug") {
-            return [
-                (5_000_000_000, "Codex work can take a bit. I am still on it..."),
-                (20_000_000_000, "Still waiting for the deeper work to finish."),
-            ]
-        }
+    private static func progressReplies(for _: String) -> [(delayNanoseconds: UInt64, text: String)] {
         return [
             (5_000_000_000, "Still working. Wait a sec..."),
+            (15_000_000_000, "This is taking longer than usual; I am still on it."),
         ]
-    }
-
-    static func shouldUseWorkerMailRead(_ commandText: String) -> Bool {
-        let lower = commandText.lowercased()
-        guard mentionsMail(lower), !hasBlockedMailAction(lower), !hasVisualMailCue(lower) else {
-            return false
-        }
-        let readCues = [
-            "check",
-            "describe",
-            "extract",
-            "get",
-            "give",
-            "latest",
-            "newest",
-            "read",
-            "scan",
-            "show",
-            "summarize",
-            "summary",
-            "what",
-        ]
-        return readCues.contains(where: { lower.contains($0) }) || lower.contains("inbox")
     }
 
     static func shouldUseNativeHotKeyStatus(_ commandText: String) -> Bool {

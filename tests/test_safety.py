@@ -304,7 +304,9 @@ class PlannerTests(unittest.TestCase):
             "job_id": "codex-test",
             "reply": "I started Codex job codex-test.",
         }
-        with patch("jarvis.planner.start_codex_delegate_job", return_value=fake_result):
+        intent = {"status": "completed", "selected_tool": "codex.job", "confidence": 0.92, "entities": {}}
+        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+             patch("jarvis.planner.start_codex_delegate_job", return_value=fake_result):
             result = Planner().handle("ask Codex to inspect this prototype")
 
         self.assertEqual(result.tool, "codex.job")
@@ -343,7 +345,9 @@ class PlannerTests(unittest.TestCase):
             "model": "gpt-5.4-mini",
             "reply": "Jarvis Codex smoke test OK",
         }
-        with patch("jarvis.planner.run_codex_delegate", return_value=fake_result):
+        intent = {"status": "completed", "selected_tool": "codex.job", "confidence": 0.93, "entities": {}}
+        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+             patch("jarvis.planner.run_codex_delegate", return_value=fake_result):
             result = Planner().handle("ask Codex to say exactly: Jarvis Codex smoke test OK")
 
         self.assertEqual(result.tool, "codex.delegate")
@@ -359,7 +363,9 @@ class PlannerTests(unittest.TestCase):
             "model": "qwen3:0.6b",
             "reply": "Here is a tiny joke.",
         }
-        with patch("jarvis.planner.run_fast_local_chat", return_value=fake_result):
+        intent = {"status": "completed", "selected_tool": "conversation.fast_local", "confidence": 0.88, "entities": {}}
+        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+             patch("jarvis.planner.run_fast_local_chat", return_value=fake_result):
             result = Planner().handle("tell me a joke")
 
         self.assertEqual(result.tool, "conversation.fast_local")
@@ -439,13 +445,68 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.result["action"], "timer.status")
 
     def test_email_backend_status_does_not_steal_email_summary(self):
-        diagnostic = Planner().handle("email backend status")
+        diagnostic_intent = {"status": "completed", "selected_tool": "diagnostics.email", "confidence": 0.9, "entities": {}}
+        with patch("jarvis.planner.select_tool_intent", return_value=diagnostic_intent):
+            diagnostic = Planner().handle("email backend status")
         self.assertEqual(diagnostic.tool, "diagnostics.email")
         self.assertFalse(diagnostic.result["read_email_content"])
 
-        with patch("jarvis.planner.outlook_read_only_check", return_value={"status": "checked"}):
+        summary_intent = {"status": "completed", "selected_tool": "outlook.visible_summary", "confidence": 0.91, "entities": {}}
+        with patch("jarvis.planner.select_tool_intent", return_value=summary_intent), \
+             patch("jarvis.planner.outlook_read_only_check", return_value={"status": "checked"}):
             summary = Planner().handle("check my email and summarize the newest email in my inbox")
         self.assertEqual(summary.tool, "outlook.visible_summary")
+
+    def test_email_word_does_not_route_mail_without_router_selection(self):
+        fake_result = {
+            "tool": "conversation.fast_local",
+            "status": "completed",
+            "executed": True,
+            "reply": "I can talk about email as a concept without reading your mailbox.",
+        }
+        intent = {"status": "completed", "selected_tool": "conversation.fast_local", "confidence": 0.8, "entities": {}}
+        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+             patch("jarvis.planner.outlook_read_only_check") as mail_mock, \
+             patch("jarvis.planner.run_fast_local_chat", return_value=fake_result):
+            result = Planner().handle("explain why email is useful")
+
+        self.assertEqual(result.tool, "conversation.fast_local")
+        mail_mock.assert_not_called()
+
+    def test_email_sender_constraint_is_forwarded_from_router(self):
+        fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
+        intent = {
+            "status": "completed",
+            "selected_tool": "outlook.visible_summary",
+            "confidence": 0.94,
+            "entities": {"sender_query": "Sharpay", "selection": "latest"},
+        }
+        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+             patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
+            result = Planner().handle("Could you specifically check my email for the newest mail from Sharpay?")
+
+        self.assertEqual(result.tool, "outlook.visible_summary")
+        mail_mock.assert_called_once()
+        kwargs = mail_mock.call_args.kwargs
+        self.assertEqual(kwargs["sender_query"], "Sharpay")
+        self.assertEqual(kwargs["selection"], "latest")
+        self.assertIn("Sharpay", kwargs["original_prompt"])
+
+    def test_email_sender_constraint_falls_back_to_original_prompt(self):
+        fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
+        intent = {
+            "status": "completed",
+            "selected_tool": "outlook.visible_summary",
+            "confidence": 0.7,
+            "entities": {},
+        }
+        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+             patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
+            Planner().handle("Could you specifically check my email for the newest mail from Sharpay?")
+
+        kwargs = mail_mock.call_args.kwargs
+        self.assertEqual(kwargs["sender_query"], "Sharpay")
+        self.assertEqual(kwargs["selection"], "latest")
 
     def test_email_backend_status_is_no_content_diagnostic(self):
         with patch("jarvis.tools.app_availability") as app_mock, \
@@ -733,7 +794,9 @@ class PlannerTests(unittest.TestCase):
             "unread_count": 1,
             "messages": [{"sender": "Alice", "subject": "Prototype", "received": "Today"}],
         }
-        with patch("jarvis.planner.outlook_read_only_check", return_value=fake_result):
+        intent = {"status": "completed", "selected_tool": "outlook.visible_summary", "confidence": 0.91, "entities": {}}
+        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+             patch("jarvis.planner.outlook_read_only_check", return_value=fake_result):
             result = Planner().handle("check my Outlook email")
 
         self.assertEqual(result.tool, "outlook.visible_summary")
@@ -1822,6 +1885,14 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("my cleanText(senderText)", script)
         self.assertNotIn("\tcleanText(", script)
 
+    def test_apple_mail_script_can_filter_sender_requests(self):
+        script = jarvis_tools._apple_mail_newest_applescript(1, 250, sender_query="Sharpay", selection="latest")
+
+        self.assertIn('set senderFilter to "Sharpay"', script)
+        self.assertIn('set selectionMode to "sender_latest"', script)
+        self.assertIn("MATCHES", script)
+        self.assertIn("senderCandidate contains senderFilter", script)
+
     def test_apple_mail_messages_parse_source_body_for_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             source_path = Path(temp_dir) / "message_1.eml"
@@ -1858,6 +1929,32 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Please send your Talent Show performance details", result["messages"][0]["snippet"])
         self.assertIn("Please send your Talent Show performance details", result["summary_messages"][0]["snippet"])
         self.assertEqual(result["summary_messages"][0]["body_source"], "parsed_message_source")
+
+    def test_email_sender_filter_no_match_does_not_summarize_unrelated_latest(self):
+        mail_result = {
+            "status": "empty",
+            "messages": [],
+            "inbox_count": 10,
+            "scanned_count": 10,
+            "unread_count": 0,
+            "match_count": 0,
+            "selection_mode": "sender_latest",
+            "filter_applied": True,
+        }
+        with patch("jarvis.tools.app_availability", side_effect=[
+            {"available": True, "matches": ["/Applications/Microsoft Outlook.app"], "app": "Microsoft Outlook"},
+            {"available": True, "matches": ["/System/Applications/Mail.app"], "app": "Mail"},
+        ]), \
+             patch("jarvis.tools.shutil.which", return_value="/usr/bin/osascript"), \
+             patch("jarvis.tools._apple_mail_messages", return_value=mail_result), \
+             patch("jarvis.tools._summarize_email_messages") as summary_mock:
+            result = outlook_read_only_check(sender_query="Sharpay", selection="latest")
+
+        self.assertEqual(result["status"], "no_matching_messages")
+        self.assertEqual(result["sender_query"], "Sharpay")
+        self.assertEqual(result["match_count"], 0)
+        self.assertIn("did not summarize an unrelated newest email", result["reply"])
+        summary_mock.assert_not_called()
 
     def test_outlook_parser_keeps_mail_unicode_line_separators_inside_message_row(self):
         parsed = jarvis_tools._parse_outlook_newest_output(
@@ -2215,7 +2312,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             server = JarvisServer()
             server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
-            with patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events):
+            intent = {"status": "completed", "selected_tool": "conversation.fast_local", "confidence": 0.86, "entities": {}}
+            with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+                 patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events):
                 events = list(server.stream_command("hello Jarvis"))
 
         self.assertEqual([event["event"] for event in events], ["meta", "delta", "final"])
@@ -2258,7 +2357,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             server = JarvisServer()
             server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
-            with patch("jarvis.planner.outlook_read_only_check", return_value=fake_result):
+            intent = {"status": "completed", "selected_tool": "outlook.visible_summary", "confidence": 0.91, "entities": {}}
+            with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+                 patch("jarvis.planner.outlook_read_only_check", return_value=fake_result):
                 response = server.command("check my email")
             event = server.audit.recent(1)[0]
 

@@ -86,22 +86,13 @@ enum JarvisMenuBarSelfTest {
     @MainActor
     static func runCommandRoutingSelfTest() throws {
         guard !JarvisShellModel.shouldUseNativeOutlookRead("check my email and summarize the newest email in my inbox") else {
-            throw SelfTestError.failed("Generic email requests should use worker mail routes before native OCR.")
-        }
-        guard JarvisShellModel.shouldUseWorkerMailRead("check my email and summarize the newest email in my inbox") else {
-            throw SelfTestError.failed("Generic email requests should use the structured worker mail route.")
+            throw SelfTestError.failed("Generic email requests should go to the worker planner before native OCR.")
         }
         guard JarvisShellModel.shouldUseNativeOutlookRead("read the visible Outlook screen with OCR") else {
             throw SelfTestError.failed("Explicit visible Outlook OCR requests should use native OCR.")
         }
-        guard !JarvisShellModel.shouldUseWorkerMailRead("read the visible Outlook screen with OCR") else {
-            throw SelfTestError.failed("Explicit visible OCR requests should not use the generic mail route first.")
-        }
         guard !JarvisShellModel.shouldUseNativeOutlookRead("send an email with a screenshot") else {
             throw SelfTestError.failed("Blocked email actions must not use native read routing.")
-        }
-        guard !JarvisShellModel.shouldUseWorkerMailRead("send an email with a screenshot") else {
-            throw SelfTestError.failed("Blocked email actions must not use worker read routing.")
         }
         guard JarvisShellModel.shouldUseNativePermissionStatus("permissions status") else {
             throw SelfTestError.failed("Permission status should use the native Swift permission snapshot.")

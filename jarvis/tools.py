@@ -1937,10 +1937,18 @@ def outlook_visible_text_summary(
     }
 
 
-def outlook_read_only_check(limit: int = 5) -> dict[str, Any]:
+def outlook_read_only_check(
+    limit: int = 5,
+    *,
+    sender_query: str | None = None,
+    selection: str | None = None,
+    original_prompt: str | None = None,
+) -> dict[str, Any]:
     """Try a bounded read-only unread-first inbox summary, preferring Apple Mail."""
     safe_limit = max(1, min(int(limit), 25))
     scan_limit = max(safe_limit, OUTLOOK_MAX_SCAN_MESSAGES)
+    clean_sender_query = _clean_email_filter_query(sender_query)
+    clean_selection = _clean_email_filter_query(selection)
     app = app_availability("Microsoft Outlook")
     mail_app = app_availability("Mail")
     osascript = _find_executable("osascript")
@@ -1957,10 +1965,16 @@ def outlook_read_only_check(limit: int = 5) -> dict[str, Any]:
         "visible_ocr_for_generic_email": False,
         "messages": [],
         "selection_rule": "unread_first_then_newest_if_none_unread",
+        "original_prompt_used": bool(original_prompt and original_prompt.strip()),
+        "sender_query": clean_sender_query,
         "audit_note": "Audit stores status and counts only; sender, subject, and snippet details are omitted from audit details.",
         "safety_note": "Read-only summary only. Attachments, drafts, deletes, forwards, sends, downloads, and exports require confirmation.",
     }
-    mail_result = _apple_mail_messages(safe_limit, scan_limit, osascript) if mail_app["available"] else {"messages": [], "status": "not_found"}
+    mail_result = (
+        _apple_mail_messages(safe_limit, scan_limit, osascript, sender_query=clean_sender_query, selection=clean_selection)
+        if mail_app["available"]
+        else {"messages": [], "status": "not_found"}
+    )
     if mail_result["messages"]:
         summary_messages = mail_result.get("summary_messages") or mail_result["messages"]
         injection_scan = _messages_injection_scan(summary_messages, "apple_mail")
@@ -1980,6 +1994,7 @@ def outlook_read_only_check(limit: int = 5) -> dict[str, Any]:
             "inbox_count": mail_result["inbox_count"],
             "scanned_count": mail_result["scanned_count"],
             "unread_count": unread_count,
+            "match_count": int(mail_result.get("match_count") or 0),
             "selection_mode": selected_mode,
             "messages": mail_result["messages"],
             "message_count": len(mail_result["messages"]),
@@ -1990,6 +2005,26 @@ def outlook_read_only_check(limit: int = 5) -> dict[str, Any]:
             "email_body_source": "apple_mail_message_source" if mail_result.get("parsed_body_count") else "apple_mail_content_preview",
             **summary,
             "prototype_behavior": "Reads sender, subject, received time, read state, and Apple Mail body text locally when available; email summarization is local-only unless explicitly changed later.",
+        }
+    if clean_sender_query and mail_result.get("filter_applied"):
+        return {
+            **base,
+            "status": "no_matching_messages",
+            "reply": (
+                f"I checked Apple Mail, scanned {int(mail_result.get('scanned_count') or 0)} recent messages, "
+                f"and found no message matching sender `{clean_sender_query}`. I did not summarize an unrelated newest email."
+            ),
+            "inbox_count": int(mail_result.get("inbox_count") or 0),
+            "scanned_count": int(mail_result.get("scanned_count") or 0),
+            "unread_count": int(mail_result.get("unread_count") or 0),
+            "match_count": int(mail_result.get("match_count") or 0),
+            "selection_mode": mail_result.get("selection_mode") or "sender_latest",
+            "messages": [],
+            "message_count": 0,
+            "source": "apple_mail",
+            "mail_status": mail_result.get("status", "empty"),
+            "injection_scan": _messages_injection_scan([], "apple_mail"),
+            "prototype_behavior": "Honors sender-filter constraints from the original prompt and refuses to summarize unrelated email when no matching message is found.",
         }
     base["mail_status"] = mail_result.get("status")
     if mail_result.get("error"):
@@ -2326,7 +2361,9 @@ def _email_summary_prompt(
     selection_mode: str,
     unread_count: int,
 ) -> str:
-    if selection_mode == "unread":
+    if selection_mode == "sender_latest":
+        selection = "The user requested a sender-specific email; summarize only the newest matching message."
+    elif selection_mode == "unread":
         selection = f"{unread_count} unread message(s) were found; summarize the selected unread messages."
     else:
         selection = "No unread messages were found; summarize the newest inbox email even though it may already be read."
@@ -2381,7 +2418,9 @@ def _deterministic_email_summary(
         else:
             lines.append(f"- {sender} sent an email about {subject}.")
             lines.append("- Jarvis could not read enough body text to honestly summarize the details or action items.")
-    if selection_mode == "latest" and unread_count == 0:
+    if selection_mode == "sender_latest":
+        lines.append(f"- This is the newest email matching the requested sender filter in {mailbox}.")
+    elif selection_mode == "latest" and unread_count == 0:
         lines.append(f"- I found no unread messages in {mailbox}, so this is the newest inbox email fallback.")
     return "\n".join(lines)
 
@@ -2506,6 +2545,8 @@ def _email_selection_reply(mailbox: str, selection_mode: str, unread_count: int,
         return f"found {selected_count} unread messages in {mailbox}"
     if selection_mode == "latest":
         return f"found no unread messages in {mailbox}, so I selected the newest inbox email"
+    if selection_mode == "sender_latest":
+        return f"selected the newest message matching your sender request in {mailbox}"
     return f"selected {selected_count} inbox message(s) from {mailbox}"
 
 
@@ -2676,6 +2717,137 @@ def run_fast_local_chat(prompt: str, project_dir: str | None = None, model: str 
         }
         return _fast_chat_with_fallback(prompt, primary)
     return _run_ollama_fast_chat(prompt, model=model)
+
+
+def select_tool_intent(prompt: str, tool_specs: list[dict[str, Any]], model: str | None = None) -> dict[str, Any]:
+    """Choose a user-facing tool with a local model; private command text stays on device."""
+    selected_model = (model or FAST_MODEL_NAME).strip() or FAST_MODEL_NAME
+    tool_ids = [str(spec.get("tool") or "") for spec in tool_specs if spec.get("tool")]
+    base: dict[str, Any] = {
+        "tool": "intent.router",
+        "status": "unavailable",
+        "executed": False,
+        "local_only": True,
+        "model": selected_model,
+        "selected_tool": "conversation.fast_local",
+        "confidence": 0.0,
+        "entities": {},
+    }
+    if not prompt.strip() or not tool_ids:
+        return {**base, "status": "empty"}
+
+    ollama_path = _find_executable("ollama")
+    if not ollama_path or Path(ollama_path).name != "ollama":
+        return {**base, "status": "ollama_not_found", "ollama_server": _ollama_server_unavailable("ollama_not_found")}
+
+    started_at = time.monotonic()
+    ollama_server = _ensure_ollama_server_running(ollama_path)
+    if not ollama_server["running"]:
+        return {
+            **base,
+            "status": "ollama_server_unavailable",
+            "ollama_server": ollama_server,
+            **_duration_fields(started_at),
+        }
+
+    prompt_text = _intent_router_prompt(prompt, tool_specs)
+    payload = {
+        "model": selected_model,
+        "prompt": prompt_text,
+        "stream": False,
+        "format": "json",
+        "think": False,
+        "options": {
+            "num_predict": 220,
+            "temperature": 0.0,
+            "top_p": 0.4,
+        },
+    }
+    request = urllib.request.Request(
+        f"{OLLAMA_BASE_URL.rstrip('/')}/api/generate",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=FAST_MODEL_TIMEOUT_SECONDS) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+    except TimeoutError:
+        return {**base, "status": "timeout", "ollama_server": ollama_server, **_duration_fields(started_at)}
+    except urllib.error.URLError as error:
+        return {
+            **base,
+            "status": "ollama_error",
+            "error": str(error.reason if hasattr(error, "reason") else error),
+            "ollama_server": ollama_server,
+            **_duration_fields(started_at),
+        }
+    except OSError as error:
+        return {**base, "status": "execution_error", "error": str(error), "ollama_server": ollama_server, **_duration_fields(started_at)}
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = {}
+    decision = _parse_intent_router_response(str(data.get("response") or ""), tool_ids)
+    return {
+        **base,
+        **decision,
+        "status": "completed",
+        "executed": True,
+        "ollama_server": ollama_server,
+        **_duration_fields(started_at),
+    }
+
+
+def _intent_router_prompt(prompt: str, tool_specs: list[dict[str, Any]]) -> str:
+    tool_lines = []
+    for spec in tool_specs:
+        tool_id = _clean_local_field(spec.get("tool"))
+        description = _clean_local_field(spec.get("description"))
+        entities = ", ".join(str(entity) for entity in spec.get("entities", []) if entity)
+        tool_lines.append(f"- {tool_id}: {description} Entities: {entities or 'none'}")
+    return (
+        "You are Jarvis's local tool router. Choose the one tool that should handle the user command. "
+        "Do not answer the user. Do not perform the task. Return JSON only.\n"
+        "Rules:\n"
+        "- Choose a tool from the provided list exactly.\n"
+        "- Do not choose an email tool merely because a word like mail appears; choose it only when the user asks to inspect mailbox content or email backend status.\n"
+        "- Preserve constraints in entities. If the user asks for email from a named person, extract sender_query.\n"
+        "- If no tool should run, choose conversation.fast_local.\n"
+        "- Use null for unknown entities.\n\n"
+        "JSON schema: {\"selected_tool\":\"tool.id\",\"confidence\":0.0,\"entities\":{\"sender_query\":null,\"selection\":null},\"reason\":\"short\"}\n\n"
+        "Tools:\n"
+        + "\n".join(tool_lines)
+        + f"\n\nUser command:\n{prompt.strip()[:1200]}"
+    )
+
+
+def _parse_intent_router_response(response_text: str, tool_ids: list[str]) -> dict[str, Any]:
+    text = _strip_think_blocks(response_text).strip()
+    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if match:
+        text = match.group(0)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = {}
+    selected = str(parsed.get("selected_tool") or parsed.get("tool") or "conversation.fast_local").strip()
+    if selected not in tool_ids:
+        selected = "conversation.fast_local" if "conversation.fast_local" in tool_ids else tool_ids[0]
+    try:
+        confidence = float(parsed.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    entities = parsed.get("entities")
+    if not isinstance(entities, dict):
+        entities = {}
+    return {
+        "selected_tool": selected,
+        "confidence": max(0.0, min(confidence, 1.0)),
+        "entities": {str(key): value for key, value in entities.items()},
+        "reason": _clean_local_field(parsed.get("reason")),
+    }
 
 
 def _run_ollama_fast_chat(prompt: str, model: str | None = None) -> dict[str, Any]:
@@ -4410,7 +4582,14 @@ def _codex_reply(stdout: str, stderr: str, returncode: int, model: str, *, last_
     return f"Codex CLI failed using {model}: {error[-1200:]}"
 
 
-def _apple_mail_messages(limit: int, scan_limit: int, osascript: str | None) -> dict[str, Any]:
+def _apple_mail_messages(
+    limit: int,
+    scan_limit: int,
+    osascript: str | None,
+    *,
+    sender_query: str | None = None,
+    selection: str | None = None,
+) -> dict[str, Any]:
     base: dict[str, Any] = {
         "status": "unavailable",
         "source": "apple_mail",
@@ -4418,6 +4597,8 @@ def _apple_mail_messages(limit: int, scan_limit: int, osascript: str | None) -> 
         "scanned_count": 0,
         "messages": [],
         "parsed_body_count": 0,
+        "sender_query": _clean_email_filter_query(sender_query),
+        "filter_applied": bool(_clean_email_filter_query(sender_query)),
     }
     if not osascript:
         return {**base, "status": "osascript_not_found", "reply": "macOS AppleScript tooling is unavailable."}
@@ -4425,7 +4606,7 @@ def _apple_mail_messages(limit: int, scan_limit: int, osascript: str | None) -> 
     try:
         with tempfile.TemporaryDirectory(prefix="jarvis-mail-source-") as source_dir:
             completed = subprocess.run(
-                [osascript, "-e", _apple_mail_newest_applescript(limit, scan_limit, source_dir)],
+                [osascript, "-e", _apple_mail_newest_applescript(limit, scan_limit, source_dir, sender_query=sender_query, selection=selection)],
                 shell=False,
                 cwd=PROJECT_ROOT,
                 text=True,
@@ -4459,8 +4640,17 @@ def _apple_mail_messages(limit: int, scan_limit: int, osascript: str | None) -> 
     }
 
 
-def _apple_mail_newest_applescript(limit: int, scan_limit: int, source_dir: str | None = None) -> str:
+def _apple_mail_newest_applescript(
+    limit: int,
+    scan_limit: int,
+    source_dir: str | None = None,
+    *,
+    sender_query: str | None = None,
+    selection: str | None = None,
+) -> str:
     source_root = _applescript_string(str(source_dir or ""))
+    sender_filter = _applescript_string(_clean_email_filter_query(sender_query) or "")
+    selection_hint = _applescript_string(_clean_email_filter_query(selection) or "")
     return f'''
 on writeSourceFile(rawValue, sourcePath)
     if sourcePath is "" then return ""
@@ -4492,31 +4682,55 @@ on cleanText(rawValue)
     return cleanedValue
 end cleanText
 
-		tell application "Mail"
-		    launch
-		    delay 0.4
+	    tell application "Mail"
+	        launch
+	        delay 0.4
             set sourceRoot to {source_root}
+            set senderFilter to {sender_filter}
+            set selectionHint to {selection_hint}
 		    set inboxMessages to messages of inbox
 		    set inboxCount to count of inboxMessages
 		    set scanCount to {scan_limit}
 	    if inboxCount < scanCount then set scanCount to inboxCount
 	    set maxItems to {limit}
 	    set unreadCount to 0
+        set matchCount to 0
 	    repeat with itemIndex from 1 to scanCount
 	        set currentMessage to item itemIndex of inboxMessages
 	        try
-	            if not (read status of currentMessage) then set unreadCount to unreadCount + 1
+                set countMessage to true
+                if senderFilter is not "" then
+                    set senderCandidate to ""
+                    set subjectCandidate to ""
+                    try
+                        set senderCandidate to sender of currentMessage as text
+                    end try
+                    try
+                        set subjectCandidate to subject of currentMessage as text
+                    end try
+                    if not ((senderCandidate contains senderFilter) or (subjectCandidate contains senderFilter)) then set countMessage to false
+                end if
+                if countMessage then
+                    set matchCount to matchCount + 1
+	                if not (read status of currentMessage) then set unreadCount to unreadCount + 1
+                end if
 	        end try
 	    end repeat
 	    set selectionMode to "unread"
-	    if unreadCount is 0 then
+        if senderFilter is not "" then
+            set selectionMode to "sender_latest"
+            set maxItems to 1
+        else if selectionHint is "latest" then
+            set selectionMode to "latest"
+            set maxItems to 1
+	    else if unreadCount is 0 then
 	        set selectionMode to "latest"
 	        set maxItems to 1
 	    end if
-	    if unreadCount is greater than 0 and unreadCount < maxItems then set maxItems to unreadCount
+	    if senderFilter is "" and unreadCount is greater than 0 and unreadCount < maxItems then set maxItems to unreadCount
 	    if scanCount < maxItems then set maxItems to scanCount
 	    set selectedIndexes to {{}}
-	    set outputText to "INBOX_COUNT" & tab & (inboxCount as text) & tab & "SCANNED" & tab & (scanCount as text) & tab & "UNREAD" & tab & (unreadCount as text) & tab & "SELECTION" & tab & selectionMode
+	    set outputText to "INBOX_COUNT" & tab & (inboxCount as text) & tab & "SCANNED" & tab & (scanCount as text) & tab & "UNREAD" & tab & (unreadCount as text) & tab & "SELECTION" & tab & selectionMode & tab & "MATCHES" & tab & (matchCount as text)
 	    repeat with slotIndex from 1 to maxItems
 	        set bestIndex to 0
 	        set bestDate to missing value
@@ -4525,6 +4739,17 @@ end cleanText
 	                set currentMessage to item itemIndex of inboxMessages
 	                try
 	                    set includeMessage to true
+                        if senderFilter is not "" then
+                            set senderCandidate to ""
+                            set subjectCandidate to ""
+                            try
+                                set senderCandidate to sender of currentMessage as text
+                            end try
+                            try
+                                set subjectCandidate to subject of currentMessage as text
+                            end try
+                            if not ((senderCandidate contains senderFilter) or (subjectCandidate contains senderFilter)) then set includeMessage to false
+                        end if
 	                    if selectionMode is "unread" and read status of currentMessage then set includeMessage to false
 	                    if includeMessage then
 	                        set currentDate to date received of currentMessage
@@ -4676,6 +4901,7 @@ def _parse_outlook_newest_output(output: str) -> dict[str, Any]:
     inbox_count = 0
     scanned_count = 0
     unread_count = 0
+    match_count = 0
     selection_mode = ""
     messages: list[dict[str, str]] = []
     for line in output.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
@@ -4695,6 +4921,11 @@ def _parse_outlook_newest_output(output: str) -> dict[str, Any]:
                         unread_count = 0
                 if part == "SELECTION" and index + 1 < len(parts):
                     selection_mode = parts[index + 1].strip()
+                if part == "MATCHES" and index + 1 < len(parts):
+                    try:
+                        match_count = max(0, int(parts[index + 1]))
+                    except ValueError:
+                        match_count = 0
             continue
         if len(parts) >= 6 and parts[0] == "MESSAGE":
             message = {
@@ -4711,6 +4942,7 @@ def _parse_outlook_newest_output(output: str) -> dict[str, Any]:
         "inbox_count": inbox_count,
         "scanned_count": scanned_count,
         "unread_count": unread_count if unread_count else _unread_count(messages),
+        "match_count": match_count if match_count else len(messages),
         "selection_mode": selection_mode or _selection_mode_for_messages(messages),
         "messages": messages,
     }
@@ -4718,6 +4950,13 @@ def _parse_outlook_newest_output(output: str) -> dict[str, Any]:
 
 def _applescript_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _clean_email_filter_query(value: Any) -> str | None:
+    text = _clean_local_field(value)
+    if not text or text.lower() in {"null", "none", "unknown", "n/a"}:
+        return None
+    return text[:120]
 
 
 def _messages_with_parsed_email_bodies(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:

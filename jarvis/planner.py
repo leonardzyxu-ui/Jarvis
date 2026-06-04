@@ -32,6 +32,7 @@ from .tools import (
     run_fast_local_chat,
     run_read_only_shell,
     safety_status,
+    select_tool_intent,
     screenshot_capability,
     source_access_status,
     start_codex_delegate_job,
@@ -40,6 +41,40 @@ from .tools import (
     wake_status,
     wake_phrase_simulation,
 )
+
+
+NATURAL_LANGUAGE_TOOL_SPECS = [
+    {
+        "tool": "outlook.visible_summary",
+        "description": "Read and summarize local mailbox content. Use only when the user wants Jarvis to inspect email messages.",
+        "entities": ["sender_query", "selection"],
+    },
+    {
+        "tool": "diagnostics.email",
+        "description": "Report email backend or route readiness without reading email content.",
+        "entities": [],
+    },
+    {
+        "tool": "screenshot.capability",
+        "description": "Report screen capture, OCR, or screenshot capability/status; do not read email content.",
+        "entities": [],
+    },
+    {
+        "tool": "browser.open_url",
+        "description": "Prepare a browser URL action when the user asks to open a URL or browser target.",
+        "entities": ["url"],
+    },
+    {
+        "tool": "codex.job",
+        "description": "Start deeper Codex work for code, repo, debugging, build, implementation, or review tasks.",
+        "entities": [],
+    },
+    {
+        "tool": "conversation.fast_local",
+        "description": "Ordinary conversation or requests that do not need a tool.",
+        "entities": [],
+    },
+]
 
 
 @dataclass
@@ -147,7 +182,7 @@ class Planner:
             return self._result(text, "diagnostics.launch", "Read local Jarvis launch status.", assessment, launch_status(), True)
         if _looks_like_wake_status(lower):
             return self._result(text, "diagnostics.wake", "Read local Jarvis wake status.", assessment, wake_status(), True)
-        if _looks_like_email_status(lower):
+        if _is_exact_email_status_command(lower):
             return self._result(text, "diagnostics.email", "Read local email backend status without reading email content.", assessment, email_backend_status(), True)
         if _looks_like_capability_status(lower):
             return self._result(text, "diagnostics.capabilities", "Read local Jarvis capability status.", assessment, capabilities_status(), True)
@@ -157,7 +192,7 @@ class Planner:
         if quick_result.get("matched"):
             summary = "Handled quick local command." if quick_result.get("status") == "completed" else "Tried quick local command."
             return self._result(text, "quick.local_control", summary, assessment, quick_result, bool(quick_result.get("executed")))
-        if lower in {"status", "health", "check status", "jarvis status"} or "status" in lower:
+        if lower in {"status", "health", "check status", "jarvis status"}:
             return self._result(text, "system.status", "Collected local Jarvis status.", assessment, system_status(), True)
         app_name = _extract_app_name(text)
         if app_name is not None:
@@ -177,28 +212,10 @@ class Planner:
                 },
                 True,
             )
-        if _looks_like_codex_delegate(lower):
-            if _should_run_codex_synchronously(lower):
-                result = run_codex_delegate(text)
-                summary = "Ran Codex CLI delegation." if result.get("status") == "completed" else "Tried Codex CLI delegation."
-                if result.get("duration_human"):
-                    summary = f"{summary} Codex time: {result['duration_human']}."
-                return self._result(text, "codex.delegate", summary, assessment, result, bool(result.get("executed")))
-            result = start_codex_delegate_job(text)
-            summary = "Started Codex CLI job." if result.get("status") == "running" else "Tried to start Codex CLI job."
-            return self._result(text, "codex.job", summary, assessment, result, bool(result.get("executed")))
-        if "outlook" in lower or "email" in lower or "mail" in lower:
-            result = outlook_read_only_check()
-            summary = (
-                "Checked read-only email summary."
-                if result.get("status") == "checked"
-                else "Tried read-only email summary."
-            )
-            return self._result(text, "outlook.visible_summary", summary, assessment, result, True)
-        if "screenshot" in lower or "screen" in lower:
-            return self._result(text, "screenshot.capability", "Checked screenshot capability.", assessment, screenshot_capability(), True)
-        if "browser" in lower or "url" in lower or re.search(r"https?://", text):
-            return self._result(text, "browser.open_url", "Prepared browser-open plan.", assessment, browser_open_url_plan(_extract_url(text)), False)
+        intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
+        routed = self._handle_model_intent(text, assessment, intent, execute=True)
+        if routed is not None:
+            return routed
         result = run_fast_local_chat(text)
         tool = str(result.get("tool") or "conversation.fast_local")
         if result.get("status") == "completed":
@@ -266,13 +283,13 @@ class Planner:
             return self._preview_result(text, "diagnostics.launch", assessment, True)
         if _looks_like_wake_status(lower):
             return self._preview_result(text, "diagnostics.wake", assessment, True)
-        if _looks_like_email_status(lower):
+        if _is_exact_email_status_command(lower):
             return self._preview_result(text, "diagnostics.email", assessment, True)
         if _looks_like_capability_status(lower):
             return self._preview_result(text, "diagnostics.capabilities", assessment, True)
         if _looks_like_safety_status(lower):
             return self._preview_result(text, "diagnostics.safety", assessment, True)
-        if lower in {"status", "health", "check status", "jarvis status"} or "status" in lower:
+        if lower in {"status", "health", "check status", "jarvis status"}:
             return self._preview_result(text, "system.status", assessment, True)
         quick_result = quick_local_control(text, execute=False)
         if quick_result.get("matched"):
@@ -293,42 +310,108 @@ class Planner:
             return self._preview_result(text, "codex.job", assessment, False)
         if _looks_like_codex_speed_status(lower):
             return self._preview_result(text, "diagnostics.codex_speed", assessment, True)
-        if _looks_like_codex_delegate(lower):
-            return PlannedResult(
-                command=text,
-                tool="codex.delegate" if _should_run_codex_synchronously(lower) else "codex.job",
-                summary="Codex CLI preview prepared. No model call was executed.",
-                assessment=assessment.to_dict(),
-                result={
-                    "planned_only": True,
-                    "would_execute_if_run": True,
-                    "selected_tool": "codex.delegate" if _should_run_codex_synchronously(lower) else "codex.job",
-                    "execution_mode": "sync" if _should_run_codex_synchronously(lower) else "async",
-                    "plan": codex_delegate_plan(text),
-                },
-                executed=False,
-                confirmation=None,
-            )
-        if "outlook" in lower or "email" in lower or "mail" in lower:
-            return PlannedResult(
-                command=text,
-                tool="outlook.visible_summary",
-                summary="Command preview prepared. No tool was executed.",
-                assessment=assessment.to_dict(),
-                result={
-                    "planned_only": True,
-                    "would_execute_if_run": True,
-                    "selected_tool": "outlook.visible_summary",
-                    "plan": outlook_read_only_plan(),
-                },
-                executed=False,
-                confirmation=None,
-            )
-        if "screenshot" in lower or "screen" in lower:
-            return self._preview_result(text, "screenshot.capability", assessment, True)
-        if "browser" in lower or "url" in lower or re.search(r"https?://", text):
-            return self._preview_result(text, "browser.open_url", assessment, False)
+        intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
+        routed = self._handle_model_intent(text, assessment, intent, execute=False)
+        if routed is not None:
+            return routed
         return self._preview_result(text, "conversation.fast_local", assessment, True)
+
+    def _handle_model_intent(
+        self,
+        text: str,
+        assessment: Any,
+        intent: dict[str, Any],
+        *,
+        execute: bool,
+    ) -> PlannedResult | None:
+        selected_tool = str(intent.get("selected_tool") or "conversation.fast_local")
+        if selected_tool == "conversation.fast_local":
+            return None
+        if intent.get("status") != "completed":
+            return None
+        entities = intent.get("entities") if isinstance(intent.get("entities"), dict) else {}
+        if selected_tool == "diagnostics.email":
+            if not execute:
+                return self._preview_result(text, "diagnostics.email", assessment, True, plan={"intent": intent})
+            return self._result(text, "diagnostics.email", "Read local email backend status without reading email content.", assessment, email_backend_status(), True)
+        if selected_tool == "outlook.visible_summary":
+            sender_query = _clean_optional_entity(entities.get("sender_query")) or _extract_email_sender_constraint(text)
+            selection = _clean_optional_entity(entities.get("selection")) or _extract_email_selection_constraint(text)
+            if not execute:
+                return PlannedResult(
+                    command=text,
+                    tool="outlook.visible_summary",
+                    summary="Command preview prepared by local intent router. No email was read.",
+                    assessment=assessment.to_dict(),
+                    result={
+                        "planned_only": True,
+                        "would_execute_if_run": True,
+                        "selected_tool": "outlook.visible_summary",
+                        "intent": intent,
+                        "sender_query": sender_query,
+                        "selection": selection,
+                        "plan": outlook_read_only_plan(),
+                    },
+                    executed=False,
+                    confirmation=None,
+                )
+            result = outlook_read_only_check(sender_query=sender_query, selection=selection, original_prompt=text)
+            summary = "Checked read-only email summary." if result.get("status") == "checked" else "Tried read-only email summary."
+            return self._result(text, "outlook.visible_summary", summary, assessment, result, True)
+        if selected_tool == "screenshot.capability":
+            if not execute:
+                return self._preview_result(text, "screenshot.capability", assessment, True, plan={"intent": intent})
+            return self._result(text, "screenshot.capability", "Checked screenshot capability.", assessment, screenshot_capability(), True)
+        if selected_tool == "browser.open_url":
+            url = _clean_optional_entity(entities.get("url")) or _extract_url(text)
+            if not execute:
+                return self._preview_result(text, "browser.open_url", assessment, False, plan={"intent": intent, "url": url})
+            return self._result(text, "browser.open_url", "Prepared browser-open plan.", assessment, browser_open_url_plan(url), False)
+        if selected_tool == "codex.job":
+            if _should_run_codex_synchronously(text.lower()):
+                if not execute:
+                    return PlannedResult(
+                        command=text,
+                        tool="codex.delegate",
+                        summary="Codex CLI preview prepared by local intent router. No Codex job was executed.",
+                        assessment=assessment.to_dict(),
+                        result={
+                            "planned_only": True,
+                            "would_execute_if_run": True,
+                            "selected_tool": "codex.delegate",
+                            "execution_mode": "sync",
+                            "intent": intent,
+                            "plan": codex_delegate_plan(text),
+                        },
+                        executed=False,
+                        confirmation=None,
+                    )
+                result = run_codex_delegate(text)
+                summary = "Ran Codex CLI delegation." if result.get("status") == "completed" else "Tried Codex CLI delegation."
+                if result.get("duration_human"):
+                    summary = f"{summary} Codex time: {result['duration_human']}."
+                return self._result(text, "codex.delegate", summary, assessment, result, bool(result.get("executed")))
+            if not execute:
+                return PlannedResult(
+                    command=text,
+                    tool="codex.job",
+                    summary="Codex CLI preview prepared by local intent router. No Codex job was executed.",
+                    assessment=assessment.to_dict(),
+                    result={
+                        "planned_only": True,
+                        "would_execute_if_run": True,
+                        "selected_tool": "codex.job",
+                        "execution_mode": "async",
+                        "intent": intent,
+                        "plan": codex_delegate_plan(text),
+                    },
+                    executed=False,
+                    confirmation=None,
+                )
+            result = start_codex_delegate_job(text)
+            summary = "Started Codex CLI job." if result.get("status") == "running" else "Tried to start Codex CLI job."
+            return self._result(text, "codex.job", summary, assessment, result, bool(result.get("executed")))
+        return None
 
     def _result(
         self,
@@ -373,6 +456,41 @@ class Planner:
 def _extract_url(text: str) -> str:
     match = re.search(r"https?://\S+", text)
     return match.group(0).rstrip(".,)") if match else ""
+
+
+def _clean_optional_entity(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text or text.lower() in {"null", "none", "unknown", "n/a"}:
+        return None
+    return text[:120]
+
+
+def _extract_email_sender_constraint(text: str) -> str | None:
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    match = re.search(
+        r"(?i)\bfrom\s+([A-Za-z][A-Za-z0-9 ._'’\-]{0,80}?)(?:[?.,!;:]|\s+(?:about|after|before|by|in|on|regarding|that|to|with)\b|$)",
+        cleaned,
+    )
+    if not match:
+        return None
+    sender = re.sub(r"\s+", " ", match.group(1)).strip(" ._'’-,")
+    if not sender:
+        return None
+    blocked = {"my inbox", "inbox", "mail", "email", "outlook"}
+    if sender.lower() in blocked:
+        return None
+    return sender[:120]
+
+
+def _extract_email_selection_constraint(text: str) -> str | None:
+    lower = text.lower()
+    if re.search(r"\b(newest|latest|most recent)\b", lower):
+        return "latest"
+    if re.search(r"\bunread\b", lower):
+        return "unread_first"
+    return None
 
 
 def _extract_app_name(text: str) -> str | None:
@@ -579,6 +697,18 @@ def _looks_like_email_status(lower: str) -> bool:
         and any(cue in lower for cue in status_cues)
         and not any(cue in lower for cue in private_read_cues)
     )
+
+
+def _is_exact_email_status_command(lower: str) -> bool:
+    return lower.strip() in {
+        "email backend status",
+        "email route status",
+        "email routes status",
+        "email status",
+        "mail backend status",
+        "mail route status",
+        "mail status",
+    }
 
 
 def _looks_like_capability_status(lower: str) -> bool:
