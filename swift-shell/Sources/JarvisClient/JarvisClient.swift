@@ -69,6 +69,7 @@ public struct JarvisClient: Sendable {
 
     public func sendStreaming(
         command: String,
+        onStatus: @escaping @MainActor (String) -> Void = { _ in },
         onDelta: @escaping @MainActor (String) -> Void
     ) async throws -> CommandResponse {
         let url = baseURL
@@ -108,6 +109,12 @@ public struct JarvisClient: Sendable {
                    let text = object["text"] as? String,
                    !text.isEmpty {
                     await onDelta(text)
+                }
+            } else if eventName == "status" {
+                if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let text = object["text"] as? String,
+                   !text.isEmpty {
+                    await onStatus(text)
                 }
             } else if eventName == "final" {
                 finalResponse = try decoder.decode(CommandResponse.self, from: data)

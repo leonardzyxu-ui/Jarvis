@@ -358,18 +358,36 @@ final class JarvisShellModel: ObservableObject {
                 response = try await runNativeOutlookRead(commandText)
             } else {
                 var streamedReply = ""
-                response = try await client.sendStreaming(command: commandText) { delta in
-                    streamedReply += delta
-                    self.replaceMessage(
-                        id: placeholderId,
-                        with: ChatMessage(
+                response = try await client.sendStreaming(
+                    command: commandText,
+                    onStatus: { status in
+                        let statusText = status.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !statusText.isEmpty, streamedReply.isEmpty else {
+                            return
+                        }
+                        self.replaceMessage(
                             id: placeholderId,
-                            role: .jarvis,
-                            text: streamedReply,
-                            detail: "Streaming"
+                            with: ChatMessage(
+                                id: placeholderId,
+                                role: .jarvis,
+                                text: statusText,
+                                detail: "Working"
+                            )
                         )
-                    )
-                }
+                    },
+                    onDelta: { delta in
+                        streamedReply += delta
+                        self.replaceMessage(
+                            id: placeholderId,
+                            with: ChatMessage(
+                                id: placeholderId,
+                                role: .jarvis,
+                                text: streamedReply,
+                                detail: "Streaming"
+                            )
+                        )
+                    }
+                )
             }
             tool = response.tool ?? "unknown"
             confirmation = response.confirmation
@@ -1430,7 +1448,7 @@ final class JarvisShellModel: ObservableObject {
     }
 
     private static func workingReply(for _: String) -> String {
-        return "Sure. Let me understand the request and choose the right tool..."
+        return "Sure. Finding the right Jarvis skill..."
     }
 
     private static func progressReplies(for _: String) -> [(delayNanoseconds: UInt64, text: String)] {

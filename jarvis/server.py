@@ -94,6 +94,15 @@ class JarvisServer:
 
         preview = self.plan(command)
         if preview.get("tool") != "conversation.fast_local":
+            status_text = _stream_status_text(preview)
+            if status_text:
+                yield {
+                    "event": "status",
+                    "data": {
+                        "text": status_text,
+                        "tool": preview.get("tool"),
+                    },
+                }
             yield {"event": "final", "data": self.command(command)}
             return
 
@@ -456,6 +465,26 @@ class JarvisServer:
 
 
 STATE = JarvisServer()
+
+
+def _stream_status_text(preview: dict[str, Any]) -> str:
+    tool = str(preview.get("tool") or "")
+    labels = {
+        "outlook.visible_summary": "Finding email skill...",
+        "diagnostics.email": "Finding email diagnostics skill...",
+        "screenshot.capability": "Finding screen skill...",
+        "browser.open_url": "Finding browser skill...",
+        "codex.job": "Finding Codex skill...",
+        "codex.delegate": "Finding Codex skill...",
+        "files.search": "Finding file search skill...",
+        "shell.read_only": "Finding read-only shell skill...",
+        "quick.local_control": "Finding local control skill...",
+        "system.status": "Finding system status skill...",
+        "policy.block": "Checking safety policy...",
+        "policy.confirmation": "Checking safety policy...",
+        "policy.strong_confirmation": "Checking safety policy...",
+    }
+    return labels.get(tool, "Finding the right Jarvis skill...")
 
 
 class RequestHandler(BaseHTTPRequestHandler):
