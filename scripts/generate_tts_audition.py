@@ -234,11 +234,132 @@ def probe_duration(path: Path) -> float | None:
         return None
 
 
+def friendly_accent(accent: str) -> str:
+    return {
+        "English UK": "British",
+        "English US": "American",
+        "English Ireland": "Irish",
+        "English Australia": "Australian",
+        "English Canada": "Canadian",
+        "English South Africa": "South African",
+        "English India": "Indian",
+    }.get(accent, accent.replace("English ", ""))
+
+
+def candidate_base_name(candidate: Candidate) -> str:
+    label = candidate.label
+    for prefix in ("Edge ", "macOS "):
+        if label.startswith(prefix):
+            label = label[len(prefix) :]
+    for suffix in (" Neural", " UK"):
+        if label.endswith(suffix):
+            label = label[: -len(suffix)]
+    return label.strip()
+
+
+def candidate_gender(candidate: Candidate) -> str:
+    style = candidate.style.lower()
+    if "female" in style:
+        return "female"
+    if "male" in style:
+        return "male"
+    base_names = {candidate.voice.split(" (", 1)[0], candidate_base_name(candidate).split()[0]}
+    female_names = {
+        "Ava",
+        "Clara",
+        "Emily",
+        "Emma",
+        "Flo",
+        "Grandma",
+        "Karen",
+        "Kathy",
+        "Leah",
+        "Libby",
+        "Maisie",
+        "Moira",
+        "Natasha",
+        "Samantha",
+        "Sandy",
+        "Shelley",
+        "Sonia",
+        "Tessa",
+    }
+    male_names = {
+        "Albert",
+        "Aman",
+        "Andrew",
+        "Brian",
+        "Christopher",
+        "Connor",
+        "Daniel",
+        "Eddy",
+        "Fred",
+        "Grandpa",
+        "Liam",
+        "Luke",
+        "Ralph",
+        "Reed",
+        "Rishi",
+        "Rocko",
+        "Roger",
+        "Ryan",
+        "Steffan",
+        "Thomas",
+        "William",
+    }
+    if base_names & female_names:
+        return "female"
+    if base_names & male_names:
+        return "male"
+    return "voice"
+
+
+def candidate_style_modifier(candidate: Candidate) -> str:
+    style = candidate.style.lower()
+    if "older" in style:
+        return "older"
+    if "classic" in style:
+        return "classic"
+    if "newer" in style:
+        return "modern"
+    if "character" in style:
+        return "character"
+    if "natural" in style:
+        return "natural"
+    if "warm" in style:
+        return "warm"
+    if "approachable" in style:
+        return "approachable"
+    if "expressive" in style:
+        return "expressive"
+    if "authoritative" in style:
+        return "authoritative"
+    if "lively" in style:
+        return "lively"
+    if "rational" in style:
+        return "calm"
+    if "clear" in style:
+        return "clear"
+    if "neural" in style or candidate.provider == "edge_tts":
+        return "neural"
+    return ""
+
+
+def short_name_for_candidate(candidate: Candidate) -> str:
+    parts = [
+        candidate_base_name(candidate),
+        candidate_style_modifier(candidate),
+        friendly_accent(candidate.accent),
+        candidate_gender(candidate),
+    ]
+    return " ".join(part for part in parts if part).strip()
+
+
 def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str) -> str:
     samples_json = json.dumps(samples, ensure_ascii=False, indent=2)
     escaped_sentence = html.escape(sample_text)
     escaped_generated_at = html.escape(generated_at)
-    return f"""<!doctype html>
+    html_doc = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -246,7 +367,7 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
   <link rel="icon" href="data:,">
   <title>Jarvis Voice Audition</title>
   <style>
-    :root {{
+    :root {
       color-scheme: light;
       --bg: #f5f6f8;
       --panel: #ffffff;
@@ -257,12 +378,14 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
       --red-dark: #74101d;
       --gold: #c8942e;
       --blue: #1f5f8f;
+      --selected: #e7ebf2;
+      --selected-line: #9ba6b8;
       --shadow: 0 18px 45px rgba(21, 25, 33, 0.10);
-    }}
-    * {{
+    }
+    * {
       box-sizing: border-box;
-    }}
-    body {{
+    }
+    body {
       margin: 0;
       min-height: 100vh;
       background: var(--bg);
@@ -270,39 +393,39 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 15px;
       letter-spacing: 0;
-    }}
-    main {{
-      width: min(1120px, calc(100% - 32px));
+    }
+    main {
+      width: min(1180px, calc(100% - 32px));
       margin: 0 auto;
       padding: 24px 0 44px;
-    }}
-    header {{
+    }
+    header {
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 20px;
       align-items: end;
       padding: 18px 0 20px;
       border-bottom: 1px solid var(--line);
-    }}
-    h1 {{
+    }
+    h1 {
       margin: 0 0 8px;
       font-size: 28px;
       line-height: 1.15;
       font-weight: 760;
-    }}
-    .sentence {{
+    }
+    .sentence {
       margin: 0;
       max-width: 780px;
       color: var(--muted);
       line-height: 1.55;
-    }}
-    .toolbar {{
+    }
+    .toolbar {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       justify-content: flex-end;
-    }}
-    button {{
+    }
+    button {
       appearance: none;
       border: 1px solid var(--line);
       background: var(--panel);
@@ -315,52 +438,80 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
       cursor: pointer;
       transition: border-color 140ms ease, background 140ms ease, color 140ms ease, transform 140ms ease;
       white-space: nowrap;
-    }}
-    button:hover {{
+    }
+    button:hover {
       border-color: #aeb5c2;
       transform: translateY(-1px);
-    }}
-    button.primary {{
+    }
+    button.primary {
       background: var(--red);
       border-color: var(--red);
       color: white;
-    }}
-    button.primary:hover {{
+    }
+    button.primary:hover {
       background: var(--red-dark);
       border-color: var(--red-dark);
-    }}
-    button.gold {{
+    }
+    button.gold {
       border-color: rgba(200, 148, 46, 0.55);
       color: #594019;
       background: #fff8e8;
-    }}
-    .status {{
+    }
+    .status {
       min-height: 22px;
       margin: 14px 0 16px;
       color: var(--blue);
       font-weight: 650;
-    }}
-    .list {{
+    }
+    .list {
       display: grid;
       gap: 10px;
-    }}
-    .row {{
+    }
+    .row {
       display: grid;
-      grid-template-columns: 48px 78px 86px 1fr 126px;
+      grid-template-columns: 48px 78px 86px minmax(220px, 1fr) 270px 126px;
       gap: 12px;
       align-items: center;
-      min-height: 68px;
+      min-height: 86px;
       padding: 11px 14px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel);
       box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85);
-    }}
-    .row.dragging {{
-      opacity: 0.55;
-      box-shadow: var(--shadow);
-    }}
-    .rank {{
+      transition: border-color 160ms ease, background 160ms ease, box-shadow 180ms ease, opacity 160ms ease;
+      will-change: transform;
+    }
+    .row:hover {
+      border-color: #b9c0cd;
+    }
+    .row.selected {
+      background: var(--selected);
+      border-color: var(--selected-line);
+      box-shadow: 0 13px 32px rgba(31, 43, 62, 0.16);
+    }
+    .row.dirty {
+      border-color: rgba(200, 148, 46, 0.72);
+      box-shadow: 0 10px 28px rgba(200, 148, 46, 0.14);
+    }
+    .row.dragging {
+      cursor: grabbing;
+      opacity: 0.88;
+      position: relative;
+      z-index: 5;
+      box-shadow: 0 24px 56px rgba(21, 25, 33, 0.24);
+    }
+    .row.animating {
+      transition: transform 230ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 160ms ease, background 160ms ease, box-shadow 180ms ease;
+    }
+    .drag-ghost {
+      position: fixed;
+      top: -1000px;
+      left: -1000px;
+      pointer-events: none;
+      box-shadow: 0 24px 56px rgba(21, 25, 33, 0.26);
+      opacity: 0.92;
+    }
+    .rank {
       width: 34px;
       height: 34px;
       display: grid;
@@ -370,8 +521,8 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
       color: #49515f;
       font-weight: 760;
       font-variant-numeric: tabular-nums;
-    }}
-    .sample-number {{
+    }
+    .sample-number {
       display: grid;
       place-items: center;
       min-width: 56px;
@@ -382,81 +533,122 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
       font-size: 18px;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
-    }}
-    .identity {{
+    }
+    .identity {
       min-width: 0;
-    }}
-    .identity strong {{
+    }
+    .identity strong {
       display: block;
       font-size: 16px;
       line-height: 1.25;
       overflow-wrap: anywhere;
-    }}
-    .meta {{
+    }
+    .meta {
       display: none;
       margin-top: 3px;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.35;
       overflow-wrap: anywhere;
-    }}
-    body.show-details .meta {{
+    }
+    body.show-details .meta {
       display: block;
-    }}
-    .moves {{
+    }
+    .score-box {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+    .score-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+    .score-value {
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .score-control {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 74px;
+      gap: 8px;
+      align-items: center;
+    }
+    .score-slider {
+      width: 100%;
+      accent-color: var(--red);
+    }
+    .confirm-score {
+      min-height: 32px;
+      padding: 0 8px;
+      font-size: 13px;
+    }
+    .confirm-score:disabled {
+      cursor: default;
+      opacity: 0.48;
+      transform: none;
+    }
+    .moves {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 6px;
-    }}
-    .moves button {{
+    }
+    .moves button {
       min-height: 34px;
       padding: 0 8px;
-    }}
-    .handle {{
-      color: var(--muted);
-      font-weight: 700;
-      cursor: grab;
-    }}
-    audio {{
+    }
+    audio {
       display: none;
-    }}
-    footer {{
+    }
+    footer {
       margin-top: 18px;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.5;
-    }}
-    @media (max-width: 820px) {{
-      main {{
-        width: min(100% - 20px, 720px);
+    }
+    @media (max-width: 960px) {
+      main {
+        width: min(100% - 20px, 760px);
         padding-top: 12px;
-      }}
-      header {{
+      }
+      header {
         grid-template-columns: 1fr;
         align-items: start;
-      }}
-      .toolbar {{
+      }
+      .toolbar {
         justify-content: flex-start;
-      }}
-      .row {{
+      }
+      .row {
         grid-template-columns: 42px 68px 78px 1fr;
-      }}
-      .moves {{
+      }
+      .score-box,
+      .moves {
         grid-column: 1 / -1;
+      }
+      .moves {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-      }}
-    }}
-    @media (max-width: 560px) {{
-      .row {{
+      }
+    }
+    @media (max-width: 560px) {
+      .row {
         grid-template-columns: 42px 68px 1fr;
-      }}
-      .row > button {{
+      }
+      .row > button {
         grid-column: 1 / 3;
-      }}
-      .identity {{
+      }
+      .identity {
         grid-column: 3;
-      }}
-    }}
+      }
+      .score-box,
+      .moves {
+        grid-column: 1 / -1;
+      }
+    }
   </style>
 </head>
 <body>
@@ -464,7 +656,7 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
     <header>
       <div>
         <h1>Jarvis Voice Audition</h1>
-        <p class="sentence">{escaped_sentence}</p>
+        <p class="sentence">__SENTENCE__</p>
       </div>
       <div class="toolbar">
         <button class="primary" id="copy-json">Copy JSON</button>
@@ -476,148 +668,466 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
     </header>
     <div class="status" id="status"></div>
     <section class="list" id="list" aria-label="Voice sample ranking"></section>
-    <footer>{len(samples)} samples generated at {escaped_generated_at}. The visible number is the only thing you need to rank.</footer>
+    <footer>__SAMPLE_COUNT__ samples generated at __GENERATED_AT__. Drag samples or score them from 1 to 10. The visible number is still the quickest thing to rank.</footer>
   </main>
   <script>
-    const samples = {samples_json};
-    const sampleText = {json.dumps(sample_text)};
-    const generatedAt = {json.dumps(generated_at)};
+    const samples = __SAMPLES_JSON__;
+    const sampleText = __SAMPLE_TEXT_JSON__;
+    const generatedAt = __GENERATED_AT_JSON__;
     const storageKey = "jarvis-voice-audition:" + generatedAt + ":" + samples.length;
     const list = document.getElementById("list");
     const status = document.getElementById("status");
+    const sampleByNumber = new Map(samples.map(sample => [sample.number, sample]));
+    const knownNumbers = samples.map(sample => sample.number);
     let currentAudio = null;
+    let currentPlayButton = null;
+    let dragStartOrder = [];
+    const state = loadState();
 
-    function savedOrder() {{
-      try {{
+    function clampScore(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return 1;
+      return Math.min(10, Math.max(1, Math.round(number * 1000) / 1000));
+    }
+
+    function scoreText(value) {
+      return clampScore(value).toFixed(3);
+    }
+
+    function defaultScoreForIndex(index) {
+      if (samples.length <= 1) return 10;
+      return clampScore(10 - (index * 9) / (samples.length - 1));
+    }
+
+    function normalizeOrder(order) {
+      const known = new Set(knownNumbers);
+      const seen = new Set();
+      const normalized = [];
+      if (Array.isArray(order)) {
+        for (const rawNumber of order) {
+          const number = Number(rawNumber);
+          if (known.has(number) && !seen.has(number)) {
+            normalized.push(number);
+            seen.add(number);
+          }
+        }
+      }
+      for (const number of knownNumbers) {
+        if (!seen.has(number)) normalized.push(number);
+      }
+      return normalized;
+    }
+
+    function scoresFromOrder(order) {
+      const scores = {};
+      normalizeOrder(order).forEach((number, index) => {
+        scores[number] = defaultScoreForIndex(index);
+      });
+      return scores;
+    }
+
+    function sanitizeScores(rawScores, fallbackOrder) {
+      const fallback = scoresFromOrder(fallbackOrder);
+      const scores = {};
+      for (const number of knownNumbers) {
+        const raw = rawScores && Object.prototype.hasOwnProperty.call(rawScores, number) ? rawScores[number] : rawScores && rawScores[String(number)];
+        scores[number] = Number.isFinite(Number(raw)) ? clampScore(raw) : fallback[number];
+      }
+      return scores;
+    }
+
+    function loadState() {
+      try {
         const parsed = JSON.parse(localStorage.getItem(storageKey) || "null");
-        if (!Array.isArray(parsed)) return samples.map(sample => sample.number);
-        const known = new Set(samples.map(sample => sample.number));
-        const filtered = parsed.filter(number => known.has(number));
-        const missing = samples.map(sample => sample.number).filter(number => !filtered.includes(number));
-        return filtered.concat(missing);
-      }} catch {{
-        return samples.map(sample => sample.number);
-      }}
-    }}
+        if (Array.isArray(parsed)) {
+          const order = normalizeOrder(parsed);
+          return { scores: scoresFromOrder(order), tieOrder: order, selectedNumber: null };
+        }
+        if (parsed && typeof parsed === "object") {
+          const order = normalizeOrder(parsed.tieOrder || parsed.order);
+          return {
+            scores: sanitizeScores(parsed.scores, order),
+            tieOrder: order,
+            selectedNumber: null
+          };
+        }
+      } catch {
+      }
+      const order = normalizeOrder(knownNumbers);
+      return { scores: scoresFromOrder(order), tieOrder: order, selectedNumber: null };
+    }
 
-    function orderedSamples() {{
-      const byNumber = new Map(samples.map(sample => [sample.number, sample]));
-      return savedOrder().map(number => byNumber.get(number)).filter(Boolean);
-    }}
+    function saveState() {
+      localStorage.setItem(storageKey, JSON.stringify({
+        scores: state.scores,
+        tieOrder: state.tieOrder,
+        sample_text: sampleText,
+        generated_at: generatedAt
+      }));
+    }
 
-    function saveOrder() {{
-      const numbers = [...list.querySelectorAll(".row")].map(row => Number(row.dataset.number));
-      localStorage.setItem(storageKey, JSON.stringify(numbers));
-    }}
+    function scoreFor(number) {
+      return clampScore(state.scores[number]);
+    }
 
-    function setStatus(message) {{
+    function tieIndexMap() {
+      return new Map(state.tieOrder.map((number, index) => [number, index]));
+    }
+
+    function sortedNumbers() {
+      const tieIndexes = tieIndexMap();
+      return knownNumbers.slice().sort((left, right) => {
+        const scoreDelta = scoreFor(right) - scoreFor(left);
+        if (Math.abs(scoreDelta) > 0.0005) return scoreDelta;
+        return (tieIndexes.get(left) ?? left) - (tieIndexes.get(right) ?? right);
+      });
+    }
+
+    function orderedSamples() {
+      return sortedNumbers().map(number => sampleByNumber.get(number)).filter(Boolean);
+    }
+
+    function currentNumbers() {
+      const rows = [...list.querySelectorAll(".row")];
+      return rows.length ? rows.map(row => Number(row.dataset.number)) : sortedNumbers();
+    }
+
+    function setStatus(message) {
       status.textContent = message;
-      if (message) setTimeout(() => {{
+      if (message) setTimeout(() => {
         if (status.textContent === message) status.textContent = "";
-      }}, 1800);
-    }}
+      }, 1800);
+    }
 
-    function stopAudio() {{
-      if (currentAudio) {{
+    function selectNumber(number) {
+      state.selectedNumber = number;
+      refreshSelection();
+    }
+
+    function refreshSelection() {
+      [...list.querySelectorAll(".row")].forEach(row => {
+        row.classList.toggle("selected", Number(row.dataset.number) === state.selectedNumber);
+      });
+    }
+
+    function stopAudio() {
+      if (currentAudio) {
         currentAudio.pause();
         currentAudio.currentTime = 0;
         currentAudio = null;
-      }}
-    }}
+      }
+      if (currentPlayButton) {
+        currentPlayButton.textContent = "Play";
+        currentPlayButton = null;
+      }
+    }
 
-    function playSample(sample, button) {{
+    function playSample(sample, button) {
+      selectNumber(sample.number);
       stopAudio();
       const audio = new Audio(sample.file);
       currentAudio = audio;
+      currentPlayButton = button;
       button.textContent = "Playing";
-      audio.addEventListener("ended", () => {{
+      audio.addEventListener("ended", () => {
         button.textContent = "Play";
+        currentPlayButton = null;
         if (currentAudio === audio) currentAudio = null;
-      }});
-      audio.addEventListener("error", () => {{
+      });
+      audio.addEventListener("error", () => {
         button.textContent = "Play";
+        currentPlayButton = null;
         setStatus("Could not play sample " + sample.number);
-      }});
-      audio.play().catch(() => {{
+      });
+      audio.play().catch(() => {
         button.textContent = "Play";
+        currentPlayButton = null;
         setStatus("Browser blocked playback");
-      }});
-    }}
+      });
+    }
 
-    function moveRow(row, direction) {{
-      if (direction < 0 && row.previousElementSibling) {{
-        list.insertBefore(row, row.previousElementSibling);
-      }}
-      if (direction > 0 && row.nextElementSibling) {{
-        list.insertBefore(row.nextElementSibling, row);
-      }}
-      refreshRanks();
-      saveOrder();
-    }}
+    function friendlyAccent(accent) {
+      return {
+        "English UK": "British",
+        "English US": "American",
+        "English Ireland": "Irish",
+        "English Australia": "Australian",
+        "English Canada": "Canadian",
+        "English South Africa": "South African",
+        "English India": "Indian"
+      }[accent] || String(accent || "").replace(/^English\s+/, "");
+    }
 
-    function refreshRanks() {{
-      [...list.querySelectorAll(".row")].forEach((row, index) => {{
+    function baseName(sample) {
+      let label = sample.label || sample.voice || ("Sample " + sample.number);
+      label = label.replace(/^Edge\s+/, "").replace(/^macOS\s+/, "");
+      label = label.replace(/\s+Neural$/, "").replace(/\s+UK$/, "");
+      return label.trim();
+    }
+
+    function genderName(sample) {
+      const style = String(sample.style || "").toLowerCase();
+      if (style.includes("female")) return "female";
+      if (/(^|\s)male($|\s)/.test(style)) return "male";
+      const rawVoice = String(sample.voice || "").split(" (", 1)[0];
+      const labelName = baseName(sample).split(/\s+/)[0];
+      const femaleNames = new Set(["Ava", "Clara", "Emily", "Emma", "Flo", "Grandma", "Karen", "Kathy", "Leah", "Libby", "Maisie", "Moira", "Natasha", "Samantha", "Sandy", "Shelley", "Sonia", "Tessa"]);
+      const maleNames = new Set(["Albert", "Aman", "Andrew", "Brian", "Christopher", "Connor", "Daniel", "Eddy", "Fred", "Grandpa", "Liam", "Luke", "Ralph", "Reed", "Rishi", "Rocko", "Roger", "Ryan", "Steffan", "Thomas", "William"]);
+      if (femaleNames.has(rawVoice) || femaleNames.has(labelName)) return "female";
+      if (maleNames.has(rawVoice) || maleNames.has(labelName)) return "male";
+      return "voice";
+    }
+
+    function styleModifier(sample) {
+      const style = String(sample.style || "").toLowerCase();
+      if (style.includes("older")) return "older";
+      if (style.includes("classic")) return "classic";
+      if (style.includes("newer")) return "modern";
+      if (style.includes("character")) return "character";
+      if (style.includes("natural")) return "natural";
+      if (style.includes("warm")) return "warm";
+      if (style.includes("approachable")) return "approachable";
+      if (style.includes("expressive")) return "expressive";
+      if (style.includes("authoritative")) return "authoritative";
+      if (style.includes("lively")) return "lively";
+      if (style.includes("rational")) return "calm";
+      if (style.includes("clear")) return "clear";
+      if (style.includes("neural") || sample.provider === "edge_tts") return "neural";
+      return "";
+    }
+
+    function shortName(sample) {
+      if (sample.short_name) return sample.short_name;
+      return [baseName(sample), styleModifier(sample), friendlyAccent(sample.accent), genderName(sample)]
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function createElement(tag, className, text) {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text !== undefined) element.textContent = text;
+      return element;
+    }
+
+    function updateScoreDisplay(row, value, dirty) {
+      const score = clampScore(value);
+      const slider = row.querySelector(".score-slider");
+      const output = row.querySelector(".score-value");
+      const confirm = row.querySelector(".confirm-score");
+      output.textContent = scoreText(score);
+      if (!dirty) slider.value = scoreText(score);
+      row.classList.toggle("dirty", Boolean(dirty));
+      confirm.disabled = !dirty;
+    }
+
+    function refreshRanks() {
+      [...list.querySelectorAll(".row")].forEach((row, index) => {
         row.querySelector(".rank").textContent = String(index + 1);
-      }});
-    }}
+        updateScoreDisplay(row, scoreFor(Number(row.dataset.number)), false);
+      });
+      refreshSelection();
+    }
 
-    function render() {{
+    function animateListChange(mutator) {
+      const rows = [...list.querySelectorAll(".row")];
+      const first = new Map(rows.map(row => [row.dataset.number, row.getBoundingClientRect()]));
+      mutator();
+      const movedRows = [...list.querySelectorAll(".row")];
+      for (const row of movedRows) {
+        const previous = first.get(row.dataset.number);
+        if (!previous) continue;
+        const next = row.getBoundingClientRect();
+        const deltaY = previous.top - next.top;
+        if (!deltaY) continue;
+        row.classList.add("animating");
+        row.style.transition = "transform 0s";
+        row.style.transform = "translateY(" + deltaY + "px)";
+        requestAnimationFrame(() => {
+          row.style.transition = "";
+          row.style.transform = "";
+        });
+        row.addEventListener("transitionend", () => row.classList.remove("animating"), { once: true });
+      }
+    }
+
+    function applyOrder(order, animate = true) {
+      const mutator = () => {
+        const rowByNumber = new Map([...list.querySelectorAll(".row")].map(row => [Number(row.dataset.number), row]));
+        for (const number of order) {
+          const row = rowByNumber.get(number);
+          if (row) list.appendChild(row);
+        }
+        refreshRanks();
+      };
+      if (animate) animateListChange(mutator);
+      else mutator();
+    }
+
+    function applySortedOrder(message) {
+      const order = sortedNumbers();
+      applyOrder(order, true);
+      state.tieOrder = order;
+      saveState();
+      if (message) setStatus(message);
+    }
+
+    function scoreForPosition(previousNumber, nextNumber) {
+      if (previousNumber !== undefined && nextNumber !== undefined) {
+        return clampScore((scoreFor(previousNumber) + scoreFor(nextNumber)) / 2);
+      }
+      if (nextNumber !== undefined) return clampScore(scoreFor(nextNumber) + 0.001);
+      if (previousNumber !== undefined) return clampScore(scoreFor(previousNumber) - 0.001);
+      return 10;
+    }
+
+    function moveNumberToIndex(number, targetIndex, announce = true) {
+      const current = currentNumbers();
+      const without = current.filter(item => item !== number);
+      const index = Math.min(Math.max(targetIndex, 0), without.length);
+      without.splice(index, 0, number);
+      const previousNumber = without[index - 1];
+      const nextNumber = without[index + 1];
+      state.scores[number] = scoreForPosition(previousNumber, nextNumber);
+      state.tieOrder = without;
+      selectNumber(number);
+      applySortedOrder(announce ? "Sample " + number + " score set to " + scoreText(state.scores[number]) : "");
+    }
+
+    function confirmScore(number, row) {
+      const slider = row.querySelector(".score-slider");
+      state.scores[number] = clampScore(slider.value);
+      selectNumber(number);
+      applySortedOrder("Sample " + number + " score set to " + scoreText(state.scores[number]));
+    }
+
+    function createDragImage(event, row) {
+      const ghost = row.cloneNode(true);
+      const rect = row.getBoundingClientRect();
+      ghost.classList.add("drag-ghost");
+      ghost.style.width = rect.width + "px";
+      document.body.appendChild(ghost);
+      event.dataTransfer.setDragImage(ghost, 26, Math.min(38, rect.height / 2));
+      setTimeout(() => ghost.remove(), 0);
+    }
+
+    function arraysEqual(left, right) {
+      return left.length === right.length && left.every((value, index) => value === right[index]);
+    }
+
+    function finishDrag(number) {
+      const visualOrder = currentNumbers();
+      const index = visualOrder.indexOf(number);
+      if (index < 0 || arraysEqual(visualOrder, dragStartOrder)) {
+        refreshRanks();
+        return;
+      }
+      const previousNumber = visualOrder[index - 1];
+      const nextNumber = visualOrder[index + 1];
+      state.scores[number] = scoreForPosition(previousNumber, nextNumber);
+      state.tieOrder = visualOrder;
+      applySortedOrder("Sample " + number + " score set to " + scoreText(state.scores[number]));
+    }
+
+    function render() {
       list.innerHTML = "";
-      for (const sample of orderedSamples()) {{
+      for (const sample of orderedSamples()) {
         const row = document.createElement("article");
         row.className = "row";
         row.draggable = true;
         row.dataset.number = sample.number;
-        row.innerHTML = `
-          <div class="rank"></div>
-          <div class="sample-number">${{sample.number}}</div>
-          <button type="button" class="play">Play</button>
-          <div class="identity">
-            <strong>Sample ${{sample.number}}</strong>
-            <div class="meta">${{sample.provider}} / ${{sample.voice}} / ${{sample.accent}} / ${{sample.style}}</div>
-          </div>
-          <div class="moves">
-            <button type="button" class="up">Up</button>
-            <button type="button" class="down">Down</button>
-          </div>
-        `;
-        row.querySelector(".play").addEventListener("click", event => playSample(sample, event.currentTarget));
-        row.querySelector(".up").addEventListener("click", () => moveRow(row, -1));
-        row.querySelector(".down").addEventListener("click", () => moveRow(row, 1));
-        row.addEventListener("dragstart", event => {{
+
+        const rank = createElement("div", "rank");
+        const numberBadge = createElement("div", "sample-number", String(sample.number));
+        const play = createElement("button", "play", "Play");
+        play.type = "button";
+
+        const identity = createElement("div", "identity");
+        const title = createElement("strong", "", shortName(sample));
+        const meta = createElement("div", "meta", [sample.provider, sample.voice, sample.accent, sample.style].filter(Boolean).join(" / "));
+        identity.append(title, meta);
+
+        const scoreBox = createElement("div", "score-box");
+        const scoreTop = createElement("div", "score-top");
+        const scoreLabel = createElement("span", "", "Score");
+        const scoreValue = createElement("output", "score-value");
+        scoreTop.append(scoreLabel, scoreValue);
+        const scoreControl = createElement("div", "score-control");
+        const slider = createElement("input", "score-slider");
+        slider.type = "range";
+        slider.min = "1";
+        slider.max = "10";
+        slider.step = "0.001";
+        slider.setAttribute("aria-label", "Score for sample " + sample.number);
+        const confirm = createElement("button", "confirm-score", "Confirm");
+        confirm.type = "button";
+        confirm.disabled = true;
+        scoreControl.append(slider, confirm);
+        scoreBox.append(scoreTop, scoreControl);
+
+        const moves = createElement("div", "moves");
+        const up = createElement("button", "up", "Up");
+        const down = createElement("button", "down", "Down");
+        up.type = "button";
+        down.type = "button";
+        moves.append(up, down);
+
+        row.append(rank, numberBadge, play, identity, scoreBox, moves);
+
+        play.addEventListener("click", event => playSample(sample, event.currentTarget));
+        up.addEventListener("click", () => {
+          const index = currentNumbers().indexOf(sample.number);
+          if (index > 0) moveNumberToIndex(sample.number, index - 1);
+        });
+        down.addEventListener("click", () => {
+          const index = currentNumbers().indexOf(sample.number);
+          if (index >= 0 && index < currentNumbers().length - 1) moveNumberToIndex(sample.number, index + 1);
+        });
+        slider.addEventListener("input", () => {
+          selectNumber(sample.number);
+          updateScoreDisplay(row, slider.value, true);
+        });
+        confirm.addEventListener("click", () => confirmScore(sample.number, row));
+        row.addEventListener("pointerdown", () => selectNumber(sample.number));
+        row.addEventListener("dragstart", event => {
+          selectNumber(sample.number);
+          dragStartOrder = currentNumbers();
           row.classList.add("dragging");
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", String(sample.number));
-        }});
-        row.addEventListener("dragend", () => {{
+          createDragImage(event, row);
+        });
+        row.addEventListener("dragend", () => {
           row.classList.remove("dragging");
-          saveOrder();
-          refreshRanks();
-        }});
+          finishDrag(sample.number);
+        });
         list.appendChild(row);
-      }}
+      }
       refreshRanks();
-    }}
+    }
 
-    list.addEventListener("dragover", event => {{
+    list.addEventListener("dragover", event => {
       event.preventDefault();
       const dragging = list.querySelector(".dragging");
       if (!dragging) return;
       const rows = [...list.querySelectorAll(".row:not(.dragging)")];
       const after = rows.find(row => event.clientY <= row.getBoundingClientRect().top + row.offsetHeight / 2);
-      if (after) list.insertBefore(dragging, after);
-      else list.appendChild(dragging);
-    }});
+      if (after && after !== dragging.nextElementSibling) {
+        animateListChange(() => list.insertBefore(dragging, after));
+      } else if (!after && dragging !== list.lastElementChild) {
+        animateListChange(() => list.appendChild(dragging));
+      }
+    });
 
-    function currentNumbers() {{
-      return [...list.querySelectorAll(".row")].map(row => Number(row.dataset.number));
-    }}
+    list.addEventListener("drop", event => event.preventDefault());
 
-    async function copyText(text, label) {{
-      try {{
+    async function copyText(text, label) {
+      try {
         await navigator.clipboard.writeText(text);
         setStatus(label + " copied");
-      }} catch {{
+      } catch {
         const box = document.createElement("textarea");
         box.value = text;
         document.body.appendChild(box);
@@ -625,40 +1135,85 @@ def html_page(samples: list[dict[str, Any]], sample_text: str, generated_at: str
         document.execCommand("copy");
         box.remove();
         setStatus(label + " copied");
-      }}
-    }}
+      }
+    }
 
-    document.getElementById("copy-json").addEventListener("click", () => {{
-      const payload = {{
+    document.getElementById("copy-json").addEventListener("click", () => {
+      const rankings = currentNumbers().map((number, index) => {
+        const sample = sampleByNumber.get(number);
+        return {
+          rank: index + 1,
+          number,
+          score: scoreFor(number),
+          short_name: shortName(sample),
+          label: sample.label,
+          provider: sample.provider,
+          voice: sample.voice
+        };
+      });
+      const payload = {
         ranked_sample_numbers: currentNumbers(),
+        rankings,
         sample_text: sampleText,
         generated_at: generatedAt
-      }};
+      };
       copyText(JSON.stringify(payload, null, 2), "JSON");
-    }});
+    });
 
-    document.getElementById("copy-text").addEventListener("click", () => {{
+    document.getElementById("copy-text").addEventListener("click", () => {
       copyText(currentNumbers().join(", "), "Text");
-    }});
+    });
 
-    document.getElementById("toggle-details").addEventListener("click", event => {{
+    document.getElementById("toggle-details").addEventListener("click", event => {
       document.body.classList.toggle("show-details");
       event.currentTarget.textContent = document.body.classList.contains("show-details") ? "Hide Details" : "Show Details";
-    }});
+    });
 
-    document.getElementById("reset-order").addEventListener("click", () => {{
+    document.getElementById("reset-order").addEventListener("click", () => {
       localStorage.removeItem(storageKey);
+      const fresh = loadState();
+      state.scores = fresh.scores;
+      state.tieOrder = fresh.tieOrder;
+      state.selectedNumber = null;
       render();
       setStatus("Order reset");
-    }});
+    });
 
     document.getElementById("stop-audio").addEventListener("click", stopAudio);
 
     render();
+    window.JarvisVoiceAudition = {
+      currentNumbers,
+      currentScores: () => Object.fromEntries(currentNumbers().map(number => [number, scoreFor(number)])),
+      setScore: (number, score) => {
+        if (!sampleByNumber.has(number)) return false;
+        state.scores[number] = clampScore(score);
+        selectNumber(number);
+        applySortedOrder("");
+        return true;
+      },
+      moveNumberToIndex: (number, index) => {
+        if (!sampleByNumber.has(number)) return false;
+        moveNumberToIndex(number, index, false);
+        return true;
+      },
+      reset: () => {
+        localStorage.removeItem(storageKey);
+        location.reload();
+      }
+    };
   </script>
 </body>
 </html>
 """
+    return (
+        html_doc.replace("__SAMPLES_JSON__", samples_json)
+        .replace("__SAMPLE_TEXT_JSON__", json.dumps(sample_text, ensure_ascii=False))
+        .replace("__GENERATED_AT_JSON__", json.dumps(generated_at, ensure_ascii=False))
+        .replace("__SENTENCE__", escaped_sentence)
+        .replace("__SAMPLE_COUNT__", str(len(samples)))
+        .replace("__GENERATED_AT__", escaped_generated_at)
+    )
 
 
 def generate(output_dir: Path, text: str, max_samples: int | None) -> dict[str, Any]:
@@ -694,6 +1249,7 @@ def generate(output_dir: Path, text: str, max_samples: int | None) -> dict[str, 
                     "provider": candidate.provider,
                     "voice": candidate.voice,
                     "label": candidate.label,
+                    "short_name": short_name_for_candidate(candidate),
                     "accent": candidate.accent,
                     "style": candidate.style,
                     "duration_seconds": probe_duration(target),
