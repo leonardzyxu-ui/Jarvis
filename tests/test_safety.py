@@ -12,7 +12,15 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-os.environ.setdefault("JARVIS_ENV_FILE", "/dev/null")
+os.environ["JARVIS_ENV_FILE"] = "/dev/null"
+for key in (
+    "JARVIS_TTS_AUTOMATIC_ENABLED",
+    "JARVIS_TTS_SPEAK_STATUS",
+    "JARVIS_TTS_VOICE",
+    "JARVIS_TTS_RATE",
+    "JARVIS_TTS_MAX_CHARS",
+):
+    os.environ.pop(key, None)
 
 from jarvis import tools as jarvis_tools
 from jarvis.audit import AuditLogger, redact_sensitive_text
@@ -1647,6 +1655,63 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(result["reply"], "Fast Groq answer.")
         self.assertEqual(request.headers["Authorization"], "Bearer test-groq-key")
 
+    def test_fast_local_chat_groq_includes_bounded_history(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return b'{"choices":[{"message":{"content":"Correct, x is 3."}}]}'
+
+        history = [
+            {"role": "user", "text": "Give me a simple algebra problem."},
+            {"role": "assistant", "text": "Solve x + 2 = 5."},
+            {"role": "user", "text": "x = 3"},
+        ]
+        with patch("jarvis.tools.FAST_MODEL_BACKEND", "groq"), \
+             patch("jarvis.tools.GROQ_API_KEY", "test-groq-key"), \
+             patch("jarvis.tools.urllib.request.urlopen", return_value=FakeResponse()) as urlopen_mock:
+            result = run_fast_local_chat("x = 3", history=history)
+
+        request = urlopen_mock.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        messages = payload["messages"]
+        self.assertEqual(result["reply"], "Correct, x is 3.")
+        self.assertIn("Current local date/time:", messages[0]["content"])
+        self.assertEqual(messages[1], {"role": "user", "content": "Give me a simple algebra problem."})
+        self.assertEqual(messages[2], {"role": "assistant", "content": "Solve x + 2 = 5."})
+        self.assertEqual(messages[-1], {"role": "user", "content": "x = 3"})
+        self.assertEqual([message["content"] for message in messages].count("x = 3"), 1)
+
+    def test_fast_local_chat_can_request_tool_without_user_visible_skill_word(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return (
+                    b'{"choices":[{"message":{"content":"\\\\tool '
+                    b'{\\"tool\\":\\"outlook.visible_summary\\",\\"status\\":\\"Sure. I\\\\u0027ll check your email.\\",'
+                    b'\\"entities\\":{\\"selection\\":\\"latest\\"}}"}}]}'
+                )
+
+        tool_specs = [{"tool": "outlook.visible_summary", "description": "Read email.", "entities": ["selection"]}]
+        with patch("jarvis.tools.FAST_MODEL_BACKEND", "groq"), \
+             patch("jarvis.tools.GROQ_API_KEY", "test-groq-key"), \
+             patch("jarvis.tools.urllib.request.urlopen", return_value=FakeResponse()):
+            result = run_fast_local_chat("check my email", tool_specs=tool_specs)
+
+        self.assertEqual(result["status"], "tool_requested")
+        self.assertEqual(result["selected_tool"], "outlook.visible_summary")
+        self.assertEqual(result["status_text"], "Sure. I'll check your email.")
+        self.assertNotIn("skill", result["status_text"].lower())
+
     def test_fast_local_chat_groq_falls_back_to_ollama(self):
         fallback_result = {
             "tool": "conversation.fast_local",
@@ -2436,12 +2501,24 @@ class RuntimeSurfaceTests(unittest.TestCase):
             "message_count": 0,
             "reply": "Checked email without reading a real mailbox in this test.",
         }
-        intent = {"status": "completed", "selected_tool": "outlook.visible_summary", "confidence": 0.91, "entities": {}}
+        fake_events = [
+            {
+                "event": "final_result",
+                "data": {
+                    "tool": "conversation.fast_local",
+                    "status": "tool_requested",
+                    "selected_tool": "outlook.visible_summary",
+                    "status_text": "Sure. I'll check your email.",
+                    "entities": {"selection": "latest"},
+                    "executed": True,
+                },
+            }
+        ]
         with tempfile.TemporaryDirectory() as temp_dir:
             server = JarvisServer()
             server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
-            with patch("jarvis.planner.select_tool_intent", return_value=intent), \
-                 patch("jarvis.planner.outlook_read_only_check", return_value=fake_result):
+            with patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events), \
+                 patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
                 events = list(server.stream_command("please check my email"))
 
         self.assertEqual([event["event"] for event in events], ["status", "final"])
@@ -2449,6 +2526,40 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(events[0]["data"]["tool"], "outlook.visible_summary")
         self.assertEqual(events[-1]["data"]["tool"], "outlook.visible_summary")
         self.assertEqual(events[-1]["data"]["result"]["status"], "checked")
+        self.assertEqual(mail_mock.call_args.kwargs["selection"], "latest")
+
+    def test_stream_command_passes_history_to_fast_chat_without_router_delay(self):
+        fake_events = [
+            {"event": "delta", "data": {"text": "Correct, "}},
+            {"event": "delta", "data": {"text": "x is 3."}},
+            {
+                "event": "final_result",
+                "data": {
+                    "tool": "conversation.fast_local",
+                    "backend": "groq",
+                    "model": "test-fast",
+                    "status": "completed",
+                    "executed": True,
+                    "fallback_used": False,
+                    "reply": "Correct, x is 3.",
+                },
+            },
+        ]
+        history = [
+            {"role": "user", "text": "Give me a math problem."},
+            {"role": "assistant", "text": "Solve x + 2 = 5."},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = JarvisServer()
+            server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
+            with patch("jarvis.planner.select_tool_intent") as router_mock, \
+                 patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events) as stream_mock:
+                events = list(server.stream_command("x = 3", history=history))
+
+        router_mock.assert_not_called()
+        self.assertEqual(events[1]["data"]["text"], "x is 3.")
+        self.assertEqual(events[-1]["data"]["result"]["reply"], "Correct, x is 3.")
+        self.assertEqual(stream_mock.call_args.kwargs["history"], history)
 
     def test_diagnostics_do_not_auto_speak(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2494,8 +2605,15 @@ class RuntimeSurfaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             server = JarvisServer()
             server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
-            intent = {"status": "completed", "selected_tool": "outlook.visible_summary", "confidence": 0.91, "entities": {}}
-            with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+            tool_request = {
+                "tool": "conversation.fast_local",
+                "status": "tool_requested",
+                "selected_tool": "outlook.visible_summary",
+                "status_text": "Sure. I'll check your email.",
+                "entities": {},
+                "executed": True,
+            }
+            with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request), \
                  patch("jarvis.planner.outlook_read_only_check", return_value=fake_result):
                 response = server.command("check my email")
             event = server.audit.recent(1)[0]

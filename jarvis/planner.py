@@ -94,7 +94,59 @@ class PlannedResult:
 class Planner:
     """Small typed-tool planner until model routing is wired in."""
 
-    def handle(self, command: str) -> PlannedResult:
+    def handle_selected_tool(self, command: str, selected_tool: str, entities: dict[str, Any] | None = None) -> PlannedResult | None:
+        text = command.strip()
+        assessment = classify_command(text)
+        if assessment.blocked:
+            return self._result(text, "policy.block", "Command blocked by safety policy.", assessment, {}, False)
+        if assessment.requires_typed_confirmation:
+            return self._result(
+                text,
+                "policy.strong_confirmation",
+                "Command requires strong confirmation and was not executed.",
+                assessment,
+                {"next_step": "Show a typed confirmation prompt in the Jarvis UI."},
+                False,
+                confirmation=_confirmation(
+                    kind="typed",
+                    title="Strong Confirmation Required",
+                    message="This command could affect external data, secrets, settings, files, or other hard-to-undo state.",
+                    exact_phrase="JARVIS APPROVE",
+                    prototype_note="The prototype records this confirmation requirement but does not execute protected actions.",
+                ),
+            )
+        if assessment.requires_confirmation:
+            return self._result(
+                text,
+                "policy.confirmation",
+                "Command requires confirmation and was not executed.",
+                assessment,
+                {"next_step": "Show a confirmation prompt in the Jarvis UI."},
+                False,
+                confirmation=_confirmation(
+                    kind="standard",
+                    title="Confirmation Required",
+                    message="This command may change local state and needs user approval before execution.",
+                    exact_phrase=None,
+                    prototype_note="The prototype records this confirmation requirement but does not execute protected actions.",
+                ),
+            )
+        intent = {
+            "status": "completed",
+            "selected_tool": selected_tool,
+            "confidence": 1.0,
+            "entities": entities or {},
+            "reason": "Selected by fast chat tool request.",
+        }
+        return self._handle_model_intent(text, assessment, intent, execute=True)
+
+    def handle(
+        self,
+        command: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+        use_model_router: bool = True,
+    ) -> PlannedResult:
         text = command.strip()
         assessment = classify_command(text)
         lower = text.lower()
@@ -212,11 +264,22 @@ class Planner:
                 },
                 True,
             )
-        intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
-        routed = self._handle_model_intent(text, assessment, intent, execute=True)
-        if routed is not None:
-            return routed
-        result = run_fast_local_chat(text)
+        if use_model_router:
+            intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
+            routed = self._handle_model_intent(text, assessment, intent, execute=True)
+            if routed is not None:
+                return routed
+            result = run_fast_local_chat(text, history=history)
+        else:
+            result = run_fast_local_chat(text, history=history, tool_specs=NATURAL_LANGUAGE_TOOL_SPECS)
+            if result.get("status") == "tool_requested":
+                routed = self.handle_selected_tool(
+                    text,
+                    str(result.get("selected_tool") or ""),
+                    result.get("entities") if isinstance(result.get("entities"), dict) else {},
+                )
+                if routed is not None:
+                    return routed
         tool = str(result.get("tool") or "conversation.fast_local")
         if result.get("status") == "completed":
             summary = "Answered through fast local chat."
@@ -226,7 +289,7 @@ class Planner:
             summary = f"{summary} Fast model time: {result['duration_human']}."
         return self._result(text, tool, summary, assessment, result, bool(result.get("executed", True)))
 
-    def preview(self, command: str) -> PlannedResult:
+    def preview(self, command: str, *, use_model_router: bool = True) -> PlannedResult:
         text = command.strip()
         assessment = classify_command(text)
         lower = text.lower()
@@ -310,10 +373,11 @@ class Planner:
             return self._preview_result(text, "codex.job", assessment, False)
         if _looks_like_codex_speed_status(lower):
             return self._preview_result(text, "diagnostics.codex_speed", assessment, True)
-        intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
-        routed = self._handle_model_intent(text, assessment, intent, execute=False)
-        if routed is not None:
-            return routed
+        if use_model_router:
+            intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
+            routed = self._handle_model_intent(text, assessment, intent, execute=False)
+            if routed is not None:
+                return routed
         return self._preview_result(text, "conversation.fast_local", assessment, True)
 
     def _handle_model_intent(

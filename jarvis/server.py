@@ -23,7 +23,7 @@ from .config import (
     START_PAUSED,
     host_allowed,
 )
-from .planner import Planner
+from .planner import NATURAL_LANGUAGE_TOOL_SPECS, Planner
 from .safety import classify_command, policy_summary
 from .self_check import run_self_checks
 from .tools import outlook_visible_text_summary, speak_text_async, stream_fast_local_chat_events, system_status, tool_registry
@@ -43,7 +43,7 @@ class JarvisServer:
         self.mode_updated_at = time.time()
         self._mode_lock = threading.RLock()
 
-    def command(self, command: str) -> dict[str, Any]:
+    def command(self, command: str, history: list[dict[str, str]] | None = None) -> dict[str, Any]:
         with self._mode_lock:
             is_paused = self.paused
         if is_paused:
@@ -68,7 +68,7 @@ class JarvisServer:
             _attach_auto_speech(data, reason="final")
             return data
 
-        planned = self.planner.handle(command)
+        planned = self.planner.handle(command, history=history, use_model_router=False)
         data = planned.to_dict()
         event = self.audit.record(
             command=command,
@@ -87,14 +87,14 @@ class JarvisServer:
         _attach_auto_speech(data, reason="final")
         return data
 
-    def stream_command(self, command: str):
+    def stream_command(self, command: str, history: list[dict[str, str]] | None = None):
         with self._mode_lock:
             is_paused = self.paused
         if is_paused:
             yield {"event": "final", "data": self.command(command)}
             return
 
-        preview = self.plan(command)
+        preview = self.planner.preview(command, use_model_router=False).to_dict()
         if preview.get("tool") != "conversation.fast_local":
             status_text = _stream_status_text(preview)
             if status_text:
@@ -112,7 +112,11 @@ class JarvisServer:
 
         assessment = classify_command(command).to_dict()
         result: dict[str, Any] | None = None
-        for event in stream_fast_local_chat_events(command):
+        for event in stream_fast_local_chat_events(
+            command,
+            history=history,
+            tool_specs=NATURAL_LANGUAGE_TOOL_SPECS,
+        ):
             if event["event"] == "final_result":
                 result = event["data"]
             else:
@@ -127,6 +131,50 @@ class JarvisServer:
                 "fallback_used": True,
                 "reply": "Jarvis streaming ended without a final answer.",
             }
+
+        if result.get("status") == "tool_requested":
+            selected_tool = str(result.get("selected_tool") or "")
+            status_text = str(result.get("status_text") or "").strip()
+            if not status_text:
+                status_text = _stream_status_text({"tool": selected_tool})
+            if status_text:
+                speech = speak_text_async(status_text, reason="status")
+                yield {
+                    "event": "status",
+                    "data": {
+                        "text": status_text,
+                        "tool": selected_tool,
+                        "speech": speech,
+                    },
+                }
+            entities = result.get("entities") if isinstance(result.get("entities"), dict) else {}
+            planned = self.planner.handle_selected_tool(command, selected_tool, entities)
+            if planned is None:
+                data = {
+                    "command": command,
+                    "tool": "conversation.fast_local",
+                    "summary": "Fast chat requested an unavailable tool.",
+                    "assessment": classify_command(command).to_dict(),
+                    "result": {
+                        "tool": "conversation.fast_local",
+                        "status": "tool_unavailable",
+                        "executed": False,
+                        "selected_tool": selected_tool,
+                        "reply": "I could not find the right available tool for that.",
+                    },
+                    "executed": False,
+                    "confirmation": None,
+                }
+                data["audit_event_id"] = self._record_command_result(data).id
+                _attach_auto_speech(data, reason="final")
+                yield {"event": "final", "data": data}
+                return
+            data = planned.to_dict()
+            event = self._record_command_result(data)
+            data["audit_event_id"] = event.id
+            _attach_auto_speech(data, reason="final")
+            yield {"event": "final", "data": data}
+            return
 
         summary = (
             "Answered through streaming fast chat."
@@ -147,22 +195,25 @@ class JarvisServer:
             "executed": bool(result.get("executed", True)),
             "confirmation": None,
         }
-        event = self.audit.record(
-            command=command,
-            risk_level=int(data["assessment"]["risk_level"]),
-            risk_label=str(data["assessment"]["risk_label"]),
-            tool=data["tool"],
-            decision=str(data["assessment"]["decision"]),
-            summary=data["summary"],
-            details={
-                "executed": data["executed"],
-                "result": _audit_safe_result(data["tool"], data["result"]),
-                "confirmation": None,
-            },
-        )
+        event = self._record_command_result(data)
         data["audit_event_id"] = event.id
         _attach_auto_speech(data, reason="final")
         yield {"event": "final", "data": data}
+
+    def _record_command_result(self, data: dict[str, Any]):
+        return self.audit.record(
+            command=str(data.get("command") or ""),
+            risk_level=int(data["assessment"]["risk_level"]),
+            risk_label=str(data["assessment"]["risk_label"]),
+            tool=str(data["tool"]),
+            decision=str(data["assessment"]["decision"]),
+            summary=str(data["summary"]),
+            details={
+                "executed": data["executed"],
+                "result": _audit_safe_result(str(data["tool"]), data["result"]),
+                "confirmation": data.get("confirmation"),
+            },
+        )
 
     def native_outlook_visible_text(
         self,
@@ -593,6 +644,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 payload = self._read_json_payload()
                 command = str(payload.get("command", ""))
+                history = _conversation_history_from_payload(payload, current_command=command)
             except RequestBodyTooLarge:
                 self._send_json({"error": "Request body too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
                 return
@@ -633,6 +685,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 payload = self._read_json_payload()
                 command = str(payload.get("command", ""))
+                history = _conversation_history_from_payload(payload, current_command=command)
             except RequestBodyTooLarge:
                 self._send_json({"error": "Request body too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
                 return
@@ -642,7 +695,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             except (TypeError, ValueError, UnicodeDecodeError) as exc:
                 self._send_json({"error": f"Invalid JSON: {exc}"}, status=HTTPStatus.BAD_REQUEST)
                 return
-            self._send_event_stream(STATE.stream_command(command))
+            self._send_event_stream(STATE.stream_command(command, history=history))
             return
         if route.path != "/api/command":
             self._send_json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
@@ -650,6 +703,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         try:
             payload = self._read_json_payload()
             command = str(payload.get("command", ""))
+            history = _conversation_history_from_payload(payload, current_command=command)
         except RequestBodyTooLarge:
             self._send_json({"error": "Request body too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             return
@@ -659,7 +713,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         except (TypeError, ValueError, UnicodeDecodeError) as exc:
             self._send_json({"error": f"Invalid JSON: {exc}"}, status=HTTPStatus.BAD_REQUEST)
             return
-        self._send_json(STATE.command(command))
+        self._send_json(STATE.command(command, history=history))
 
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -777,6 +831,27 @@ def _bounded_int(raw: str, *, default: int, minimum: int, maximum: int) -> int:
 
 def _clean_reason(reason: str) -> str:
     return " ".join(reason.strip().split())[:240]
+
+
+def _conversation_history_from_payload(payload: dict[str, Any], *, current_command: str) -> list[dict[str, str]]:
+    raw_history = payload.get("history")
+    if not isinstance(raw_history, list):
+        return []
+    current_clean = " ".join(current_command.strip().split())
+    history: list[dict[str, str]] = []
+    for item in raw_history[-16:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        text = " ".join(str(item.get("text") or "").split())
+        if role == "jarvis":
+            role = "assistant"
+        if role not in {"user", "assistant", "system"} or not text:
+            continue
+        if role == "user" and text == current_clean:
+            continue
+        history.append({"role": role, "text": text[:900]})
+    return history[-10:]
 
 
 def _host_from_header(value: str) -> str:

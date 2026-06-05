@@ -23,6 +23,7 @@ const confirmationMessage = document.getElementById("confirmation-message");
 const confirmationNote = document.getElementById("confirmation-note");
 const confirmationPhrase = document.getElementById("confirmation-phrase");
 const toolPill = document.getElementById("tool-pill");
+const commandHistory = [];
 
 function renderJson(element, data) {
   element.textContent = JSON.stringify(data, null, 2);
@@ -224,11 +225,12 @@ async function runCommand(command) {
   const data = await api("/api/command", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command }),
+    body: JSON.stringify({ command, history: commandHistoryPayload(command) }),
   });
   renderConfirmation(data.confirmation);
   renderTool(data.tool, data.executed);
   renderJson(resultOutput, data);
+  rememberCommandTurn(command, data);
   setWakeState(data.confirmation ? "Approval" : "Ready", data.confirmation ? "Jarvis needs confirmation before acting." : "Jarvis is ready for the next command.");
   await loadAudit();
 }
@@ -252,6 +254,36 @@ function renderTool(tool, executed) {
   toolPill.textContent = tool || "No tool";
   toolPill.classList.toggle("active", Boolean(tool));
   toolPill.title = executed ? "Tool executed" : "Tool planned or blocked";
+}
+
+function commandHistoryPayload(command) {
+  const current = command.trim();
+  return commandHistory
+    .filter((item) => item.text && !(item.role === "user" && item.text.trim() === current))
+    .slice(-10);
+}
+
+function rememberCommandTurn(command, data) {
+  const reply = assistantReplyFromResponse(data);
+  commandHistory.push({ role: "user", text: command.trim().slice(0, 900) });
+  if (reply) {
+    commandHistory.push({ role: "assistant", text: reply.slice(0, 900) });
+  }
+  while (commandHistory.length > 12) {
+    commandHistory.shift();
+  }
+}
+
+function assistantReplyFromResponse(data) {
+  const result = data && typeof data === "object" ? data.result : null;
+  if (result && typeof result === "object") {
+    for (const key of ["reply", "email_summary"]) {
+      if (typeof result[key] === "string" && result[key].trim()) {
+        return result[key].trim();
+      }
+    }
+  }
+  return typeof data.summary === "string" ? data.summary.trim() : "";
 }
 
 function wakeJarvis(source) {

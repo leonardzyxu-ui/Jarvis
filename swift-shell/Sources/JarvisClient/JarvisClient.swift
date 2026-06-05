@@ -58,17 +58,18 @@ public struct JarvisClient: Sendable {
         url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).hasSuffix("api/command")
     }
 
-    public func send(command: String) async throws -> CommandResponse {
+    public func send(command: String, history: [[String: String]] = []) async throws -> CommandResponse {
         var request = URLRequest(url: commandURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = Self.commandTimeout
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["command": command], options: [])
+        request.httpBody = try Self.commandBody(command: command, history: history)
         return try await perform(request, as: CommandResponse.self)
     }
 
     public func sendStreaming(
         command: String,
+        history: [[String: String]] = [],
         onStatus: @escaping @MainActor (String) -> Void = { _ in },
         onDelta: @escaping @MainActor (String) -> Void
     ) async throws -> CommandResponse {
@@ -80,7 +81,7 @@ public struct JarvisClient: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = Self.commandTimeout
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["command": command], options: [])
+        request.httpBody = try Self.commandBody(command: command, history: history)
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -158,6 +159,14 @@ public struct JarvisClient: Sendable {
         request.timeoutInterval = Self.planTimeout
         request.httpBody = try JSONSerialization.data(withJSONObject: ["command": command], options: [])
         return try await perform(request, as: CommandResponse.self)
+    }
+
+    private static func commandBody(command: String, history: [[String: String]]) throws -> Data {
+        var payload: [String: Any] = ["command": command]
+        if !history.isEmpty {
+            payload["history"] = history
+        }
+        return try JSONSerialization.data(withJSONObject: payload, options: [])
     }
 
     public func health() async throws -> HealthResponse {

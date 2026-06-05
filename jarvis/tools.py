@@ -22,6 +22,7 @@ import ctypes
 import ctypes.util
 import html
 import uuid
+from datetime import datetime
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -2997,13 +2998,22 @@ def run_codex_chat(prompt: str, project_dir: str | None = None, model: str | Non
     }
 
 
-def run_fast_local_chat(prompt: str, project_dir: str | None = None, model: str | None = None) -> dict[str, Any]:
+def run_fast_local_chat(
+    prompt: str,
+    project_dir: str | None = None,
+    model: str | None = None,
+    *,
+    history: list[dict[str, str]] | None = None,
+    tool_specs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Answer casual conversation through a tiny local model with a hard timeout."""
     if FAST_MODEL_BACKEND == "groq":
-        primary = _run_groq_fast_chat(prompt, model=model)
+        primary = _run_groq_fast_chat(prompt, model=model, history=history, tool_specs=tool_specs)
         if _fast_chat_completed(primary):
             return primary
-        return _fast_chat_with_fallback(prompt, primary)
+        if primary.get("status") == "tool_requested":
+            return primary
+        return _fast_chat_with_fallback(prompt, primary, history=history, tool_specs=tool_specs)
 
     selected_model = (model or FAST_MODEL_NAME).strip() or FAST_MODEL_NAME
     started_at = time.monotonic()
@@ -3020,8 +3030,8 @@ def run_fast_local_chat(prompt: str, project_dir: str | None = None, model: str 
             **_duration_fields(started_at),
             "reply": _fast_model_unavailable_reply(prompt),
         }
-        return _fast_chat_with_fallback(prompt, primary)
-    return _run_ollama_fast_chat(prompt, model=model)
+        return _fast_chat_with_fallback(prompt, primary, history=history, tool_specs=tool_specs)
+    return _run_ollama_fast_chat(prompt, model=model, history=history, tool_specs=tool_specs)
 
 
 def select_tool_intent(prompt: str, tool_specs: list[dict[str, Any]], model: str | None = None) -> dict[str, Any]:
@@ -3155,7 +3165,13 @@ def _parse_intent_router_response(response_text: str, tool_ids: list[str]) -> di
     }
 
 
-def _run_ollama_fast_chat(prompt: str, model: str | None = None) -> dict[str, Any]:
+def _run_ollama_fast_chat(
+    prompt: str,
+    model: str | None = None,
+    *,
+    history: list[dict[str, str]] | None = None,
+    tool_specs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     selected_model = (model or FAST_MODEL_NAME).strip() or FAST_MODEL_NAME
     ollama_path = _find_executable("ollama")
     started_at = time.monotonic()
@@ -3191,7 +3207,7 @@ def _run_ollama_fast_chat(prompt: str, model: str | None = None) -> dict[str, An
 
     payload = {
         "model": selected_model,
-        "prompt": _fast_local_prompt(prompt),
+        "prompt": _fast_local_prompt(prompt, history=history, tool_specs=tool_specs),
         "stream": False,
         "think": False,
         "options": {
@@ -3260,6 +3276,20 @@ def _run_ollama_fast_chat(prompt: str, model: str | None = None) -> dict[str, An
     except json.JSONDecodeError:
         data = {}
     reply = _strip_think_blocks(str(data.get("response") or "")).strip()
+    tool_request = _parse_fast_chat_tool_request(reply, tool_specs or [])
+    if tool_request is not None:
+        return {
+            "tool": "conversation.fast_local",
+            "backend": "ollama",
+            "model": selected_model,
+            "available": True,
+            "status": "tool_requested",
+            "executed": True,
+            "fallback_used": False,
+            "timeout_seconds": FAST_MODEL_TIMEOUT_SECONDS,
+            **duration,
+            **tool_request,
+        }
     if not reply:
         return {
             "tool": "conversation.fast_local",
@@ -3292,7 +3322,13 @@ def _fast_chat_completed(result: dict[str, Any]) -> bool:
     return result.get("status") == "completed" and bool(str(result.get("reply") or "").strip())
 
 
-def _fast_chat_with_fallback(prompt: str, primary: dict[str, Any]) -> dict[str, Any]:
+def _fast_chat_with_fallback(
+    prompt: str,
+    primary: dict[str, Any],
+    *,
+    history: list[dict[str, str]] | None = None,
+    tool_specs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     if not FAST_MODEL_FALLBACK_ENABLED:
         return primary
     if FAST_MODEL_FALLBACK_BACKEND != "ollama":
@@ -3302,7 +3338,7 @@ def _fast_chat_with_fallback(prompt: str, primary: dict[str, Any]) -> dict[str, 
     if not _find_executable("ollama"):
         return primary
 
-    fallback = _run_ollama_fast_chat(prompt)
+    fallback = _run_ollama_fast_chat(prompt, history=history, tool_specs=tool_specs)
     primary_summary = {
         "backend": primary.get("backend"),
         "model": primary.get("model"),
@@ -3327,7 +3363,13 @@ def _fast_chat_with_fallback(prompt: str, primary: dict[str, Any]) -> dict[str, 
     return primary
 
 
-def _run_groq_fast_chat(prompt: str, model: str | None = None) -> dict[str, Any]:
+def _run_groq_fast_chat(
+    prompt: str,
+    model: str | None = None,
+    *,
+    history: list[dict[str, str]] | None = None,
+    tool_specs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     selected_model = (model or GROQ_FAST_MODEL).strip() or GROQ_FAST_MODEL
     started_at = time.monotonic()
     if not GROQ_API_KEY:
@@ -3346,13 +3388,7 @@ def _run_groq_fast_chat(prompt: str, model: str | None = None) -> dict[str, Any]
 
     payload = {
         "model": selected_model,
-        "messages": [
-            {
-                "role": "system",
-                "content": _fast_chat_system_prompt(),
-            },
-            {"role": "user", "content": prompt.strip()},
-        ],
+        "messages": _fast_chat_messages(prompt, history=history, tool_specs=tool_specs),
         "temperature": 0.4,
         "max_completion_tokens": FAST_MODEL_MAX_TOKENS,
         "stream": False,
@@ -3439,6 +3475,20 @@ def _run_groq_fast_chat(prompt: str, model: str | None = None) -> dict[str, Any]
         reply = str(data["choices"][0]["message"].get("content") or "").strip()
     except (KeyError, IndexError, TypeError, json.JSONDecodeError):
         reply = ""
+    tool_request = _parse_fast_chat_tool_request(reply, tool_specs or [])
+    if tool_request is not None:
+        return {
+            "tool": "conversation.fast_local",
+            "backend": "groq",
+            "model": selected_model,
+            "available": True,
+            "status": "tool_requested",
+            "executed": True,
+            "fallback_used": False,
+            "timeout_seconds": FAST_MODEL_TIMEOUT_SECONDS,
+            **duration,
+            **tool_request,
+        }
     if not reply:
         return {
             "tool": "conversation.fast_local",
@@ -3466,10 +3516,19 @@ def _run_groq_fast_chat(prompt: str, model: str | None = None) -> dict[str, Any]
     }
 
 
-def stream_fast_local_chat_events(prompt: str, model: str | None = None):
+def stream_fast_local_chat_events(
+    prompt: str,
+    model: str | None = None,
+    *,
+    history: list[dict[str, str]] | None = None,
+    tool_specs: list[dict[str, Any]] | None = None,
+):
     """Yield SSE-friendly fast-chat events. Falls back to one final event when streaming is unavailable."""
     if FAST_MODEL_BACKEND != "groq":
-        yield {"event": "final_result", "data": run_fast_local_chat(prompt, model=model)}
+        yield {
+            "event": "final_result",
+            "data": run_fast_local_chat(prompt, model=model, history=history, tool_specs=tool_specs),
+        }
         return
 
     selected_model = (model or GROQ_FAST_MODEL).strip() or GROQ_FAST_MODEL
@@ -3487,15 +3546,12 @@ def stream_fast_local_chat_events(prompt: str, model: str | None = None):
             **_duration_fields(started_at),
             "reply": "Groq fast chat is selected, but GROQ_API_KEY is not configured.",
         }
-        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result)}
+        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result, history=history, tool_specs=tool_specs)}
         return
 
     payload = {
         "model": selected_model,
-        "messages": [
-            {"role": "system", "content": _fast_chat_system_prompt()},
-            {"role": "user", "content": prompt.strip()},
-        ],
+        "messages": _fast_chat_messages(prompt, history=history, tool_specs=tool_specs),
         "temperature": 0.4,
         "max_completion_tokens": FAST_MODEL_MAX_TOKENS,
         "stream": True,
@@ -3522,6 +3578,8 @@ def stream_fast_local_chat_events(prompt: str, model: str | None = None):
     }
 
     chunks: list[str] = []
+    withheld = ""
+    flushing_direct_reply = False
     first_visible_token_at: float | None = None
     try:
         with urllib.request.urlopen(request, timeout=FAST_MODEL_TIMEOUT_SECONDS, context=_https_context()) as response:
@@ -3540,9 +3598,20 @@ def stream_fast_local_chat_events(prompt: str, model: str | None = None):
                 content = str(delta.get("content") or "")
                 if not content:
                     continue
+                chunks.append(content)
+                if tool_specs and not flushing_direct_reply:
+                    withheld += content
+                    if _may_still_be_fast_chat_tool_request(withheld):
+                        continue
+                    flushing_direct_reply = True
+                    if first_visible_token_at is None:
+                        first_visible_token_at = time.monotonic()
+                    if withheld:
+                        yield {"event": "delta", "data": {"text": withheld}}
+                    withheld = ""
+                    continue
                 if first_visible_token_at is None:
                     first_visible_token_at = time.monotonic()
-                chunks.append(content)
                 yield {"event": "delta", "data": {"text": content}}
     except TimeoutError:
         duration = _duration_fields(started_at)
@@ -3558,7 +3627,7 @@ def stream_fast_local_chat_events(prompt: str, model: str | None = None):
             **duration,
             "reply": _fast_model_timeout_reply(selected_model, duration["duration_human"]),
         }
-        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result)}
+        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result, history=history, tool_specs=tool_specs)}
         return
     except urllib.error.HTTPError as error:
         body = _text_tail(error.read(), 1200)
@@ -3577,7 +3646,7 @@ def stream_fast_local_chat_events(prompt: str, model: str | None = None):
             **duration,
             "reply": "Groq fast chat returned an HTTP error.",
         }
-        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result)}
+        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result, history=history, tool_specs=tool_specs)}
         return
     except (urllib.error.URLError, OSError) as error:
         duration = _duration_fields(started_at)
@@ -3595,11 +3664,27 @@ def stream_fast_local_chat_events(prompt: str, model: str | None = None):
             **duration,
             "reply": "Groq fast chat could not be reached.",
         }
-        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result)}
+        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result, history=history, tool_specs=tool_specs)}
         return
 
     duration = _duration_fields(started_at)
     reply = "".join(chunks).strip()
+    tool_request = _parse_fast_chat_tool_request(reply, tool_specs or [])
+    if tool_request is not None:
+        result = {
+            "tool": "conversation.fast_local",
+            "backend": "groq",
+            "model": selected_model,
+            "available": True,
+            "status": "tool_requested",
+            "executed": True,
+            "fallback_used": False,
+            "timeout_seconds": FAST_MODEL_TIMEOUT_SECONDS,
+            **duration,
+            **tool_request,
+        }
+        yield {"event": "final_result", "data": result}
+        return
     if not reply:
         result = {
             "tool": "conversation.fast_local",
@@ -3613,7 +3698,7 @@ def stream_fast_local_chat_events(prompt: str, model: str | None = None):
             **duration,
             "reply": "Groq fast chat returned an empty answer.",
         }
-        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result)}
+        yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result, history=history, tool_specs=tool_specs)}
         return
 
     result = {
@@ -3633,18 +3718,119 @@ def stream_fast_local_chat_events(prompt: str, model: str | None = None):
     yield {"event": "final_result", "data": result}
 
 
-def _fast_chat_system_prompt() -> str:
-    return (
+def _fast_chat_system_prompt(tool_specs: list[dict[str, Any]] | None = None) -> str:
+    prompt = (
         "You are Jarvis, Leo's local Mac assistant prototype. "
         "Leo is the user's real name for profile context, but do not address him as Leo, Sir, or by any title unless he explicitly asks. "
+        f"Current local date/time: {_current_local_datetime_label()}. "
         "Answer directly and briefly unless he asks for more. "
         "Follow Leo's requested output format, including exact text or bullet counts. "
         "Be useful and natural. Do not claim you performed computer actions. "
         "Do not invent schedule, email, weather, app, file, or system facts. "
+        "Use the conversation history to resolve follow-ups, pronouns, and answers to earlier questions. "
         "For a simple greeting, only say hello and ask what he wants done. "
         "For jokes, give one short joke directly without unrelated follow-up text. "
         "Do not mention that you are a language model. Do not use emojis."
     )
+    if tool_specs:
+        prompt += (
+            "\n\nIf and only if the user needs Jarvis to use a real tool, do not answer normally. "
+            "Instead output exactly one line beginning with \\tool followed by compact JSON. "
+            "The JSON shape is {\"tool\":\"tool.id\",\"status\":\"natural short status for Leo\",\"entities\":{}}. "
+            "The status must sound natural, for example \"Sure. I'll check your email.\" Do not use the word skill. "
+            "If no real tool is needed, answer directly and do not mention tools.\n"
+            "Available tools:\n"
+            f"{_fast_chat_tool_catalog(tool_specs)}"
+        )
+    return prompt
+
+
+def _fast_chat_messages(
+    prompt: str,
+    *,
+    history: list[dict[str, str]] | None = None,
+    tool_specs: list[dict[str, Any]] | None = None,
+) -> list[dict[str, str]]:
+    messages = [{"role": "system", "content": _fast_chat_system_prompt(tool_specs)}]
+    messages.extend(_fast_chat_history_messages(history or [], current_prompt=prompt))
+    messages.append({"role": "user", "content": prompt.strip()[:1200]})
+    return messages
+
+
+def _fast_chat_history_messages(history: list[dict[str, str]], *, current_prompt: str) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = []
+    current_clean = re.sub(r"\s+", " ", current_prompt.strip())
+    for item in history[-12:]:
+        role = str(item.get("role") or "").strip().lower()
+        text = re.sub(r"\s+", " ", str(item.get("text") or "")).strip()
+        if not text:
+            continue
+        if role == "jarvis":
+            role = "assistant"
+        if role not in {"user", "assistant", "system"}:
+            continue
+        if role == "user" and re.sub(r"\s+", " ", text) == current_clean:
+            continue
+        messages.append({"role": role, "content": text[:900]})
+    return messages
+
+
+def _fast_chat_tool_catalog(tool_specs: list[dict[str, Any]]) -> str:
+    lines = []
+    for spec in tool_specs:
+        tool_id = _clean_local_field(spec.get("tool"))
+        if tool_id == "conversation.fast_local":
+            continue
+        description = _clean_local_field(spec.get("description"))
+        entities = ", ".join(str(entity) for entity in spec.get("entities", []) if entity)
+        lines.append(f"- {tool_id}: {description} Entities: {entities or 'none'}")
+    return "\n".join(lines)
+
+
+def _parse_fast_chat_tool_request(text: str, tool_specs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not tool_specs:
+        return None
+    stripped = _strip_think_blocks(text).strip()
+    if not stripped.startswith("\\tool"):
+        return None
+    raw = stripped[len("\\tool") :].strip()
+    match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    tool_ids = {str(spec.get("tool") or "") for spec in tool_specs if spec.get("tool")}
+    selected_tool = str(parsed.get("tool") or parsed.get("selected_tool") or "").strip()
+    if selected_tool not in tool_ids or selected_tool == "conversation.fast_local":
+        return None
+    entities = parsed.get("entities")
+    if not isinstance(entities, dict):
+        entities = {}
+    status_text = re.sub(r"\s+", " ", str(parsed.get("status") or "")).strip()
+    if not status_text:
+        status_text = f"Sure. I'll check {selected_tool}."
+    return {
+        "selected_tool": selected_tool,
+        "status_text": status_text[:160],
+        "entities": {str(key): value for key, value in entities.items()},
+        "reply": "",
+    }
+
+
+def _may_still_be_fast_chat_tool_request(text: str) -> bool:
+    stripped = text.lstrip()
+    if not stripped:
+        return True
+    marker = "\\tool"
+    if marker.startswith(stripped):
+        return True
+    return stripped.startswith(marker) and "\n" not in stripped and len(stripped) < 900
+
+
+def _current_local_datetime_label() -> str:
+    return datetime.now().astimezone().strftime("%A, %B %-d, %Y at %-I:%M %p %Z")
 
 
 def _https_context() -> ssl.SSLContext:
@@ -4798,19 +4984,23 @@ Leo says:
 {cleaned}"""
 
 
-def _fast_local_prompt(prompt: str) -> str:
-    cleaned = prompt.strip()
-    return f"""You are Jarvis, Leo's local Mac assistant prototype.
-Leo is the user's real name for profile context, but do not address him as Leo, Sir, or by any title unless he explicitly asks.
-Answer directly and briefly unless he asks for more.
-Follow Leo's requested output format, including exact text or bullet counts.
-Be useful and natural. Do not claim you performed computer actions.
-Do not invent schedule, email, weather, app, file, or system facts.
-For a simple greeting, only say hello and ask what he wants done.
-Do not mention that you are a language model. Do not use emojis.
-
-Leo says:
-{cleaned}"""
+def _fast_local_prompt(
+    prompt: str,
+    *,
+    history: list[dict[str, str]] | None = None,
+    tool_specs: list[dict[str, Any]] | None = None,
+) -> str:
+    lines = [_fast_chat_system_prompt(tool_specs), ""]
+    history_messages = _fast_chat_history_messages(history or [], current_prompt=prompt)
+    if history_messages:
+        lines.append("Recent conversation:")
+        for item in history_messages:
+            label = "Jarvis" if item["role"] == "assistant" else item["role"].title()
+            lines.append(f"{label}: {item['content']}")
+        lines.append("")
+    lines.append("Leo says:")
+    lines.append(prompt.strip()[:1200])
+    return "\n".join(lines)
 
 
 def _rough_understanding(prompt: str) -> str:
