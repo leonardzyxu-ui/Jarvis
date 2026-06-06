@@ -737,11 +737,14 @@ class PlannerTests(unittest.TestCase):
         result = memory_status()
 
         self.assertEqual(result["tool"], "diagnostics.memory")
+        self.assertEqual(result["status"], "partial")
         self.assertFalse(result["read_private_content"])
         self.assertFalse(result["synced_remote"])
         self.assertFalse(result["read_chat_history"])
         self.assertIn("daily local summaries", result["reply"])
         self.assertIn("MEMORY.md", result["design"]["profile_memory_file"])
+        self.assertIn("codex_daily_memory", result)
+        self.assertTrue(result["codex_daily_memory"]["session_ids_hidden"])
 
     def test_tts_status_does_not_play_audio(self):
         voices = "Alex en_US # sample voice\nSamantha en_US # sample voice\n"
@@ -1454,6 +1457,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(status["codex_jobs"]["latest_status"], "completed")
 
     def test_codex_job_summaries_persist_across_worker_restart(self):
+        session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
         with tempfile.TemporaryDirectory() as temp_dir:
             store = Path(temp_dir) / "codex_jobs.json"
             try:
@@ -1472,6 +1476,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
                             "duration_seconds": 2.0,
                             "duration_human": "2.0s",
                             "reply": "Persisted answer.",
+                            "codex_session_id": session_id,
+                            "resume_session_id": session_id,
                             "planned_command": ["do", "not", "persist"],
                         }
                         jarvis_tools._persist_codex_jobs_unlocked()
@@ -1486,7 +1492,10 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["reply"], "Persisted answer.")
+        self.assertTrue(result["session_ids_hidden"])
+        self.assertTrue(result["job"]["has_resumable_session"])
         self.assertNotIn("planned_command", result["job"])
+        self.assertNotIn(session_id, json.dumps(result, ensure_ascii=False))
 
     def test_codex_activity_snapshot_reports_redacted_tails(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2986,7 +2995,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "running")
         self.assertEqual(result["codex_chat_name"], "Default")
-        self.assertEqual(result["resume_session_id"], session_id)
+        self.assertTrue(result["has_resumable_session"])
+        self.assertTrue(result["session_ids_hidden"])
+        self.assertNotIn(session_id, json.dumps(result, ensure_ascii=False))
         self.assertTrue(result["jarvis_generated_prompt"])
         self.assertIn("Default Codex chat", result["reply"])
         thread_mock.assert_called_once()
@@ -3047,7 +3058,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     jarvis_tools.CODEX_JOBS_LOADED = False
 
         self.assertEqual(result["codex_chat_name"], "Music")
-        self.assertEqual(result["resume_session_id"], music_session)
+        self.assertTrue(result["has_resumable_session"])
+        self.assertTrue(result["session_ids_hidden"])
+        self.assertNotIn(music_session, json.dumps(result, ensure_ascii=False))
         self.assertIn("matched the request", result["codex_chat_selection_reason"])
         delegated_prompt = thread_mock.call_args.args[1]
         self.assertIn("Name: Music", delegated_prompt)
@@ -3078,6 +3091,52 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertNotEqual(loaded["date"], yesterday)
         self.assertEqual(loaded["events"], [])
         self.assertIn("yesterday work", loaded["previous_day_summary"])
+
+    def test_codex_daily_memory_snapshot_deduplicates_and_hides_session_ids(self):
+        session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            memory = Path(temp_dir) / "codex_daily_memory.json"
+            memory.write_text(
+                json.dumps(
+                    {
+                        "schema": "jarvis.codex_daily_memory.v1",
+                        "date": time.strftime("%Y-%m-%d"),
+                        "events": [
+                            {
+                                "kind": "codex_job_started",
+                                "chat_name": "Default",
+                                "prompt_summary": "checked Codex routing",
+                                "detail": f"session {session_id}",
+                            },
+                            {
+                                "kind": "codex_job_started",
+                                "chat_name": "Default",
+                                "prompt_summary": "checked Codex routing",
+                                "detail": f"session {session_id}",
+                            },
+                            {
+                                "kind": "codex_job_started",
+                                "chat_name": "Music",
+                                "prompt_summary": "prepared rubric poster",
+                                "detail": "specialized route",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.CODEX_DAILY_MEMORY_PATH", memory):
+                snapshot = jarvis_tools._codex_daily_memory_snapshot(latest_limit=5)
+                memory_text = jarvis_tools._codex_daily_memory_text()
+
+        serialized = json.dumps(snapshot, ensure_ascii=False)
+        self.assertEqual(snapshot["event_count"], 3)
+        self.assertEqual(snapshot["chat_counts"], {"Default": 2, "Music": 1})
+        self.assertIn("checked Codex routing (2 times)", snapshot["compiled_summary"])
+        self.assertEqual(snapshot["recent_work"][-1]["count"], 2)
+        self.assertIn("checked Codex routing (2 times)", memory_text)
+        self.assertNotIn(session_id, serialized)
+        self.assertNotIn(session_id, memory_text)
 
     def test_codex_chat_status_hides_session_ids_and_reports_memory(self):
         session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -3194,7 +3253,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "running")
         self.assertEqual(result["continuation_of"], "codex-original")
-        self.assertEqual(result["resume_session_id"], session_id)
+        self.assertTrue(result["has_resumable_session"])
+        self.assertTrue(result["session_ids_hidden"])
+        self.assertNotIn(session_id, json.dumps(result, ensure_ascii=False))
         thread_mock.assert_called_once()
         self.assertEqual(thread_mock.call_args.kwargs["resume_session_id"], session_id)
         self.assertTrue(thread_mock.call_args.kwargs["sensitive_stdin"])

@@ -986,6 +986,17 @@ final class JarvisShellModel: ObservableObject {
         }
 
         if response.tool == "outlook.visible_summary" {
+            if let object = response.result?.objectValue {
+                if let emailSummary = object["email_summary"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !emailSummary.isEmpty {
+                    return emailSummary
+                }
+                if let reply = object["reply"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !reply.isEmpty,
+                   object["source"]?.stringValue?.contains("ocr") != true {
+                    return reply
+                }
+            }
             return outlookReply(from: response.result)
         }
 

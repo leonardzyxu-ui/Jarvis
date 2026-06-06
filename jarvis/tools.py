@@ -347,7 +347,7 @@ def tool_registry() -> dict[str, Any]:
                 "mode": "execute",
                 "risk": "read_only_no_chat_export",
                 "available": True,
-                "description": "Explains the proposed Jarvis memory system without reading or syncing chat history.",
+                "description": "Reports active Jarvis-Codex daily memory plus the broader planned memory system without reading or syncing chat history.",
             },
             {
                 "id": "diagnostics.source_access",
@@ -2094,34 +2094,40 @@ def memory_status() -> dict[str, Any]:
     """Describe the proposed Jarvis memory system without reading chat history."""
     memory_root = RUNTIME_DIR / "memory"
     daily_summary_dir = memory_root / "daily_summaries"
+    codex_memory = _codex_daily_memory_snapshot(latest_limit=5)
     design = {
         "local_daily_summaries": str(daily_summary_dir),
         "profile_memory_file": str(memory_root / "MEMORY.md"),
+        "codex_daily_memory_file": str(CODEX_DAILY_MEMORY_PATH),
         "remote_target": REMOTE_WORKER_SSH_TARGET,
         "sync_unit": "summaries_first_not_raw_chat_by_default",
         "default_retention": "daily summaries retained, raw debug exports opt-in and deletable",
     }
     phases = [
+        "Keep active Jarvis-to-Codex daily memory local and compact so Codex gets useful same-day context.",
         "Add local daily summary export from Jarvis chat history with private-content redaction options.",
         "Let Leo review or delete a daily summary before any remote sync.",
         "Sync approved summaries to the MacBook Air over Tailscale SSH.",
         "Run a remote summarizer that updates a growing MEMORY.md-style profile plus dated evidence summaries.",
         "Use the profile as retrieval context for Jarvis responses, with a visible memory status/delete flow.",
     ]
+    event_count = int(codex_memory.get("event_count") or 0)
     reply = (
-        "Memory status: feasible, but not enabled yet. The safe design is daily local summaries first, "
-        "optional approved sync to the MacBook Air, then a remote summarizer maintaining a MEMORY.md-style profile. "
+        f"Memory status: Jarvis-Codex daily memory is active locally with {event_count} event"
+        f"{'s' if event_count != 1 else ''} today. Broader daily local summaries for Jarvis chat history, "
+        "optional approved sync to the MacBook Air, and the long-term MEMORY.md-style profile are still planned. "
         "I did not read or sync chat history in this diagnostic."
     )
     return {
         "tool": "diagnostics.memory",
         "executed": True,
-        "status": "planned",
+        "status": "partial",
         "read_private_content": False,
         "synced_remote": False,
         "read_chat_history": False,
         "design": design,
         "phases": phases,
+        "codex_daily_memory": codex_memory,
         "reply": reply,
     }
 
@@ -4577,9 +4583,11 @@ def start_codex_delegate_job(prompt: str, project_dir: str | None = None, model:
         sensitive_stdin=False,
     )
     return {
-        **job,
+        **_codex_activity_job(job),
+        "tool": "codex.job",
         "available": True,
         "executed": True,
+        "session_ids_hidden": bool(selected_session_id),
         "reply": _codex_job_started_reply(job_id, selected_chat if selected_session_id else None),
     }
 
@@ -4671,9 +4679,11 @@ def start_codex_continue_job(
     )
     _start_codex_job_thread(job_id, codex_prompt, project_dir, selected_model, resume_session_id=resume_session_id, sensitive_stdin=True)
     return {
-        **job,
+        **_codex_activity_job(job),
+        "tool": "codex.job",
         "available": True,
         "executed": True,
+        "session_ids_hidden": True,
         "reply": f"I sent that to the same Codex chat as job {parent_job_id}. Ask `codex job {job_id}` for the result.",
     }
 
@@ -4699,7 +4709,8 @@ def codex_job_status(job_id: str | None = None) -> dict[str, Any]:
             "tool": "codex.job",
             "status": job.get("status", "unknown"),
             "executed": False,
-            "job": job,
+            "session_ids_hidden": bool(job.get("codex_session_id") or job.get("resume_session_id")),
+            "job": _codex_activity_job(job),
             "reply": _codex_job_reply(job),
         }
 
@@ -4769,7 +4780,7 @@ def codex_speed_status() -> dict[str, Any]:
 
 def codex_chat_status() -> dict[str, Any]:
     registry = _load_codex_chat_registry()
-    memory = _load_codex_daily_memory()
+    codex_memory = _codex_daily_memory_snapshot(latest_limit=5)
     chats = registry.get("chats") if isinstance(registry.get("chats"), list) else []
     safe_chats = [
         {
@@ -4781,25 +4792,15 @@ def codex_chat_status() -> dict[str, Any]:
         }
         for chat in chats
     ]
-    events = memory.get("events") if isinstance(memory.get("events"), list) else []
-    latest_events = [
-        {
-            "chat_name": _codex_activity_tail(event.get("chat_name"), 120),
-            "kind": str(event.get("kind") or ""),
-            "prompt_summary": _codex_activity_tail(event.get("prompt_summary"), 260),
-            "detail": _codex_activity_tail(event.get("detail"), 260),
-        }
-        for event in events[-5:]
-        if isinstance(event, dict)
-    ]
     default_chat = str(registry.get("default_chat") or "Default")
     configured_default = next((chat for chat in safe_chats if chat["name"].lower() == default_chat.lower()), None)
     default_text = configured_default["name"] if configured_default else "not configured"
+    event_count = int(codex_memory.get("event_count") or 0)
     if safe_chats:
         reply = (
             f"Codex chat status: {len(safe_chats)} chat{'s' if len(safe_chats) != 1 else ''} configured; "
-            f"default is {default_text}; today's Jarvis-Codex memory has {len(events)} event"
-            f"{'s' if len(events) != 1 else ''}. Session IDs are configured but hidden."
+            f"default is {default_text}; today's Jarvis-Codex memory has {event_count} event"
+            f"{'s' if event_count != 1 else ''}. Session IDs are configured but hidden."
         )
     else:
         reply = "Codex chat status: no named Codex chats are configured yet, so Jarvis will start normal Codex jobs."
@@ -4816,14 +4817,7 @@ def codex_chat_status() -> dict[str, Any]:
         "selector": registry.get("selector"),
         "future_selector": "GPT OSS can choose among configured chats once more than one meaningful chat exists.",
         "chats": safe_chats,
-        "daily_memory": {
-            "path": str(CODEX_DAILY_MEMORY_PATH),
-            "date": memory.get("date"),
-            "event_count": len(events),
-            "compiled_summary": _codex_activity_tail(memory.get("compiled_summary"), 800),
-            "previous_day_summary": _codex_activity_tail(memory.get("previous_day_summary"), 800),
-            "latest_events": latest_events,
-        },
+        "daily_memory": codex_memory,
         "reply": reply,
     }
 
@@ -5081,20 +5075,124 @@ def _codex_operator_context() -> str:
 
 
 def _codex_daily_memory_text() -> str:
+    snapshot = _codex_daily_memory_snapshot(latest_limit=6)
+    if not snapshot.get("event_count"):
+        return "- No Jarvis-to-Codex events have been recorded yet today."
+    lines = [f"- Chats used today: {snapshot.get('chat_counts_text') or 'unknown'}."]
+    previous = str(snapshot.get("previous_day_summary") or "").strip()
+    if previous:
+        lines.append(f"- Previous day summary: {previous}")
+    recent_work = snapshot.get("recent_work") if isinstance(snapshot.get("recent_work"), list) else []
+    if recent_work:
+        lines.append("- Recent Jarvis-to-Codex work:")
+    for item in recent_work:
+        if not isinstance(item, dict):
+            continue
+        count = int(item.get("count") or 1)
+        repeat = f" ({count} times)" if count > 1 else ""
+        lines.append(
+            f"  - {item.get('chat_name') or 'unknown chat'}: "
+            f"{item.get('prompt_summary') or 'unspecified request'}{repeat}"
+        )
+    return "\n".join(lines)
+
+
+def _codex_daily_memory_snapshot(*, latest_limit: int = 5) -> dict[str, Any]:
     memory = _load_codex_daily_memory()
     events = memory.get("events") if isinstance(memory.get("events"), list) else []
-    if not events:
-        return "- No Jarvis-to-Codex events have been recorded yet today."
-    lines = []
-    for event in events[-8:]:
+    safe_events = [_codex_memory_event_view(event) for event in events if isinstance(event, dict)]
+    chat_counts = _codex_memory_chat_counts(safe_events)
+    chat_counts_text = _codex_memory_chat_counts_text(chat_counts)
+    recent_work = _codex_compact_memory_items(safe_events, limit=latest_limit)
+    compiled_summary = _compile_codex_memory_summary({"events": safe_events})
+    return {
+        "path": str(CODEX_DAILY_MEMORY_PATH),
+        "date": memory.get("date"),
+        "refreshed_at": memory.get("refreshed_at"),
+        "updated_at": memory.get("updated_at"),
+        "event_count": len(safe_events),
+        "chat_counts": chat_counts,
+        "chat_counts_text": chat_counts_text,
+        "compiled_summary": _codex_activity_tail(compiled_summary, 800),
+        "previous_day_summary": _codex_activity_tail(memory.get("previous_day_summary"), 800),
+        "recent_work": recent_work,
+        "latest_events": safe_events[-latest_limit:],
+        "session_ids_hidden": True,
+    }
+
+
+def _codex_memory_event_view(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "timestamp": event.get("timestamp"),
+        "kind": str(event.get("kind") or ""),
+        "chat_name": _codex_activity_tail(event.get("chat_name") or "unknown chat", 120),
+        "prompt_summary": _codex_activity_tail(event.get("prompt_summary") or "unspecified request", 260),
+        "detail": _codex_activity_tail(event.get("detail") or "", 260),
+    }
+
+
+def _codex_memory_chat_counts(events: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for event in events:
         chat = str(event.get("chat_name") or "unknown chat")
-        summary = str(event.get("prompt_summary") or "unspecified request")
+        counts[chat] = counts.get(chat, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _codex_memory_chat_counts_text(chat_counts: dict[str, int]) -> str:
+    return ", ".join(f"{name} {count}" for name, count in chat_counts.items())
+
+
+def _codex_compact_memory_items(events: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
+    keyed_counts: dict[tuple[str, str, str], int] = {}
+    keyed_event: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for event in events:
+        chat = str(event.get("chat_name") or "unknown chat")
+        summary = str(event.get("prompt_summary") or "").strip()
         detail = str(event.get("detail") or "").strip()
-        if detail:
-            lines.append(f"- {chat}: {summary} ({detail})")
-        else:
-            lines.append(f"- {chat}: {summary}")
-    return "\n".join(lines)
+        if not summary:
+            continue
+        key = (
+            _normalize_codex_memory_key(chat),
+            _normalize_codex_memory_key(summary),
+            _normalize_codex_memory_key(detail),
+        )
+        keyed_counts[key] = keyed_counts.get(key, 0) + 1
+        keyed_event[key] = event
+
+    latest_unique: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for event in reversed(events):
+        chat = str(event.get("chat_name") or "unknown chat")
+        summary = str(event.get("prompt_summary") or "").strip()
+        detail = str(event.get("detail") or "").strip()
+        if not summary:
+            continue
+        key = (
+            _normalize_codex_memory_key(chat),
+            _normalize_codex_memory_key(summary),
+            _normalize_codex_memory_key(detail),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        representative = keyed_event.get(key, event)
+        latest_unique.append(
+            {
+                "chat_name": str(representative.get("chat_name") or chat),
+                "prompt_summary": str(representative.get("prompt_summary") or summary),
+                "detail": str(representative.get("detail") or detail),
+                "count": keyed_counts.get(key, 1),
+                "latest_timestamp": representative.get("timestamp"),
+            }
+        )
+        if len(latest_unique) >= max(1, limit):
+            break
+    return latest_unique
+
+
+def _normalize_codex_memory_key(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip().casefold()
 
 
 def _load_codex_daily_memory() -> dict[str, Any]:
@@ -5150,16 +5248,13 @@ def _compile_codex_memory_summary(memory: dict[str, Any]) -> str:
     events = memory.get("events") if isinstance(memory.get("events"), list) else []
     if not events:
         return ""
-    by_chat: dict[str, int] = {}
+    safe_events = [_codex_memory_event_view(event) for event in events if isinstance(event, dict)]
+    chat_counts = _codex_memory_chat_counts_text(_codex_memory_chat_counts(safe_events))
     latest: list[str] = []
-    for event in events:
-        chat = str(event.get("chat_name") or "unknown chat")
-        by_chat[chat] = by_chat.get(chat, 0) + 1
-        summary = str(event.get("prompt_summary") or "").strip()
-        if summary:
-            latest.append(f"{chat}: {summary}")
-    chat_counts = ", ".join(f"{name} {count}" for name, count in sorted(by_chat.items()))
-    recent = "; ".join(latest[-5:])
+    for item in _codex_compact_memory_items(safe_events, limit=5):
+        repeat = f" ({item['count']} times)" if int(item.get("count") or 1) > 1 else ""
+        latest.append(f"{item['chat_name']}: {item['prompt_summary']}{repeat}")
+    recent = "; ".join(latest)
     return f"Today Jarvis used Codex chats: {chat_counts}. Recent work: {recent}."
 
 
@@ -5415,6 +5510,7 @@ def _codex_activity_job(job: dict[str, Any]) -> dict[str, Any]:
         "has_resumable_session": bool(job.get("codex_session_id")),
         "codex_chat_name": str(job.get("codex_chat_name") or ""),
         "codex_chat_purpose": _codex_activity_tail(job.get("codex_chat_purpose"), 500),
+        "codex_chat_selection_reason": _codex_activity_tail(job.get("codex_chat_selection_reason"), 500),
         "jarvis_generated_prompt": bool(job.get("jarvis_generated_prompt")),
         "cli_tail": cli_tail,
         "stdout_tail": stdout_tail,
@@ -5475,6 +5571,7 @@ def _codex_resume_command(plan: dict[str, Any], output_path: Path, session_id: s
 
 def _codex_activity_tail(value: Any, max_chars: int = CODEX_ACTIVITY_TAIL_CHARS) -> str:
     text = _redact_codex_sensitive_text(str(value or ""))
+    text = CODEX_SESSION_ID_RE.sub("[SESSION_ID_HIDDEN]", text)
     return _text_tail(redact_sensitive_text(text), max_chars).strip()
 
 
@@ -5644,7 +5741,7 @@ def _codex_job_reply(job: dict[str, Any]) -> str:
         return f"Codex job {job_id} was interrupted because the worker restarted before it finished."
     reply = str(job.get("reply") or "").strip()
     if reply:
-        return reply
+        return _codex_activity_tail(reply, 4000)
     return f"Codex job {job_id} finished with status {status}."
 
 
