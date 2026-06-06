@@ -25,6 +25,7 @@ from .tools import (
     email_backend_status,
     elevation_status,
     fast_model_status,
+    final_qa_plan_status,
     find_files,
     launch_status,
     latest_latency_status,
@@ -87,6 +88,11 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     {
         "tool": "diagnostics.overnight",
         "description": "Report the overnight workboard, morning report draft, and deferred QA paths without opening apps or browsers.",
+        "entities": [],
+    },
+    {
+        "tool": "diagnostics.final_qa",
+        "description": "Report the remaining final/foreground QA plan without opening apps, launching Jarvis, capturing the screen, recording audio, or running the verifier.",
         "entities": [],
     },
     {
@@ -315,6 +321,8 @@ class Planner:
             return self._result(text, "diagnostics.codex_speed", "Read local Codex speed status.", assessment, codex_speed_status(), True)
         if _looks_like_overnight_work_status(lower):
             return self._result(text, "diagnostics.overnight", "Read overnight workboard status.", assessment, overnight_work_status(), True)
+        if _looks_like_final_qa_status(lower):
+            return self._result(text, "diagnostics.final_qa", "Read deferred final QA plan.", assessment, final_qa_plan_status(), True)
         app_quit_name = _extract_app_quit_name(text)
         if app_quit_name is not None:
             return self._app_quit_confirmation_result(text, assessment, app_quit_name)
@@ -489,6 +497,8 @@ class Planner:
             return self._preview_result(text, "policy.block", assessment, False)
         if _looks_like_overnight_work_status(lower):
             return self._preview_result(text, "diagnostics.overnight", assessment, True)
+        if _looks_like_final_qa_status(lower):
+            return self._preview_result(text, "diagnostics.final_qa", assessment, True)
         app_quit_name = _extract_app_quit_name(text)
         if app_quit_name is not None:
             return self._app_quit_confirmation_result(text, assessment, app_quit_name)
@@ -652,6 +662,10 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "diagnostics.overnight", assessment, True, plan={"intent": intent})
             return self._result(text, "diagnostics.overnight", "Read overnight workboard status.", assessment, overnight_work_status(), True)
+        if selected_tool == "diagnostics.final_qa":
+            if not execute:
+                return self._preview_result(text, "diagnostics.final_qa", assessment, True, plan={"intent": intent})
+            return self._result(text, "diagnostics.final_qa", "Read deferred final QA plan.", assessment, final_qa_plan_status(), True)
         if selected_tool == "diagnostics.model_context":
             sample = _clean_optional_entity(entities.get("sample_prompt")) or _extract_model_context_sample(text)
             if not execute:
@@ -994,6 +1008,13 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
         }
     if recommended == "diagnostics.permissions":
         preview = permissions_status()
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended == "diagnostics.final_qa":
+        preview = final_qa_plan_status()
         return {
             "recommended_tool": recommended,
             "executed": False,
@@ -1616,6 +1637,27 @@ def _looks_like_overnight_work_status(lower: str) -> bool:
     mutation_cues = ("open ", "launch ", "start ", "edit ", "write ", "delete ", "move ", "sync ", "send ")
     return (
         any(cue in lower for cue in overnight_cues)
+        and any(cue in lower for cue in status_cues)
+        and not any(cue in lower for cue in mutation_cues)
+    )
+
+
+def _looks_like_final_qa_status(lower: str) -> bool:
+    qa_cues = (
+        "final qa",
+        "foreground qa",
+        "qa plan",
+        "final verifier",
+        "what is left to check",
+        "what's left to check",
+        "remaining checks",
+        "deferred qa",
+        "app relaunch qa",
+    )
+    status_cues = ("status", "plan", "check", "show", "what", "remaining", "left", "deferred", "report")
+    mutation_cues = ("run ", "open ", "launch ", "start ", "click ", "record ", "capture ", "verify now")
+    return (
+        any(cue in lower for cue in qa_cues)
         and any(cue in lower for cue in status_cues)
         and not any(cue in lower for cue in mutation_cues)
     )

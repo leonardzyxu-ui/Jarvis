@@ -87,6 +87,7 @@ def run_self_checks() -> dict[str, Any]:
     add("planner_model_context_routes", planner.handle("model inputs for hello Jarvis").tool == "diagnostics.model_context")
     add("planner_tool_catalog_routes", planner.handle("tool catalog status").tool == "diagnostics.tool_catalog")
     add("planner_permissions_routes", planner.handle("permissions status").tool == "diagnostics.permissions")
+    add("planner_final_qa_routes", planner.handle("final QA plan").tool == "diagnostics.final_qa")
     open_app_preview = planner.preview("open app Safari").to_dict()
     add(
         "planner_open_app_routes",
@@ -157,6 +158,7 @@ def run_self_checks() -> dict[str, Any]:
         "app.quit",
         "screen.ocr",
         "diagnostics.overnight",
+        "diagnostics.final_qa",
         "diagnostics.model_context",
         "diagnostics.tool_catalog",
         "diagnostics.permissions",

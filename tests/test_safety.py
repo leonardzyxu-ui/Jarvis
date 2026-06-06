@@ -65,6 +65,7 @@ from jarvis.tools import (
     email_backend_status,
     elevation_status,
     fast_model_status,
+    final_qa_plan_status,
     find_files,
     latest_latency_status,
     launch_status,
@@ -340,6 +341,8 @@ class PlannerTests(unittest.TestCase):
             "score stt transcript: hello Jarvis => hello Jarvis": "voice.stt_score",
             "overnight status": "diagnostics.overnight",
             "morning report draft status": "diagnostics.overnight",
+            "final QA plan": "diagnostics.final_qa",
+            "what is left to check": "diagnostics.final_qa",
             "email backend status": "diagnostics.email",
             "capabilities status": "diagnostics.capabilities",
             "what can you do right now": "diagnostics.capabilities",
@@ -832,6 +835,43 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result.result["next_tool_preview"]["preview"]["requested_permission"])
         self.assertFalse(result.result["next_tool_preview"]["preview"]["opened_system_settings"])
         permissions_mock.assert_called_once_with()
+
+    def test_tools_more_final_qa_recommendation_previews_without_foreground_work(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "diagnostics.final_qa",
+            "entities": {},
+            "reply": "Yes sir, checking the final QA plan now.",
+        }
+        fake_final_qa = {
+            "tool": "diagnostics.final_qa",
+            "status": "deferred",
+            "executed": True,
+            "opened_browser": False,
+            "launched_app": False,
+            "captured_screen": False,
+            "recorded_audio": False,
+            "ran_verifier": False,
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan), \
+             patch("jarvis.planner.final_qa_plan_status", return_value=fake_final_qa) as final_qa_mock:
+            result = Planner().handle_selected_tool("What is left for QA?", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "diagnostics.final_qa")
+        self.assertFalse(result.result["next_tool_preview"]["executed"])
+        preview = result.result["next_tool_preview"]["preview"]
+        self.assertFalse(preview["executed"])
+        self.assertTrue(preview["planned_only"])
+        self.assertFalse(preview["opened_browser"])
+        self.assertFalse(preview["launched_app"])
+        self.assertFalse(preview["captured_screen"])
+        self.assertFalse(preview["recorded_audio"])
+        self.assertFalse(preview["ran_verifier"])
+        final_qa_mock.assert_called_once_with()
 
     def test_tools_more_planned_future_tool_recommendation_returns_plan_only_status(self):
         fake_plan = {
@@ -1668,6 +1708,21 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["category"], "future_private_screen_read")
         self.assertIn("Screen Recording", " ".join(result["next_steps"]))
 
+    def test_final_qa_plan_status_reports_deferred_no_foreground_work(self):
+        result = final_qa_plan_status()
+
+        self.assertEqual(result["tool"], "diagnostics.final_qa")
+        self.assertEqual(result["status"], "deferred")
+        self.assertTrue(result["executed"])
+        self.assertFalse(result["opened_browser"])
+        self.assertFalse(result["launched_app"])
+        self.assertFalse(result["foreground_activity"])
+        self.assertFalse(result["captured_screen"])
+        self.assertFalse(result["recorded_audio"])
+        self.assertFalse(result["ran_verifier"])
+        self.assertFalse(result["read_private_content"])
+        self.assertIn("workboard_visual_qa", {check["id"] for check in result["checks"]})
+
     def test_permissions_status_reports_metadata_without_prompting(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bundle = Path(temp_dir) / "Jarvis.app"
@@ -1901,6 +1956,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("voice.stt_candidates", tool_ids)
         self.assertIn("voice.stt_score", tool_ids)
         self.assertIn("diagnostics.overnight", tool_ids)
+        self.assertIn("diagnostics.final_qa", tool_ids)
         self.assertIn("diagnostics.model_context", tool_ids)
         self.assertIn("diagnostics.tool_catalog", tool_ids)
         self.assertIn("diagnostics.permissions", tool_ids)
@@ -4800,7 +4856,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(preflight["summary"]["recommended_total"], len(recommended_ids))
         self.assertEqual(preflight["summary"]["required_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "required" and check["passed"]))
         policy_gate = next(check for check in preflight["checks"] if check["id"] == "policy_gates_loaded")
-        self.assertIn("26/26", policy_gate["detail"])
+        self.assertIn("27/27", policy_gate["detail"])
         self.assertEqual(preflight["summary"]["recommended_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "recommended" and check["passed"]))
         self.assertEqual(check_ids, required_ids.union(recommended_ids))
 

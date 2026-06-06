@@ -440,6 +440,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Reports the overnight workboard, morning report draft, and deferred foreground QA paths without opening apps or browsers.",
             },
             {
+                "id": "diagnostics.final_qa",
+                "label": "Final QA Plan",
+                "mode": "read_only",
+                "risk": "local_metadata",
+                "available": True,
+                "description": "Reports the remaining foreground QA plan without launching apps, opening browsers, capturing the screen, recording audio, or running destructive checks.",
+            },
+            {
                 "id": "diagnostics.email",
                 "label": "Email Backend Status",
                 "mode": "execute",
@@ -1951,6 +1959,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "diagnostics.codex_chats", "kind": "read_only", "description": "Report configured Codex chats, default route, and daily memory without exposing session IDs."},
         {"id": "codex.activity", "kind": "read_only", "description": "Show redacted recent Codex job activity without starting a new Codex request."},
         {"id": "codex.job", "kind": "async_deep_work", "description": "Delegate broad coding/project work to Codex."},
+        {"id": "diagnostics.final_qa", "kind": "read_only", "description": "Report the deferred foreground QA plan without opening apps or browsers."},
         {"id": "voice.stt_audition", "kind": "planned", "description": "Prepare a speech-recognition audition workflow."},
         {"id": "voice.stt_candidates", "kind": "read_only", "description": "List speech-recognition candidates and installed local engine evidence."},
         {"id": "voice.stt_score", "kind": "read_only", "description": "Score a pasted STT transcript against a reference sentence without recording audio."},
@@ -3123,6 +3132,91 @@ def overnight_work_status() -> dict[str, Any]:
             "Launch the rebuilt Jarvis app and check live startup/status text.",
             "Run the full safe verifier once foreground app/browser checks are allowed.",
         ],
+        "reply": reply,
+    }
+
+
+def final_qa_plan_status() -> dict[str, Any]:
+    """Report the deferred foreground QA plan without doing foreground work."""
+    workboard_path = PROJECT_ROOT / "runtime" / "overnight_status" / "index.html"
+    report_path = PROJECT_ROOT / "runtime" / "overnight_status" / "report.html"
+    stt_path = PROJECT_ROOT / "runtime" / "stt_audition" / "index.html"
+    bundle_path = PROJECT_ROOT / "output" / "Jarvis.app"
+    artifacts = {
+        "workboard": _runtime_file_status(workboard_path),
+        "morning_report": _runtime_file_status(report_path),
+        "stt_audition": _runtime_file_status(stt_path),
+    }
+    metadata = _bundle_metadata(bundle_path)
+    checks = [
+        {
+            "id": "workboard_visual_qa",
+            "status": "deferred",
+            "requires_foreground": True,
+            "surface": str(workboard_path),
+            "proof_needed": "Open the workboard and visually confirm layout, current status, and auto-refresh behavior.",
+        },
+        {
+            "id": "morning_report_visual_qa",
+            "status": "deferred",
+            "requires_foreground": True,
+            "surface": str(report_path),
+            "proof_needed": "Open the report draft and verify the latest commit, bundle, tests, and remaining-risk sections are readable.",
+        },
+        {
+            "id": "stt_audition_visual_qa",
+            "status": "deferred",
+            "requires_foreground": True,
+            "surface": str(stt_path),
+            "proof_needed": "Open the STT audition page and verify controls, candidate list, scoring, and export still work visually.",
+        },
+        {
+            "id": "jarvis_app_relaunch",
+            "status": "deferred",
+            "requires_foreground": True,
+            "surface": str(bundle_path),
+            "proof_needed": "Launch the rebuilt Jarvis app and confirm it serves the packaged worker for the latest bundle.",
+        },
+        {
+            "id": "live_preflight",
+            "status": "deferred",
+            "requires_foreground": False,
+            "surface": "/api/preflight",
+            "proof_needed": "With the live app running, confirm required tool coverage and readiness are green.",
+        },
+        {
+            "id": "full_safe_verifier",
+            "status": "deferred",
+            "requires_foreground": False,
+            "surface": "scripts/verify_safe.py",
+            "proof_needed": "Run the full safe verifier against the live worker and record the latest report path.",
+        },
+    ]
+    ready_artifacts = sum(1 for artifact in artifacts.values() if artifact.get("exists"))
+    reply = (
+        f"Final QA plan: {ready_artifacts}/{len(artifacts)} local HTML artifacts are present and "
+        f"the bundle is {'available' if bundle_path.exists() else 'missing'}. "
+        "Foreground visual checks and app relaunch remain deferred until Leo says they will not interrupt his work. "
+        "I did not open a browser, launch Jarvis, capture the screen, record audio, or run the verifier."
+    )
+    return {
+        "tool": "diagnostics.final_qa",
+        "executed": True,
+        "status": "deferred",
+        "read_private_content": False,
+        "opened_browser": False,
+        "launched_app": False,
+        "foreground_activity": False,
+        "captured_screen": False,
+        "recorded_audio": False,
+        "ran_verifier": False,
+        "changed_state": False,
+        "bundle_path": str(bundle_path),
+        "bundle_exists": bundle_path.exists(),
+        "bundle_metadata": metadata,
+        "artifacts": artifacts,
+        "checks": checks,
+        "next_safe_terminal_step": "Keep implementing code-only diagnostics or tests until foreground QA is allowed.",
         "reply": reply,
     }
 
