@@ -255,7 +255,7 @@ class SafetyPolicyTests(unittest.TestCase):
                 self.assertEqual(assessment.risk_level, 1)
                 self.assertEqual(assessment.decision, "allowed")
                 self.assertFalse(assessment.requires_confirmation)
-                self.assertIn("Codex job status", assessment.reasons[0])
+                self.assertIn("Codex status", assessment.reasons[0])
 
     def test_codex_read_only_diagnostics_stay_read_only(self):
         for command in ["codex chat status", "which default Codex chat are you using", "codex speed status"]:

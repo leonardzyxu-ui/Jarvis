@@ -267,7 +267,7 @@ def classify_command(command: str) -> SafetyAssessment:
         reasons.append("Command is a read-only prompt-injection scan of untrusted text.")
         return SafetyAssessment(1, RISK_LABELS[1], "allowed", False, False, False, reasons)
     if _looks_like_codex_job_status_query(text):
-        reasons.append("Command checks local Codex job status only.")
+        reasons.append("Command checks local Codex status only.")
         return SafetyAssessment(1, RISK_LABELS[1], "allowed", False, False, False, reasons)
     high_risk_reasons = _external_or_sensitive_reasons(lower)
     if high_risk_reasons:
