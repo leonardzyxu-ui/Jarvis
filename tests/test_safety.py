@@ -35,6 +35,7 @@ for key in (
     os.environ.pop(key, None)
 
 from jarvis import tools as jarvis_tools
+from jarvis import piper_warm_worker
 from jarvis.audit import AuditLogger, redact_sensitive_text
 from jarvis.config import PROJECT_ROOT, env_bool, host_allowed
 from jarvis.injection import scan_untrusted_text
@@ -624,6 +625,24 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(kwargs["sender_query"], "Sharpay")
         self.assertEqual(kwargs["selection"], "latest")
 
+    def test_email_selection_falls_back_to_original_prompt_for_second_email(self):
+        fake_result = {"status": "checked", "messages": [], "message_count": 0}
+        tool_request = {
+            "tool": "conversation.fast_local",
+            "status": "tool_requested",
+            "selected_tool": "outlook.visible_summary",
+            "status_text": "Yes sir, checking your email now.",
+            "entities": {},
+            "executed": True,
+        }
+        with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request), \
+             patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
+            Planner().handle("check my email and summarize my second email for me")
+
+        kwargs = mail_mock.call_args.kwargs
+        self.assertEqual(kwargs["selection"], "index:2")
+        self.assertIn("second email", kwargs["original_prompt"])
+
     def test_email_backend_status_is_no_content_diagnostic(self):
         with patch("jarvis.tools.app_availability") as app_mock, \
              patch("jarvis.tools._find_executable") as executable_mock, \
@@ -812,9 +831,9 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["provider"], "piper")
         self.assertTrue(result["piper_available"])
         self.assertTrue(result["explicit_tts_available"])
-        self.assertEqual(result["piper_length_scale"], 0.76)
+        self.assertEqual(result["piper_length_scale"], 0.85)
         self.assertIn("Piper Ryan is ready", result["reply"])
-        self.assertIn("length scale is 0.76", result["reply"])
+        self.assertIn("length scale is 0.85", result["reply"])
 
     def test_screen_status_does_not_capture_screen(self):
         with patch("jarvis.tools._find_executable", return_value="/usr/sbin/screencapture"):
@@ -1695,15 +1714,24 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertFalse(result["matched"])
 
-    def test_quick_speech_command_runs_say_with_mocked_subprocess(self):
-        completed = subprocess.CompletedProcess(args=["say"], returncode=0, stdout="", stderr="")
+    def test_quick_speech_command_starts_async_speech_with_mocked_process(self):
+        class FakeProcess:
+            pid = 12345
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                return 0
+
         with patch("jarvis.tools._find_executable", return_value="/usr/bin/say"), \
-             patch("jarvis.tools.subprocess.run", return_value=completed) as run_mock:
+             patch("jarvis.tools.subprocess.Popen", return_value=FakeProcess()) as popen_mock:
             result = quick_local_control("say out loud hello")
 
-        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["status"], "started")
         self.assertEqual(result["action"], "speech.say")
-        self.assertEqual(run_mock.call_args.args[0], ["/usr/bin/say", "-v", "Samantha", "-r", "152", "hello"])
+        self.assertEqual(result["speech"]["reason"], "explicit")
+        self.assertEqual(popen_mock.call_args.args[0], ["/usr/bin/say", "-v", "Samantha", "-r", "152", "hello"])
 
     def test_auto_speech_interrupts_previous_process_before_starting_next(self):
         class FakeProcess:
@@ -1753,6 +1781,22 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(first_process.terminated)
         self.assertTrue(second["interrupted_previous"])
         self.assertEqual(second["previous_stop_method"], "terminate")
+
+    def test_auto_speech_sanitizer_flattens_audio_unfriendly_formatting(self):
+        spoken = jarvis_tools._sanitize_spoken_text(
+            "Summary:\n"
+            "- HQ Young Pioneer Teams asks you to fill in a short form.\n"
+            "- Link: https://example.test/form\n"
+        )
+
+        self.assertNotIn("Summary", spoken)
+        self.assertNotIn("\n", spoken)
+        self.assertNotIn("https://", spoken)
+        self.assertIn("a link", spoken)
+        self.assertEqual(
+            spoken,
+            "HQ Young Pioneer Teams asks you to fill in a short form. a link",
+        )
 
     def test_auto_speech_uses_piper_provider_without_shell(self):
         class FakeStdin:
@@ -1815,7 +1859,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertFalse(popen_mock.call_args.kwargs["shell"])
         self.assertEqual(popen_mock.call_args.args[0][1:3], ["-m", "jarvis.piper_speaker"])
         self.assertIn("--length-scale", popen_mock.call_args.args[0])
-        self.assertIn("0.76", popen_mock.call_args.args[0])
+        self.assertIn("0.85", popen_mock.call_args.args[0])
 
     def test_auto_speech_queues_to_warm_piper_worker(self):
         class FakeStdin:
@@ -1892,7 +1936,28 @@ class RuntimeSurfaceTests(unittest.TestCase):
         command = jarvis_tools._piper_warm_worker_command(readiness)
 
         self.assertIn("--length-scale", command)
-        self.assertIn("0.76", command)
+        self.assertIn("0.85", command)
+
+    def test_warm_piper_worker_keeps_normal_speech_in_one_chunk(self):
+        text = (
+            "Yes sir, checking your email now. "
+            "少先队 gave a link to a form about a 慈善义卖 that you may need to fill in."
+        )
+
+        chunks = piper_warm_worker._chunk_text(text)
+
+        self.assertEqual(chunks, [text])
+
+    def test_warm_piper_worker_chunks_only_unusually_long_speech(self):
+        text = " ".join(
+            f"Sentence {index} gives Jarvis enough spoken text to require a later chunk."
+            for index in range(40)
+        )
+
+        chunks = piper_warm_worker._chunk_text(text)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertLessEqual(len(chunks[0]), 260)
 
     def test_quick_local_control_plans_brightness_without_side_effect(self):
         result = quick_local_control("brightness up", execute=False)
@@ -2056,6 +2121,69 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(result["selected_tool"], "outlook.visible_summary")
         self.assertEqual(result["status_text"], "Yes sir, checking your email now.")
         self.assertNotIn("skill", result["status_text"].lower())
+
+    def test_fast_chat_tool_call_can_be_embedded_inside_visible_words(self):
+        tool_specs = [{"tool": "outlook.visible_summary", "description": "Read email.", "entities": ["selection"]}]
+
+        result = jarvis_tools._parse_fast_chat_tool_request(
+            "Yes sir, checking your em\\Email(1, 2, 2, False)ail now.",
+            tool_specs,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["selected_tool"], "outlook.visible_summary")
+        self.assertEqual(result["status_text"], "Yes sir, checking your email now.")
+        self.assertEqual(result["entities"]["selection"], "index:2")
+
+    def test_fast_chat_system_prompt_explains_spoken_tool_contract(self):
+        tool_specs = [
+            {
+                "tool": "outlook.visible_summary",
+                "description": "Read email.",
+                "entities": ["selection"],
+                "entity_details": {"selection": "Use index:N for a 1-based email position."},
+            }
+        ]
+
+        prompt = jarvis_tools._fast_chat_system_prompt(tool_specs)
+
+        self.assertIn("spoken aloud", prompt)
+        self.assertIn("Yes sir", prompt)
+        self.assertIn("index:2", prompt)
+        self.assertIn("\\tool", prompt)
+        self.assertNotIn("Looking for", prompt)
+
+    def test_stream_fast_local_chat_buffers_hidden_tool_call(self):
+        class FakeStreamResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def __iter__(self):
+                chunks = [
+                    "Yes sir, checking your em",
+                    "\\Email(1, 2, 2, False)",
+                    "ail now.",
+                ]
+                for chunk in chunks:
+                    payload = {"choices": [{"delta": {"content": chunk}}]}
+                    yield f"data: {json.dumps(payload)}\n".encode("utf-8")
+                yield b"data: [DONE]\n"
+
+        tool_specs = [{"tool": "outlook.visible_summary", "description": "Read email.", "entities": ["selection"]}]
+        with patch("jarvis.tools.FAST_MODEL_BACKEND", "groq"), \
+             patch("jarvis.tools.GROQ_API_KEY", "test-groq-key"), \
+             patch("jarvis.tools.urllib.request.urlopen", return_value=FakeStreamResponse()):
+            events = list(stream_fast_local_chat_events("check my second email", tool_specs=tool_specs))
+
+        self.assertEqual([event["event"] for event in events], ["meta", "final_result"])
+        data = events[-1]["data"]
+        self.assertEqual(data["status"], "tool_requested")
+        self.assertEqual(data["selected_tool"], "outlook.visible_summary")
+        self.assertEqual(data["status_text"], "Yes sir, checking your email now.")
+        self.assertEqual(data["entities"]["selection"], "index:2")
 
     def test_fast_local_chat_groq_falls_back_to_ollama(self):
         fallback_result = {
@@ -2470,6 +2598,74 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("did not summarize an unrelated newest email", result["reply"])
         summary_mock.assert_not_called()
 
+    def test_email_second_selection_summarizes_second_recent_apple_mail_message(self):
+        mail_result = {
+            "status": "checked",
+            "messages": [
+                {
+                    "sender": "First",
+                    "subject": "Newest",
+                    "received": "Today",
+                    "read_state": "read",
+                    "snippet": "The newest message should not be summarized.",
+                },
+                {
+                    "sender": "Second",
+                    "subject": "Second newest",
+                    "received": "Yesterday",
+                    "read_state": "read",
+                    "snippet": "The second message should be summarized.",
+                },
+            ],
+            "summary_messages": [
+                {
+                    "sender": "First",
+                    "subject": "Newest",
+                    "received": "Today",
+                    "read_state": "read",
+                    "snippet": "The newest message should not be summarized.",
+                },
+                {
+                    "sender": "Second",
+                    "subject": "Second newest",
+                    "received": "Yesterday",
+                    "read_state": "read",
+                    "snippet": "The second message should be summarized.",
+                    "body_source": "parsed_message_source",
+                },
+            ],
+            "inbox_count": 5,
+            "scanned_count": 5,
+            "unread_count": 0,
+            "selection_mode": "recent",
+            "parsed_body_count": 1,
+        }
+        with patch("jarvis.tools.app_availability", side_effect=[
+            {"available": True, "matches": ["/Applications/Microsoft Outlook.app"], "app": "Microsoft Outlook"},
+            {"available": True, "matches": ["/System/Applications/Mail.app"], "app": "Mail"},
+        ]), \
+             patch("jarvis.tools.shutil.which", return_value="/usr/bin/osascript"), \
+             patch("jarvis.tools.EMAIL_SUMMARY_BACKEND", "deterministic"), \
+             patch("jarvis.tools._apple_mail_messages", return_value=mail_result) as mail_mock:
+            result = outlook_read_only_check(limit=1, selection="index:2")
+
+        self.assertEqual(result["status"], "checked")
+        self.assertEqual(result["selection_mode"], "index:2")
+        self.assertEqual(result["message_count"], 1)
+        self.assertEqual(result["messages"][0]["sender"], "Second")
+        self.assertIn("second message should be summarized", result["email_summary"].lower())
+        self.assertNotIn("newest message should not", result["email_summary"].lower())
+        self.assertEqual(result["parsed_body_count"], 1)
+        self.assertEqual(mail_mock.call_args.args[0], 2)
+        self.assertEqual(mail_mock.call_args.kwargs["selection"], "recent")
+
+    def test_apple_mail_script_has_recent_selection_mode_for_index_requests(self):
+        script = jarvis_tools._apple_mail_newest_applescript(2, 250, selection="recent")
+
+        self.assertIn('selectionHint is "recent"', script)
+        self.assertIn('set selectionMode to "recent"', script)
+        self.assertIn('if selectionMode is "unread" and unreadCount', script)
+
     def test_outlook_parser_keeps_mail_unicode_line_separators_inside_message_row(self):
         parsed = jarvis_tools._parse_outlook_newest_output(
             "INBOX_COUNT\t3\tSCANNED\t3\tUNREAD\t0\tSELECTION\tlatest\n"
@@ -2855,8 +3051,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     "tool": "conversation.fast_local",
                     "status": "tool_requested",
                     "selected_tool": "outlook.visible_summary",
-                    "status_text": "Sure. I'll check your email.",
-                    "entities": {"selection": "latest"},
+                    "status_text": "Yes sir, checking your second email now.",
+                    "entities": {"selection": "index:2"},
                     "executed": True,
                 },
             }
@@ -2870,13 +3066,13 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 events = list(server.stream_command("please check my email"))
 
         self.assertEqual([event["event"] for event in events], ["status", "final"])
-        self.assertEqual(events[0]["data"]["text"], "Yes sir, checking your email now.")
+        self.assertEqual(events[0]["data"]["text"], "Yes sir, checking your second email now.")
         self.assertEqual(events[0]["data"]["tool"], "outlook.visible_summary")
         self.assertTrue(events[0]["data"]["speech"]["spoken"])
         self.assertEqual(events[-1]["data"]["tool"], "outlook.visible_summary")
         self.assertEqual(events[-1]["data"]["result"]["status"], "checked")
-        self.assertEqual(mail_mock.call_args.kwargs["selection"], "latest")
-        speak_mock.assert_any_call("Yes sir, checking your email now.", reason="status")
+        self.assertEqual(mail_mock.call_args.kwargs["selection"], "index:2")
+        speak_mock.assert_any_call("Yes sir, checking your second email now.", reason="status")
 
     def test_stream_command_passes_history_to_fast_chat_without_router_delay(self):
         fake_events = [

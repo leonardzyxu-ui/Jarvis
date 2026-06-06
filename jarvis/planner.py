@@ -49,7 +49,19 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     {
         "tool": "outlook.visible_summary",
         "description": "Read and summarize local mailbox content. Use only when the user wants Jarvis to inspect email messages.",
-        "entities": ["sender_query", "selection"],
+        "entities": ["sender_query", "selection", "email_count", "email_from", "email_to", "unread_only"],
+        "entity_details": {
+            "sender_query": "Optional sender or subject text to filter by.",
+            "selection": "Use latest, unread_first, index:N, or range:A-B. index:2 means the second newest inbox message.",
+            "email_count": "Optional number of messages requested.",
+            "email_from": "Optional 1-based start index in newest-first inbox order.",
+            "email_to": "Optional 1-based end index in newest-first inbox order.",
+            "unread_only": "True only when the user asks specifically for unread mail.",
+        },
+        "examples": [
+            'Yes sir, checking your second email now. \\tool({"tool":"outlook.visible_summary","entities":{"selection":"index:2"}})',
+            'Yes sir, checking your unread email now. \\tool({"tool":"outlook.visible_summary","entities":{"selection":"unread_first"}})',
+        ],
     },
     {
         "tool": "diagnostics.email",
@@ -257,6 +269,8 @@ class Planner:
         app_name = _extract_app_name(text)
         if app_name is not None:
             return self._result(text, "app.availability", "Checked local app availability.", assessment, app_availability(app_name), True)
+        if _looks_like_browser_url_request(text):
+            return self._result(text, "browser.open_url", "Prepared browser-open plan.", assessment, browser_open_url_plan(_extract_url(text)), False)
         exact_reply = _extract_exact_reply(text)
         if exact_reply is not None and not _explicitly_asks_codex(lower):
             return self._result(
@@ -276,22 +290,15 @@ class Planner:
             routed = self._handle_model_intent(text, assessment, _explicit_codex_intent(), execute=True)
             if routed is not None:
                 return routed
-        if use_model_router:
-            intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
-            routed = self._handle_model_intent(text, assessment, intent, execute=True)
+        result = run_fast_local_chat(text, history=history, tool_specs=NATURAL_LANGUAGE_TOOL_SPECS)
+        if result.get("status") == "tool_requested":
+            routed = self.handle_selected_tool(
+                text,
+                str(result.get("selected_tool") or ""),
+                result.get("entities") if isinstance(result.get("entities"), dict) else {},
+            )
             if routed is not None:
                 return routed
-            result = run_fast_local_chat(text, history=history)
-        else:
-            result = run_fast_local_chat(text, history=history, tool_specs=NATURAL_LANGUAGE_TOOL_SPECS)
-            if result.get("status") == "tool_requested":
-                routed = self.handle_selected_tool(
-                    text,
-                    str(result.get("selected_tool") or ""),
-                    result.get("entities") if isinstance(result.get("entities"), dict) else {},
-                )
-                if routed is not None:
-                    return routed
         tool = str(result.get("tool") or "conversation.fast_local")
         if result.get("status") == "completed":
             summary = "Answered through fast local chat."
@@ -396,6 +403,8 @@ class Planner:
             )
         if _extract_app_name(text) is not None:
             return self._preview_result(text, "app.availability", assessment, True)
+        if _looks_like_browser_url_request(text):
+            return self._preview_result(text, "browser.open_url", assessment, False, plan={"url": _extract_url(text)})
         exact_reply = _extract_exact_reply(text)
         if exact_reply is not None and not _explicitly_asks_codex(lower):
             return self._preview_result(text, "conversation.local_exact", assessment, True)
@@ -430,7 +439,11 @@ class Planner:
             return self._result(text, "diagnostics.email", "Read local email backend status without reading email content.", assessment, email_backend_status(), True)
         if selected_tool == "outlook.visible_summary":
             sender_query = _clean_optional_entity(entities.get("sender_query")) or _extract_email_sender_constraint(text)
-            selection = _clean_optional_entity(entities.get("selection")) or _extract_email_selection_constraint(text)
+            selection = (
+                _clean_optional_entity(entities.get("selection"))
+                or _email_selection_from_entities(entities)
+                or _extract_email_selection_constraint(text)
+            )
             if not execute:
                 return PlannedResult(
                     command=text,
@@ -552,6 +565,12 @@ def _extract_url(text: str) -> str:
     return match.group(0).rstrip(".,)") if match else ""
 
 
+def _looks_like_browser_url_request(text: str) -> bool:
+    if not _extract_url(text):
+        return False
+    return bool(re.search(r"(?i)\b(open|browse|browser|visit|go to|launch)\b", text))
+
+
 def _clean_optional_entity(value: Any) -> str | None:
     if value is None:
         return None
@@ -580,11 +599,81 @@ def _extract_email_sender_constraint(text: str) -> str | None:
 
 def _extract_email_selection_constraint(text: str) -> str | None:
     lower = text.lower()
-    if re.search(r"\b(newest|latest|most recent)\b", lower):
+    ordinal = _extract_email_ordinal(lower)
+    if ordinal is not None:
+        return f"index:{ordinal}"
+    range_match = re.search(
+        r"\b(?:email|mail|message|messages)\s+(\d{1,2})\s*(?:-|to|through)\s*(\d{1,2})\b",
+        lower,
+    )
+    if range_match:
+        first = max(1, int(range_match.group(1)))
+        second = max(1, int(range_match.group(2)))
+        start, end = sorted((first, second))
+        return f"range:{start}-{end}"
+    if re.search(r"\b(?:newest|latest|most recent|first)\b", lower):
         return "latest"
     if re.search(r"\bunread\b", lower):
         return "unread_first"
     return None
+
+
+def _extract_email_ordinal(lower: str) -> int | None:
+    words = {
+        "second": 2,
+        "third": 3,
+        "fourth": 4,
+        "fifth": 5,
+        "sixth": 6,
+        "seventh": 7,
+        "eighth": 8,
+        "ninth": 9,
+        "tenth": 10,
+    }
+    for word, value in words.items():
+        if re.search(rf"\b{word}\s+(?:email|mail|message)\b", lower) or re.search(rf"\b(?:email|mail|message)\s+{word}\b", lower):
+            return value
+    match = re.search(r"\b(?:email|mail|message)\s*(\d{1,2})(?:st|nd|rd|th)?\b", lower)
+    if match:
+        value = int(match.group(1))
+        return value if value >= 1 else None
+    match = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:email|mail|message)\b", lower)
+    if match:
+        value = int(match.group(1))
+        return value if value >= 1 else None
+    return None
+
+
+def _email_selection_from_entities(entities: dict[str, Any]) -> str | None:
+    if _entity_truthy(entities.get("unread_only")):
+        return "unread_first"
+    start = _positive_entity_int(entities.get("email_from"))
+    end = _positive_entity_int(entities.get("email_to"))
+    count = _positive_entity_int(entities.get("email_count"))
+    if start is not None and end is not None:
+        if start == end:
+            return f"index:{start}"
+        first, second = sorted((start, end))
+        return f"range:{first}-{second}"
+    if start is not None:
+        return f"index:{start}"
+    if count is not None:
+        return f"range:1-{count}"
+    return None
+
+
+def _positive_entity_int(value: Any) -> int | None:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _entity_truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _extract_app_name(text: str) -> str | None:

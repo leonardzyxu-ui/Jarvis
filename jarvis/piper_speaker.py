@@ -22,7 +22,7 @@ model_path = Path(sys.argv[1])
 config_path = Path(sys.argv[2])
 wav_path = Path(sys.argv[3])
 espeak_data_dir = Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else ESPEAK_DATA_DIR
-length_scale = float(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else 0.76
+length_scale = float(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else 0.85
 text = sys.stdin.read().strip()
 if not text:
     raise SystemExit(2)
@@ -54,7 +54,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--espeak-data")
     parser.add_argument("--afplay", required=True)
     parser.add_argument("--piper-timeout", type=float, default=8.0)
-    parser.add_argument("--length-scale", type=float, default=0.76)
+    parser.add_argument("--length-scale", type=float, default=0.85)
     return parser.parse_args()
 
 

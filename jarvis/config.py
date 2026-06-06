@@ -134,7 +134,7 @@ TTS_PIPER_LABEL = os.environ.get("JARVIS_TTS_PIPER_LABEL", "Piper Ryan high Amer
 TTS_PIPER_TIMEOUT_SECONDS = env_int("JARVIS_TTS_PIPER_TIMEOUT_SECONDS", 8, minimum=1, maximum=30)
 TTS_PIPER_WARM_WORKER = env_bool("JARVIS_TTS_PIPER_WARM_WORKER", True)
 TTS_PIPER_WARMUP_TIMEOUT_SECONDS = env_int("JARVIS_TTS_PIPER_WARMUP_TIMEOUT_SECONDS", 2, minimum=0, maximum=15)
-TTS_PIPER_LENGTH_SCALE = env_float("JARVIS_TTS_PIPER_LENGTH_SCALE", 0.76, minimum=0.5, maximum=1.4)
+TTS_PIPER_LENGTH_SCALE = env_float("JARVIS_TTS_PIPER_LENGTH_SCALE", 0.85, minimum=0.5, maximum=1.4)
 TTS_AFPLAY = os.environ.get("JARVIS_TTS_AFPLAY", "/usr/bin/afplay").strip() or "/usr/bin/afplay"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_BASE_URL = os.environ.get("JARVIS_GROQ_BASE_URL", "https://api.groq.com/openai/v1")

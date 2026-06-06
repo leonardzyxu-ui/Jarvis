@@ -143,9 +143,9 @@ class JarvisServer:
 
         if result.get("status") == "tool_requested":
             selected_tool = str(result.get("selected_tool") or "")
-            status_text = _stream_status_text({"tool": selected_tool})
+            status_text = str(result.get("status_text") or "").strip()
             if not status_text:
-                status_text = str(result.get("status_text") or "").strip()
+                status_text = _stream_status_text({"tool": selected_tool})
             if status_text:
                 speech = speak_text_async(status_text, reason="status")
                 yield {

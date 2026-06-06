@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import Future, ThreadPoolExecutor
 import json
 import re
 import subprocess
@@ -12,10 +13,10 @@ import threading
 import time
 import wave
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from piper import PiperVoice, SynthesisConfig
-from piper.phonemize_espeak import ESPEAK_DATA_DIR
+if TYPE_CHECKING:
+    from piper import PiperVoice, SynthesisConfig
 
 
 def _parse_args() -> argparse.Namespace:
@@ -24,7 +25,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config", required=True)
     parser.add_argument("--espeak-data")
     parser.add_argument("--afplay", required=True)
-    parser.add_argument("--length-scale", type=float, default=0.76)
+    parser.add_argument("--length-scale", type=float, default=0.85)
     return parser.parse_args()
 
 
@@ -37,8 +38,10 @@ def _chunk_text(text: str) -> list[str]:
     clean = re.sub(r"\s+", " ", text.strip())
     if not clean:
         return []
-    first_target = 90
-    later_target = 260
+    if len(clean) <= 900:
+        return [clean]
+    first_target = 260
+    later_target = 420
     pieces = re.split(r"(?<=[.!?;:])\s+", clean)
     chunks: list[str] = []
     current = ""
@@ -63,8 +66,8 @@ def _chunk_text(text: str) -> list[str]:
             current = subpiece
     if current:
         chunks.append(current)
-    if len(chunks) <= 1 and len(clean) > 260:
-        chunks = [clean[index : index + 260].strip() for index in range(0, len(clean), 260)]
+    if len(chunks) <= 1 and len(clean) > later_target:
+        chunks = [clean[index : index + later_target].strip() for index in range(0, len(clean), later_target)]
     if chunks and len(chunks[0]) > first_target:
         words = chunks[0].split()
         first_words: list[str] = []
@@ -136,7 +139,7 @@ class SpeechState:
                 self.current_player = None
 
 
-def _synthesize_to_wav(voice: PiperVoice, syn_config: SynthesisConfig, text: str, wav_path: Path) -> None:
+def _synthesize_to_wav(voice: "PiperVoice", syn_config: "SynthesisConfig", text: str, wav_path: Path) -> None:
     params_set = False
     with wave.open(str(wav_path), "wb") as wav_file:
         for audio_chunk in voice.synthesize(text, syn_config):
@@ -148,12 +151,30 @@ def _synthesize_to_wav(voice: PiperVoice, syn_config: SynthesisConfig, text: str
             wav_file.writeframes(audio_chunk.audio_int16_bytes)
 
 
+def _synthesize_chunk(
+    *,
+    voice: "PiperVoice",
+    voice_lock: threading.Lock,
+    syn_config: "SynthesisConfig",
+    chunk: str,
+    wav_path: Path,
+) -> dict[str, Any]:
+    synth_started = time.monotonic()
+    with voice_lock:
+        _synthesize_to_wav(voice, syn_config, chunk, wav_path)
+    return {
+        "wav_path": wav_path,
+        "chunk_chars": len(chunk),
+        "synth_seconds": round(time.monotonic() - synth_started, 3),
+    }
+
+
 def _play_job(
     *,
     state: SpeechState,
-    voice: PiperVoice,
+    voice: "PiperVoice",
     voice_lock: threading.Lock,
-    syn_config: SynthesisConfig,
+    syn_config: "SynthesisConfig",
     afplay: str,
     speech_id: str,
     text: str,
@@ -165,21 +186,36 @@ def _play_job(
     first_audio_at: float | None = None
     played_chunks = 0
     try:
-        for index, chunk in enumerate(chunks):
-            if stop_event.is_set() or not state.is_current(speech_id, generation):
-                _emit("stopped", id=speech_id, chunks_played=played_chunks)
-                return
-            with tempfile.TemporaryDirectory(prefix="jarvis-piper-warm-") as tmpdir:
-                wav_path = Path(tmpdir) / f"chunk-{index}.wav"
-                synth_started = time.monotonic()
-                with voice_lock:
-                    _synthesize_to_wav(voice, syn_config, chunk, wav_path)
-                synth_seconds = round(time.monotonic() - synth_started, 3)
+        with tempfile.TemporaryDirectory(prefix="jarvis-piper-warm-") as tmpdir, ThreadPoolExecutor(max_workers=1) as executor:
+            tmp_path = Path(tmpdir)
+
+            def submit_chunk(index: int) -> Future[dict[str, Any]]:
+                return executor.submit(
+                    _synthesize_chunk,
+                    voice=voice,
+                    voice_lock=voice_lock,
+                    syn_config=syn_config,
+                    chunk=chunks[index],
+                    wav_path=tmp_path / f"chunk-{index}.wav",
+                )
+
+            future: Future[dict[str, Any]] | None = submit_chunk(0) if chunks else None
+            for index, _ in enumerate(chunks):
+                if stop_event.is_set() or not state.is_current(speech_id, generation):
+                    _emit("stopped", id=speech_id, chunks_played=played_chunks)
+                    return
+                if future is None:
+                    break
+                synthesized = future.result()
+                if index + 1 < len(chunks):
+                    future = submit_chunk(index + 1)
+                else:
+                    future = None
                 if stop_event.is_set() or not state.is_current(speech_id, generation):
                     _emit("stopped", id=speech_id, chunks_played=played_chunks)
                     return
                 player = subprocess.Popen(
-                    [afplay, str(wav_path)],
+                    [afplay, str(synthesized["wav_path"])],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     text=True,
@@ -191,8 +227,9 @@ def _play_job(
                         "first_audio",
                         id=speech_id,
                         first_audio_seconds=round(first_audio_at - started_at, 3),
-                        first_chunk_chars=len(chunk),
-                        first_chunk_synth_seconds=synth_seconds,
+                        first_chunk_chars=synthesized["chunk_chars"],
+                        first_chunk_synth_seconds=synthesized["synth_seconds"],
+                        prebuffered_chunks=len(chunks),
                     )
                 while player.poll() is None:
                     if stop_event.is_set() or not state.is_current(speech_id, generation):
@@ -223,6 +260,12 @@ def _play_job(
 
 def main() -> int:
     args = _parse_args()
+    try:
+        from piper import PiperVoice, SynthesisConfig
+        from piper.phonemize_espeak import ESPEAK_DATA_DIR
+    except Exception as error:  # noqa: BLE001
+        _emit("fatal", status="piper_import_failed", error=str(error)[-500:])
+        return 2
     model_path = Path(args.model).expanduser()
     config_path = Path(args.config).expanduser()
     espeak_data_dir = Path(args.espeak_data).expanduser() if args.espeak_data else ESPEAK_DATA_DIR

@@ -749,12 +749,18 @@ def _sanitize_spoken_text(text: str) -> str:
     spoken = re.sub(r"(?is)<think>.*?</think>", " ", spoken)
     spoken = re.sub(r"(?i)\bhttps?://\S+|\bwww\.\S+", "a link", spoken)
     spoken = re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "an email address", spoken)
-    spoken = re.sub(r"(?m)^\s*[-*]\s+", "", spoken)
+    spoken = re.sub(r"(?m)^\s*(?:[-*]|\d+[.)])\s+", "", spoken)
+    spoken = re.sub(r"(?im)^\s*(?:summary|action|actions|details?|link|subject|sender|from)\s*:\s*", "", spoken)
     spoken = re.sub(r"[*_`#>]+", "", spoken)
+    spoken = re.sub(r"\s*\n+\s*", ", ", spoken)
+    spoken = re.sub(r"\s*[:;]\s*", ", ", spoken)
     spoken = re.sub(r"[ \t\f\v]+", " ", spoken)
-    spoken = re.sub(r"\s*\n+\s*", ". ", spoken)
+    spoken = re.sub(r"\s*,\s*", ", ", spoken)
+    spoken = re.sub(r"(?:,\s*){2,}", ", ", spoken)
+    spoken = re.sub(r"([.!?])\s*,\s*", r"\1 ", spoken)
+    spoken = re.sub(r"\s+([,.!?])", r"\1", spoken)
     spoken = re.sub(r"\.{2,}", ".", spoken)
-    return spoken.strip()[:TTS_MAX_CHARS]
+    return spoken.strip(" ,")[:TTS_MAX_CHARS]
 
 
 def _normalize_tts_provider(provider: str) -> str:
@@ -1311,11 +1317,11 @@ def _start_piper_speech_async(
     }
 
 
-def speak_text_async(text: str, *, reason: str = "reply") -> dict[str, Any]:
+def speak_text_async(text: str, *, reason: str = "reply", force: bool = False) -> dict[str, Any]:
     """Speak text without blocking the command response."""
-    if not TTS_AUTOMATIC_ENABLED:
+    if not force and not TTS_AUTOMATIC_ENABLED:
         return {"spoken": False, "status": "disabled", "reason": reason}
-    if reason == "status" and not TTS_SPEAK_STATUS:
+    if not force and reason == "status" and not TTS_SPEAK_STATUS:
         return {"spoken": False, "status": "status_speech_disabled", "reason": reason}
     spoken = _sanitize_spoken_text(text)
     if not spoken:
@@ -2692,6 +2698,9 @@ def outlook_read_only_check(
     scan_limit = max(safe_limit, OUTLOOK_MAX_SCAN_MESSAGES)
     clean_sender_query = _clean_email_filter_query(sender_query)
     clean_selection = _clean_email_filter_query(selection)
+    selection_request = _email_selection_request(clean_selection)
+    mail_limit = _email_fetch_limit_for_selection(safe_limit, selection_request)
+    mail_selection = _email_source_selection_hint(clean_selection, selection_request)
     app = app_availability("Microsoft Outlook")
     mail_app = app_availability("Mail")
     osascript = _find_executable("osascript")
@@ -2714,10 +2723,11 @@ def outlook_read_only_check(
         "safety_note": "Read-only summary only. Attachments, drafts, deletes, forwards, sends, downloads, and exports require confirmation.",
     }
     mail_result = (
-        _apple_mail_messages(safe_limit, scan_limit, osascript, sender_query=clean_sender_query, selection=clean_selection)
+        _apple_mail_messages(mail_limit, scan_limit, osascript, sender_query=clean_sender_query, selection=mail_selection)
         if mail_app["available"]
         else {"messages": [], "status": "not_found"}
     )
+    mail_result = _apply_email_selection_request(mail_result, selection_request)
     if mail_result["messages"]:
         summary_messages = mail_result.get("summary_messages") or mail_result["messages"]
         injection_scan = _messages_injection_scan(summary_messages, "apple_mail")
@@ -2748,6 +2758,27 @@ def outlook_read_only_check(
             "email_body_source": "apple_mail_message_source" if mail_result.get("parsed_body_count") else "apple_mail_content_preview",
             **summary,
             "prototype_behavior": "Reads sender, subject, received time, read state, and Apple Mail body text locally when available; email summarization follows the configured model, and Ollama cloud models send the summary prompt to Ollama Cloud.",
+        })
+    if (
+        selection_request is not None
+        and mail_result.get("status") in {"checked", "empty"}
+        and int(mail_result.get("selection_source_message_count") or 0) > 0
+    ):
+        return finish({
+            **base,
+            "status": "requested_email_not_found",
+            "reply": _email_selection_not_found_reply("Apple Mail", selection_request, int(mail_result.get("scanned_count") or 0)),
+            "inbox_count": int(mail_result.get("inbox_count") or 0),
+            "scanned_count": int(mail_result.get("scanned_count") or 0),
+            "unread_count": int(mail_result.get("unread_count") or 0),
+            "match_count": int(mail_result.get("match_count") or 0),
+            "selection_mode": str(mail_result.get("selection_mode") or selection_request["selection_mode"]),
+            "messages": [],
+            "message_count": 0,
+            "source": "apple_mail",
+            "mail_status": mail_result.get("status", "empty"),
+            "injection_scan": _messages_injection_scan([], "apple_mail"),
+            "prototype_behavior": "Honors explicit email index or range requests and refuses to summarize a different message if the requested position is not available.",
         })
     if clean_sender_query and mail_result.get("filter_applied"):
         return finish({
@@ -3142,6 +3173,12 @@ def _email_summary_prompt(
         selection = "The user requested a sender-specific email; summarize only the newest matching message."
     elif selection_mode == "unread":
         selection = f"{unread_count} unread message(s) were found; summarize the selected unread messages."
+    elif selection_mode.startswith("index:"):
+        selection = f"The user requested inbox email {selection_mode.removeprefix('index:')}; summarize only that selected message."
+    elif selection_mode.startswith("range:"):
+        selection = f"The user requested inbox emails {selection_mode.removeprefix('range:')}; summarize only those selected messages."
+    elif selection_mode == "recent":
+        selection = "Summarize the selected recent inbox messages."
     else:
         selection = "No unread messages were found; summarize the newest inbox email even though it may already be read."
     content_budget = max(500, EMAIL_SUMMARY_MAX_INPUT_CHARS)
@@ -3428,6 +3465,73 @@ def _email_summary_duration_fields(started_at: float) -> dict[str, Any]:
     }
 
 
+def _email_selection_request(selection: str | None) -> dict[str, Any] | None:
+    cleaned = re.sub(r"\s+", "", str(selection or "").strip().lower())
+    if not cleaned:
+        return None
+    match = re.fullmatch(r"index:(\d{1,2})", cleaned)
+    if match:
+        index = max(1, int(match.group(1)))
+        return {"kind": "index", "start": index, "end": index, "selection_mode": f"index:{index}"}
+    match = re.fullmatch(r"range:(\d{1,2})-(\d{1,2})", cleaned)
+    if match:
+        first = max(1, int(match.group(1)))
+        second = max(1, int(match.group(2)))
+        start, end = sorted((first, second))
+        return {"kind": "range", "start": start, "end": end, "selection_mode": f"range:{start}-{end}"}
+    return None
+
+
+def _email_fetch_limit_for_selection(default_limit: int, selection_request: dict[str, Any] | None) -> int:
+    if selection_request is None:
+        return default_limit
+    try:
+        end = int(selection_request.get("end"))
+    except (TypeError, ValueError):
+        end = default_limit
+    return max(default_limit, min(max(1, end), 25))
+
+
+def _email_source_selection_hint(selection: str | None, selection_request: dict[str, Any] | None) -> str | None:
+    if selection_request is not None:
+        return "recent"
+    return selection
+
+
+def _apply_email_selection_request(mail_result: dict[str, Any], selection_request: dict[str, Any] | None) -> dict[str, Any]:
+    if selection_request is None:
+        return mail_result
+    messages = list(mail_result.get("messages") or [])
+    summary_messages = list(mail_result.get("summary_messages") or messages)
+    start = max(0, int(selection_request["start"]) - 1)
+    end = max(start + 1, int(selection_request["end"]))
+    selected_messages = messages[start:end]
+    selected_summary_messages = summary_messages[start:end]
+    parsed_body_count = sum(1 for message in selected_summary_messages if message.get("body_source") == "parsed_message_source")
+    status = "checked" if selected_messages else str(mail_result.get("status") or "empty")
+    if not selected_messages and status == "checked":
+        status = "empty"
+    return {
+        **mail_result,
+        "status": status,
+        "messages": selected_messages,
+        "summary_messages": selected_summary_messages,
+        "parsed_body_count": parsed_body_count,
+        "selection_mode": selection_request["selection_mode"],
+        "selection_request": selection_request,
+        "selection_source_message_count": len(messages),
+    }
+
+
+def _email_selection_not_found_reply(mailbox: str, selection_request: dict[str, Any], scanned_count: int) -> str:
+    if selection_request.get("kind") == "index":
+        return f"I checked {mailbox}, but I could not find email number {selection_request['start']} in the {scanned_count} recent messages I could scan."
+    return (
+        f"I checked {mailbox}, but I could not find the requested email range "
+        f"{selection_request['start']} to {selection_request['end']} in the {scanned_count} recent messages I could scan."
+    )
+
+
 def _select_unread_or_latest(messages: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     safe_limit = max(1, min(int(limit), 25))
     unread = [message for message in messages if str(message.get("read_state") or "").lower() == "unread"]
@@ -3463,6 +3567,12 @@ def _email_selection_reply(mailbox: str, selection_mode: str, unread_count: int,
         return f"found no unread messages in {mailbox}, so I selected the newest inbox email"
     if selection_mode == "sender_latest":
         return f"selected the newest message matching your sender request in {mailbox}"
+    if selection_mode.startswith("index:"):
+        return f"selected email {selection_mode.removeprefix('index:')} from {mailbox}"
+    if selection_mode.startswith("range:"):
+        return f"selected emails {selection_mode.removeprefix('range:')} from {mailbox}"
+    if selection_mode == "recent":
+        return f"selected {selected_count} recent inbox message(s) from {mailbox}"
     return f"selected {selected_count} inbox message(s) from {mailbox}"
 
 
@@ -4196,8 +4306,6 @@ def stream_fast_local_chat_events(
     }
 
     chunks: list[str] = []
-    withheld = ""
-    flushing_direct_reply = False
     first_visible_token_at: float | None = None
     try:
         with urllib.request.urlopen(request, timeout=FAST_MODEL_TIMEOUT_SECONDS, context=_https_context()) as response:
@@ -4217,16 +4325,7 @@ def stream_fast_local_chat_events(
                 if not content:
                     continue
                 chunks.append(content)
-                if tool_specs and not flushing_direct_reply:
-                    withheld += content
-                    if _may_still_be_fast_chat_tool_request(withheld):
-                        continue
-                    flushing_direct_reply = True
-                    if first_visible_token_at is None:
-                        first_visible_token_at = time.monotonic()
-                    if withheld:
-                        yield {"event": "delta", "data": {"text": withheld}}
-                    withheld = ""
+                if tool_specs:
                     continue
                 if first_visible_token_at is None:
                     first_visible_token_at = time.monotonic()
@@ -4319,6 +4418,10 @@ def stream_fast_local_chat_events(
         yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result, history=history, tool_specs=tool_specs)}
         return
 
+    if tool_specs:
+        first_visible_token_at = time.monotonic()
+        yield {"event": "delta", "data": {"text": reply}}
+
     result = {
         "tool": "conversation.fast_local",
         "backend": "groq",
@@ -4339,11 +4442,13 @@ def stream_fast_local_chat_events(
 def _fast_chat_system_prompt(tool_specs: list[dict[str, Any]] | None = None) -> str:
     prompt = (
         "You are Jarvis, Leo's local Mac assistant prototype. "
-        "Leo is the user's real name for profile context, but do not address him as Leo or by a title in normal chat unless he explicitly asks. "
+        "Leo is the user's real name for profile context. In brief work/status messages, address him as sir naturally. "
         f"Current local date/time: {_current_local_datetime_label()}. "
         "Answer directly and briefly unless he asks for more. "
         "Follow Leo's requested output format, including exact text or bullet counts. "
-        "Be useful and natural. Do not claim you performed computer actions. "
+        "Your visible words may be displayed in the Jarvis chat and spoken aloud, so keep them natural, voice-friendly, and concise. "
+        "Avoid raw URLs, opaque IDs, markdown-heavy formatting, and internal routing words unless Leo explicitly asks for technical detail. "
+        "Be useful and natural. Do not claim you performed computer actions unless a tool result is given to you. "
         "Do not invent schedule, email, weather, app, file, or system facts. "
         "Use the conversation history to resolve follow-ups, pronouns, and answers to earlier questions. "
         "For a simple greeting, only say hello and ask what he wants done. "
@@ -4353,9 +4458,15 @@ def _fast_chat_system_prompt(tool_specs: list[dict[str, Any]] | None = None) -> 
     if tool_specs:
         prompt += (
             "\n\nIf and only if the user needs Jarvis to use a real tool, do not answer normally. "
-            "Instead output exactly one line beginning with \\tool followed by compact JSON. "
-            "The JSON shape is {\"tool\":\"tool.id\",\"status\":\"natural short status for Leo\",\"entities\":{}}. "
-            "The status must sound natural and polite, for example \"Yes sir, checking your email now.\" Do not use the word skill. "
+            "First write the short natural words Leo should see and hear, then include exactly one hidden machine tool call. "
+            "The preferred hidden call is \\tool({\"tool\":\"tool.id\",\"entities\":{}}). "
+            "Jarvis will remove the hidden call before display and speech, so the visible words must make sense by themselves. "
+            "Do not put the word skill in visible text. Do not explain that you are choosing tools. "
+            "For email, useful selections are latest, unread_first, index:N, and range:A-B; index:2 means the second newest inbox email. "
+            "Examples:\n"
+            "Yes sir, checking your email now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"unread_first\"}})\n"
+            "Yes sir, checking your second email now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"index:2\"}})\n"
+            "Yes sir, checking the newest email from Sharpay now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"sender_query\":\"Sharpay\",\"selection\":\"latest\"}})\n"
             "If no real tool is needed, answer directly and do not mention tools.\n"
             "Available tools:\n"
             f"{_fast_chat_tool_catalog(tool_specs)}"
@@ -4401,7 +4512,22 @@ def _fast_chat_tool_catalog(tool_specs: list[dict[str, Any]]) -> str:
             continue
         description = _clean_local_field(spec.get("description"))
         entities = ", ".join(str(entity) for entity in spec.get("entities", []) if entity)
-        lines.append(f"- {tool_id}: {description} Entities: {entities or 'none'}")
+        line = f"- {tool_id}: {description} Entities: {entities or 'none'}"
+        details = spec.get("entity_details")
+        if isinstance(details, dict):
+            detail_text = "; ".join(
+                f"{_clean_local_field(key)}={_clean_local_field(value)}"
+                for key, value in details.items()
+                if _clean_local_field(key) and _clean_local_field(value)
+            )
+            if detail_text:
+                line += f" Entity details: {detail_text}"
+        examples = spec.get("examples")
+        if isinstance(examples, list):
+            clean_examples = [_clean_local_field(example) for example in examples if _clean_local_field(example)]
+            if clean_examples:
+                line += " Examples: " + " | ".join(clean_examples[:2])
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -4409,16 +4535,10 @@ def _parse_fast_chat_tool_request(text: str, tool_specs: list[dict[str, Any]]) -
     if not tool_specs:
         return None
     stripped = _strip_think_blocks(text).strip()
-    if not stripped.startswith("\\tool"):
+    extracted = _extract_fast_chat_tool_call(stripped)
+    if extracted is None:
         return None
-    raw = stripped[len("\\tool") :].strip()
-    match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
-    if not match:
-        return None
-    try:
-        parsed = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
+    parsed, visible_text = extracted
     tool_ids = {str(spec.get("tool") or "") for spec in tool_specs if spec.get("tool")}
     selected_tool = str(parsed.get("tool") or parsed.get("selected_tool") or "").strip()
     if selected_tool not in tool_ids or selected_tool == "conversation.fast_local":
@@ -4427,6 +4547,9 @@ def _parse_fast_chat_tool_request(text: str, tool_specs: list[dict[str, Any]]) -
     if not isinstance(entities, dict):
         entities = {}
     status_text = re.sub(r"\s+", " ", str(parsed.get("status") or "")).strip()
+    visible_status = re.sub(r"\s+", " ", visible_text).strip()
+    if visible_status:
+        status_text = visible_status
     if not status_text:
         status_text = f"Yes sir, checking {selected_tool} now."
     return {
@@ -4435,6 +4558,120 @@ def _parse_fast_chat_tool_request(text: str, tool_specs: list[dict[str, Any]]) -
         "entities": {str(key): value for key, value in entities.items()},
         "reply": "",
     }
+
+
+def _extract_fast_chat_tool_call(text: str) -> tuple[dict[str, Any], str] | None:
+    for match in re.finditer(r"\\([A-Za-z][A-Za-z0-9_.]*)", text):
+        name = match.group(1)
+        start = match.start()
+        cursor = match.end()
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        parsed: dict[str, Any] | None = None
+        end = cursor
+        if name.lower() == "tool":
+            if cursor < len(text) and text[cursor] == "(":
+                inner, end = _extract_parenthesized(text, cursor)
+                if inner is not None:
+                    inner = inner.strip()
+                    if inner.startswith("{"):
+                        try:
+                            parsed = json.loads(inner)
+                        except json.JSONDecodeError:
+                            parsed = None
+            elif cursor < len(text) and text[cursor] == "{":
+                try:
+                    parsed_object, offset = json.JSONDecoder().raw_decode(text[cursor:])
+                    end = cursor + offset
+                    if isinstance(parsed_object, dict):
+                        parsed = parsed_object
+                except json.JSONDecodeError:
+                    parsed = None
+        elif name.lower() == "email" and cursor < len(text) and text[cursor] == "(":
+            inner, end = _extract_parenthesized(text, cursor)
+            if inner is not None:
+                parsed = _parse_email_shorthand_tool_call(inner)
+        if parsed is None:
+            continue
+        visible_text = (text[:start] + text[end:]).strip()
+        return parsed, visible_text
+    return None
+
+
+def _extract_parenthesized(text: str, open_index: int) -> tuple[str | None, int]:
+    if open_index >= len(text) or text[open_index] != "(":
+        return None, open_index
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        if char == "(":
+            depth += 1
+            continue
+        if char == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1 : index], index + 1
+    return None, open_index
+
+
+def _parse_email_shorthand_tool_call(arguments: str) -> dict[str, Any] | None:
+    import csv
+
+    try:
+        parts = next(csv.reader([arguments], skipinitialspace=True))
+    except csv.Error:
+        return None
+    if len(parts) < 4:
+        return None
+    count = _positive_int_or_none(parts[0])
+    from_index = _positive_int_or_none(parts[1])
+    to_index = _positive_int_or_none(parts[2])
+    unread_only = str(parts[3]).strip().lower() in {"true", "1", "yes", "on"}
+    sender_query = re.sub(r"\s+", " ", parts[4]).strip(" \"'") if len(parts) >= 5 else ""
+    entities: dict[str, Any] = {
+        "email_count": count,
+        "email_from": from_index,
+        "email_to": to_index,
+        "unread_only": unread_only,
+    }
+    if unread_only:
+        entities["selection"] = "unread_first"
+    elif from_index is not None and to_index is not None:
+        if from_index == to_index:
+            entities["selection"] = f"index:{from_index}"
+        else:
+            start = min(from_index, to_index)
+            end = max(from_index, to_index)
+            entities["selection"] = f"range:{start}-{end}"
+    elif count is not None:
+        entities["selection"] = f"range:1-{count}"
+    if sender_query:
+        entities["sender_query"] = sender_query[:120]
+    return {
+        "tool": "outlook.visible_summary",
+        "entities": entities,
+    }
+
+
+def _positive_int_or_none(value: Any) -> int | None:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _may_still_be_fast_chat_tool_request(text: str) -> bool:
@@ -6564,18 +6801,20 @@ def _run_say_text(text: str) -> dict[str, Any]:
             **_duration_fields(started_at),
             "reply": "I did not find anything readable to speak.",
         }
-    provider = _normalize_tts_provider(TTS_PROVIDER)
-    if provider == "piper":
-        result = _run_piper_text(spoken, started_at=started_at)
-        if result["executed"] or _normalize_tts_provider(TTS_FALLBACK_PROVIDER) != "macos":
-            return result
-        return _run_macos_say_text(
-            spoken,
-            started_at=started_at,
-            fallback_from="piper",
-            fallback_reason=", ".join(result.get("missing", [])) or result.get("status"),
-        )
-    return _run_macos_say_text(spoken, started_at=started_at)
+    speech = speak_text_async(spoken, reason="explicit", force=True)
+    return {
+        "tool": "quick.local_control",
+        "matched": True,
+        "status": "started" if speech.get("spoken") else str(speech.get("status") or "unavailable"),
+        "executed": bool(speech.get("spoken")),
+        "action": "speech.say",
+        "provider": speech.get("provider"),
+        "voice": speech.get("voice"),
+        "text_length": len(spoken),
+        "speech": speech,
+        **_duration_fields(started_at),
+        "reply": "Started speaking locally." if speech.get("spoken") else "I could not start local speech.",
+    }
 
 
 def _parse_volume_delta(lower: str) -> int | None:
@@ -7087,11 +7326,13 @@ end cleanText
         else if selectionHint is "latest" then
             set selectionMode to "latest"
             set maxItems to 1
+        else if selectionHint is "recent" then
+            set selectionMode to "recent"
 	    else if unreadCount is 0 then
 	        set selectionMode to "latest"
 	        set maxItems to 1
 	    end if
-	    if senderFilter is "" and unreadCount is greater than 0 and unreadCount < maxItems then set maxItems to unreadCount
+	    if selectionMode is "unread" and unreadCount is greater than 0 and unreadCount < maxItems then set maxItems to unreadCount
 	    if scanCount < maxItems then set maxItems to scanCount
 	    set selectedIndexes to {{}}
 	    set outputText to "INBOX_COUNT" & tab & (inboxCount as text) & tab & "SCANNED" & tab & (scanCount as text) & tab & "UNREAD" & tab & (unreadCount as text) & tab & "SELECTION" & tab & selectionMode & tab & "MATCHES" & tab & (matchCount as text)
