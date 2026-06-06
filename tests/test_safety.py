@@ -91,6 +91,7 @@ from jarvis.tools import (
     tool_catalog_status,
     tts_status,
     tool_registry,
+    voice_loop_simulation,
     wake_status,
 )
 from jarvis.wake import WakeSession, detect_wake_command
@@ -339,6 +340,8 @@ class PlannerTests(unittest.TestCase):
             "speech recognition candidates": "voice.stt_candidates",
             "voice recognition models": "voice.stt_candidates",
             "score stt transcript: hello Jarvis => hello Jarvis": "voice.stt_score",
+            "voice loop: Hey Jarvis status": "voice.loop_simulation",
+            "simulate voice loop Hey Jarvis final QA plan": "voice.loop_simulation",
             "overnight status": "diagnostics.overnight",
             "morning report draft status": "diagnostics.overnight",
             "final QA plan": "diagnostics.final_qa",
@@ -740,6 +743,34 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result.result["next_tool_preview"]["preview"]["recorded_audio"])
         self.assertFalse(result.result["next_tool_preview"]["preview"]["requested_microphone_permission"])
         self.assertGreater(result.result["next_tool_preview"]["preview"]["word_error_rate"], 0)
+
+    def test_tools_more_voice_loop_recommendation_previews_without_audio_or_actions(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "voice.loop_simulation",
+            "entities": {"transcript": "Hey Jarvis status"},
+            "reply": "Yes sir, testing the voice loop now.",
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
+            result = Planner().handle_selected_tool("Test the voice loop.", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "voice.loop_simulation")
+        self.assertFalse(result.result["next_tool_preview"]["executed"])
+        preview = result.result["next_tool_preview"]["preview"]
+        self.assertFalse(preview["executed"])
+        self.assertTrue(preview["planned_only"])
+        self.assertFalse(preview["recorded_audio"])
+        self.assertFalse(preview["played_audio"])
+        self.assertFalse(preview["opened_app"])
+        self.assertFalse(preview["captured_screen"])
+        self.assertEqual(preview["status"], "command_previewed")
+        self.assertEqual(preview["command"], "status")
+        self.assertEqual(preview["route_preview"]["tool"], "system.status")
+        self.assertFalse(preview["route_preview"]["executed"])
 
     def test_tools_more_model_context_recommendation_previews_without_calling_models(self):
         fake_plan = {
@@ -1633,6 +1664,41 @@ class PlannerTests(unittest.TestCase):
         self.assertGreater(result.result["word_error_rate"], 0)
         self.assertFalse(result.result["recorded_audio"])
 
+    def test_voice_loop_simulation_text_only_routes_command_preview(self):
+        result = Planner().handle("voice loop: Hey Jarvis status")
+
+        self.assertEqual(result.tool, "voice.loop_simulation")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["status"], "command_previewed")
+        self.assertEqual(result.result["command"], "status")
+        self.assertEqual(result.result["spoken_sequence"][0], "Hello sir.")
+        self.assertIn("Yes sir", result.result["spoken_sequence"][1])
+        self.assertFalse(result.result["recorded_audio"])
+        self.assertFalse(result.result["played_audio"])
+        self.assertFalse(result.result["opened_app"])
+        self.assertFalse(result.result["captured_screen"])
+        self.assertFalse(result.result["called_model"])
+        self.assertFalse(result.result["route_preview"]["executed"])
+        self.assertEqual(result.result["route_preview"]["tool"], "system.status")
+
+    def test_voice_loop_preview_does_not_run_simulation(self):
+        result = Planner().preview("voice loop: Hey Jarvis status")
+
+        self.assertEqual(result.tool, "voice.loop_simulation")
+        self.assertFalse(result.executed)
+        self.assertTrue(result.result["planned_only"])
+        self.assertEqual(result.result["plan"]["transcript"], "Hey Jarvis status")
+
+    def test_voice_loop_tool_reports_waiting_when_wake_only(self):
+        result = voice_loop_simulation("Hey Jarvis")
+
+        self.assertEqual(result["tool"], "voice.loop_simulation")
+        self.assertEqual(result["status"], "awaiting_command")
+        self.assertEqual(result["spoken_sequence"], ["Hello sir."])
+        self.assertFalse(result["recorded_audio"])
+        self.assertFalse(result["played_audio"])
+        self.assertFalse(result["called_model"])
+
     def test_model_context_status_previews_prompts_without_calling_models(self):
         tool_specs = [
             {"tool": "outlook.visible_summary", "description": "Read email.", "entities": ["selection"]},
@@ -1955,6 +2021,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("voice.stt_audition", tool_ids)
         self.assertIn("voice.stt_candidates", tool_ids)
         self.assertIn("voice.stt_score", tool_ids)
+        self.assertIn("voice.loop_simulation", tool_ids)
         self.assertIn("diagnostics.overnight", tool_ids)
         self.assertIn("diagnostics.final_qa", tool_ids)
         self.assertIn("diagnostics.model_context", tool_ids)
@@ -4856,7 +4923,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(preflight["summary"]["recommended_total"], len(recommended_ids))
         self.assertEqual(preflight["summary"]["required_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "required" and check["passed"]))
         policy_gate = next(check for check in preflight["checks"] if check["id"] == "policy_gates_loaded")
-        self.assertIn("27/27", policy_gate["detail"])
+        self.assertIn("28/28", policy_gate["detail"])
         self.assertEqual(preflight["summary"]["recommended_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "recommended" and check["passed"]))
         self.assertEqual(check_ids, required_ids.union(recommended_ids))
 

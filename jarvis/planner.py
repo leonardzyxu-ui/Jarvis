@@ -57,6 +57,7 @@ from .tools import (
     terminal_command_plan,
     tool_catalog_status,
     tts_status,
+    voice_loop_simulation,
     wake_status,
     wake_phrase_simulation,
 )
@@ -121,6 +122,14 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": ["reference", "transcript", "candidate_id", "first_result_ms", "final_result_ms", "human_score"],
         "examples": [
             'Yes sir, scoring that transcript now. \\tool({"tool":"voice.stt_score","entities":{"reference":"Hey Jarvis, check my email.","transcript":"hey jarvis check my email"}})',
+        ],
+    },
+    {
+        "tool": "voice.loop_simulation",
+        "description": "Simulate a typed Hey Jarvis wake loop, greeting, command capture, and safe command preview without recording audio, playing audio, opening apps, or capturing the screen.",
+        "entities": ["transcript"],
+        "examples": [
+            'Yes sir, testing the voice loop now. \\tool({"tool":"voice.loop_simulation","entities":{"transcript":"Hey Jarvis status"}})',
         ],
     },
     {
@@ -309,6 +318,9 @@ class Planner:
 
         if assessment.blocked:
             return self._result(text, "policy.block", "Command blocked by safety policy.", assessment, {}, False)
+        voice_loop_transcript = _extract_voice_loop_transcript(text)
+        if voice_loop_transcript is not None:
+            return self._voice_loop_result(text, assessment, voice_loop_transcript)
         if codex_job_query is not None:
             result = codex_job_status(codex_job_query)
             return self._result(text, "codex.job", "Checked Codex job status.", assessment, result, False)
@@ -495,6 +507,9 @@ class Planner:
 
         if assessment.blocked:
             return self._preview_result(text, "policy.block", assessment, False)
+        voice_loop_transcript = _extract_voice_loop_transcript(text)
+        if voice_loop_transcript is not None:
+            return self._preview_result(text, "voice.loop_simulation", assessment, True, plan={"transcript": voice_loop_transcript})
         if _looks_like_overnight_work_status(lower):
             return self._preview_result(text, "diagnostics.overnight", assessment, True)
         if _looks_like_final_qa_status(lower):
@@ -695,6 +710,9 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "voice.stt_score", assessment, True, plan={"intent": intent, **payload})
             return self._result(text, "voice.stt_score", "Scored speech-recognition transcript.", assessment, stt_score_transcript(**payload), True)
+        if selected_tool == "voice.loop_simulation":
+            transcript = _clean_optional_entity(entities.get("transcript")) or _extract_voice_loop_transcript(text) or text
+            return self._voice_loop_result(text, assessment, transcript)
         if selected_tool == "outlook.visible_summary":
             sender_query = _clean_optional_entity(entities.get("sender_query")) or _extract_email_sender_constraint(text)
             selection = (
@@ -844,6 +862,22 @@ class Planner:
         return None
 
 
+    def _voice_loop_result(self, text: str, assessment: Any, transcript: str) -> PlannedResult:
+        detection = detect_wake_command(transcript)
+        route_preview = None
+        route_status_text = None
+        if detection.woke and detection.command:
+            preview = self.preview(detection.command, use_model_router=False)
+            route_preview = preview.to_dict()
+            route_status_text = _voice_loop_status_text_for_tool(preview.tool)
+        result = voice_loop_simulation(
+            transcript,
+            route_preview=route_preview,
+            route_status_text=route_status_text,
+        )
+        return self._result(text, "voice.loop_simulation", "Ran text-only voice loop simulation.", assessment, result, True)
+
+
     def _app_quit_confirmation_result(self, text: str, assessment: Any, app_name: str) -> PlannedResult:
         plan = app_quit_plan(app_name)
         return self._result(
@@ -987,6 +1021,14 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "opened_browser": False,
             "reply": "STT score needs both a reference sentence and a transcript.",
         }
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended == "voice.loop_simulation":
+        transcript = _clean_optional_entity(entities.get("transcript")) or _extract_voice_loop_transcript(text) or text
+        preview = Planner()._voice_loop_result(text, classify_command(text), transcript).result
         return {
             "recommended_tool": recommended,
             "executed": False,
@@ -1419,6 +1461,55 @@ def _extract_wake_transcript(text: str) -> str | None:
     if detect_wake_command(stripped).woke:
         return stripped
     return None
+
+
+def _extract_voice_loop_transcript(text: str) -> str | None:
+    stripped = text.strip()
+    lower = stripped.lower()
+    prefixes = (
+        "voice loop:",
+        "wake loop:",
+        "simulate voice loop:",
+        "simulate wake loop:",
+        "test voice loop:",
+        "test wake loop:",
+        "jarvis voice loop:",
+    )
+    for prefix in prefixes:
+        if lower.startswith(prefix):
+            transcript = stripped[len(prefix) :].strip()
+            return transcript or "Hey Jarvis"
+    match = re.match(r"(?is)^simulate\s+(?:the\s+)?(?:jarvis\s+)?(?:voice|wake)\s+loop\s+(.+)$", stripped)
+    if match:
+        return match.group(1).strip() or "Hey Jarvis"
+    return None
+
+
+def _voice_loop_status_text_for_tool(tool: str) -> str:
+    labels = {
+        "outlook.visible_summary": "Yes sir, checking your email now.",
+        "diagnostics.email": "Yes sir, checking the email setup now.",
+        "diagnostics.overnight": "Yes sir, checking the overnight workboard now.",
+        "diagnostics.final_qa": "Yes sir, checking the final QA plan now.",
+        "diagnostics.model_context": "Yes sir, checking the model context now.",
+        "diagnostics.tool_catalog": "Yes sir, checking the tool catalog now.",
+        "diagnostics.permissions": "Yes sir, checking permissions readiness now.",
+        "voice.stt_candidates": "Yes sir, checking speech recognition options now.",
+        "voice.stt_score": "Yes sir, scoring that transcript now.",
+        "screenshot.capability": "Yes sir, checking the screen setup now.",
+        "app.list": "Yes sir, checking which apps I can open now.",
+        "app.status": "Yes sir, checking that app now.",
+        "app.running": "Yes sir, checking which apps are running now.",
+        "app.open": "Yes sir, preparing the app open preview now.",
+        "app.quit": "Yes sir, preparing the quit confirmation now.",
+        "browser.open_url": "Yes sir, preparing that browser action now.",
+        "terminal.read_only": "Yes sir, checking that locally now.",
+        "shell.read_only": "Yes sir, checking that locally now.",
+        "quick.local_control": "Yes sir, handling that now.",
+        "system.status": "Yes sir, checking Jarvis status now.",
+        "conversation.fast_local": "Yes sir, preparing a direct answer now.",
+    }
+    return labels.get(tool, "Yes sir, checking this now.")
 
 
 def _extract_injection_scan_text(text: str) -> str | None:

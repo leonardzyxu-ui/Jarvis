@@ -100,6 +100,7 @@ def run_self_checks() -> dict[str, Any]:
     add("planner_stt_audition_routes", planner.handle("stt audition status").tool == "voice.stt_audition")
     add("planner_stt_candidates_routes", planner.handle("speech recognition candidates").tool == "voice.stt_candidates")
     add("planner_stt_score_routes", planner.handle("score stt transcript: hello Jarvis => hello Jarvis").tool == "voice.stt_score")
+    add("planner_voice_loop_routes", planner.handle("voice loop: Hey Jarvis status").tool == "voice.loop_simulation")
     add("planner_overnight_status_routes", planner.handle("overnight workboard status").tool == "diagnostics.overnight")
     add("planner_codex_chat_status_routes", planner.handle("codex chat status").tool == "diagnostics.codex_chats")
     add("planner_codex_activity_routes", planner.handle("codex activity").tool == "codex.activity")
@@ -165,6 +166,7 @@ def run_self_checks() -> dict[str, Any]:
         "voice.stt_audition",
         "voice.stt_candidates",
         "voice.stt_score",
+        "voice.loop_simulation",
         "voice.wake_simulation",
         "safety.injection_scan",
         "conversation.fast_local",

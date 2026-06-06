@@ -664,6 +664,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Runs text-only wake phrase detection without microphone access or background listening.",
             },
             {
+                "id": "voice.loop_simulation",
+                "label": "Voice Loop Simulation",
+                "mode": "execute",
+                "risk": "read_only_text_only",
+                "available": True,
+                "description": "Simulates Hey Jarvis wake, greeting, command capture, and safe command preview from typed text without microphone, speech, app, or screen activity.",
+            },
+            {
                 "id": "safety.injection_scan",
                 "label": "Prompt-Injection Scan",
                 "mode": "execute",
@@ -1963,6 +1971,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "voice.stt_audition", "kind": "planned", "description": "Prepare a speech-recognition audition workflow."},
         {"id": "voice.stt_candidates", "kind": "read_only", "description": "List speech-recognition candidates and installed local engine evidence."},
         {"id": "voice.stt_score", "kind": "read_only", "description": "Score a pasted STT transcript against a reference sentence without recording audio."},
+        {"id": "voice.loop_simulation", "kind": "read_only_text_only", "description": "Simulate wake, greeting, command capture, and command preview without microphone or audio."},
         {"id": "ui.overlay", "kind": "planned", "description": "Future visible Jarvis overlay/popup UI."},
         {"id": "memory.daily_summary", "kind": "planned", "description": "Future daily memory summary route."},
         {"id": "teams.assignment", "kind": "planned_private_workflow", "description": "Future Teams assignment workflow; never submit without confirmation."},
@@ -2457,6 +2466,88 @@ def wake_phrase_simulation(transcript: str) -> dict[str, Any]:
         "needs_followup": detection.needs_followup,
         "detection": detection.to_dict(),
         "prototype_behavior": "Text simulation only. No microphone, audio capture, or background listener is active.",
+    }
+
+
+def voice_loop_simulation(
+    transcript: str,
+    *,
+    route_preview: dict[str, Any] | None = None,
+    route_status_text: str | None = None,
+) -> dict[str, Any]:
+    """Simulate the typed wake-to-command loop without microphone or audio."""
+    clean_transcript = re.sub(r"\s+", " ", str(transcript or "")).strip()
+    detection = detect_wake_command(clean_transcript)
+    command = detection.command
+    stages: list[dict[str, Any]] = [
+        {
+            "id": "typed_transcript",
+            "status": "received",
+            "source": "typed_text_only",
+        },
+        {
+            "id": "wake_detection",
+            "status": "detected" if detection.woke else "ignored",
+            "wake_phrase": detection.phrase,
+        },
+    ]
+    spoken_sequence: list[str] = []
+    visible_sequence: list[str] = []
+    if not detection.woke:
+        status = "ignored"
+        reply = "Voice loop simulation ignored the transcript because no Jarvis wake phrase was detected."
+    elif detection.needs_followup:
+        status = "awaiting_command"
+        spoken_sequence.append("Hello sir.")
+        visible_sequence.append("Hello sir.")
+        stages.append({"id": "greeting", "status": "planned", "text": "Hello sir."})
+        stages.append({"id": "command_capture", "status": "waiting_for_followup"})
+        reply = "Voice loop simulation detected the wake phrase and would answer: Hello sir."
+    else:
+        status = "command_previewed"
+        spoken_sequence.append("Hello sir.")
+        visible_sequence.append("Hello sir.")
+        stages.append({"id": "greeting", "status": "planned", "text": "Hello sir."})
+        stages.append({"id": "command_capture", "status": "captured", "command": command})
+        if route_preview is not None:
+            stages.append(
+                {
+                    "id": "command_preview",
+                    "status": "planned",
+                    "tool": route_preview.get("tool"),
+                    "executed": bool(route_preview.get("executed")),
+                }
+            )
+        natural_status = re.sub(r"\s+", " ", str(route_status_text or "")).strip()
+        if natural_status:
+            spoken_sequence.append(natural_status)
+            visible_sequence.append(natural_status)
+        reply = (
+            f"Voice loop simulation captured: {command}. "
+            "It prepared a command preview only and did not execute the command."
+        )
+    return {
+        "tool": "voice.loop_simulation",
+        "executed": True,
+        "status": status,
+        "transcript": clean_transcript[:500],
+        "detection": detection.to_dict(),
+        "command": command,
+        "route_preview": route_preview,
+        "spoken_sequence": spoken_sequence,
+        "visible_sequence": visible_sequence,
+        "stages": stages,
+        "read_private_content": False,
+        "recorded_audio": False,
+        "requested_microphone_permission": False,
+        "played_audio": False,
+        "opened_app": False,
+        "launched_app": False,
+        "captured_screen": False,
+        "called_model": False,
+        "changed_state": False,
+        "prototype_behavior": "Typed simulation only. It does not listen, speak, open apps, capture the screen, call a model, or execute the previewed command.",
+        "reply": reply,
     }
 
 
