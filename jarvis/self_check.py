@@ -89,6 +89,7 @@ def run_self_checks() -> dict[str, Any]:
     add("planner_deep_tool_catalog_routes", planner.handle("deep tool catalog").tool == "tools.deep_catalog")
     add("planner_tool_handoff_plan_routes", planner.handle("handoff plan for app.open").tool == "tools.handoff_plan")
     add("planner_permissions_routes", planner.handle("permissions status").tool == "diagnostics.permissions")
+    add("planner_daily_memory_summary_routes", planner.handle("daily memory summary").tool == "memory.daily_summary")
     add("planner_final_qa_routes", planner.handle("final QA plan").tool == "diagnostics.final_qa")
     open_app_preview = planner.preview("open app Safari").to_dict()
     add(
@@ -173,6 +174,7 @@ def run_self_checks() -> dict[str, Any]:
         "diagnostics.model_context",
         "diagnostics.tool_catalog",
         "diagnostics.permissions",
+        "memory.daily_summary",
         "voice.stt_audition",
         "voice.stt_candidates",
         "voice.stt_session_plan",

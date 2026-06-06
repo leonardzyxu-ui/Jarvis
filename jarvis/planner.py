@@ -23,6 +23,7 @@ from .tools import (
     codex_speed_status,
     codex_job_status,
     codex_delegate_plan,
+    daily_memory_summary,
     deep_tool_catalog_status,
     email_backend_status,
     elevation_status,
@@ -265,6 +266,16 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": [],
     },
     {
+        "tool": "diagnostics.memory",
+        "description": "Report Jarvis memory architecture and status without reading raw chat history or syncing memory.",
+        "entities": [],
+    },
+    {
+        "tool": "memory.daily_summary",
+        "description": "Summarize today's local Jarvis-to-Codex daily memory events. This does not read raw Jarvis chat history, expose session IDs, call a model, or sync to another machine.",
+        "entities": [],
+    },
+    {
         "tool": "codex.activity",
         "description": "Read redacted recent async Codex job activity so Jarvis can show that Codex is working without starting a new Codex request.",
         "entities": [],
@@ -382,6 +393,8 @@ class Planner:
             return self._result(text, "codex.activity", "Read Codex activity snapshot.", assessment, result, False)
         if _looks_like_codex_speed_status(lower):
             return self._result(text, "diagnostics.codex_speed", "Read local Codex speed status.", assessment, codex_speed_status(), True)
+        if _looks_like_daily_memory_summary(lower):
+            return self._result(text, "memory.daily_summary", "Read local daily memory summary.", assessment, daily_memory_summary(), True)
         if _looks_like_overnight_work_status(lower):
             return self._result(text, "diagnostics.overnight", "Read overnight workboard status.", assessment, overnight_work_status(), True)
         if _looks_like_final_qa_status(lower):
@@ -625,6 +638,8 @@ class Planner:
             return self._preview_result(text, "diagnostics.codex_chats", assessment, True)
         if _looks_like_codex_activity_status(lower):
             return self._preview_result(text, "codex.activity", assessment, True)
+        if _looks_like_daily_memory_summary(lower):
+            return self._preview_result(text, "memory.daily_summary", assessment, True)
         if _looks_like_same_codex_reference(text):
             return self._preview_result(
                 text,
@@ -941,7 +956,11 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "workflow.app_task_plan", assessment, True, plan={"intent": intent, "goal": goal, "target_app": target_app})
             return self._result(text, "workflow.app_task_plan", "Prepared safe app-task workflow plan.", assessment, app_task_workflow_plan(goal, target_app=target_app), True)
-        if selected_tool in {"ui.overlay", "ui.automation", "memory.daily_summary", "teams.assignment", "screen.ocr"}:
+        if selected_tool == "memory.daily_summary":
+            if not execute:
+                return self._preview_result(text, "memory.daily_summary", assessment, True, plan={"intent": intent})
+            return self._result(text, "memory.daily_summary", "Read local daily memory summary.", assessment, daily_memory_summary(), True)
+        if selected_tool in {"ui.overlay", "ui.automation", "teams.assignment", "screen.ocr"}:
             result = planned_tool_status(selected_tool)
             return self._result(text, selected_tool, "Prepared planned future tool status.", assessment, result, False)
         if selected_tool == "diagnostics.codex_chats":
@@ -1291,6 +1310,13 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "executed": False,
             "preview": {**preview, "executed": False, "planned_only": True},
         }
+    if recommended == "memory.daily_summary":
+        preview = daily_memory_summary()
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
     if recommended == "diagnostics.final_qa":
         preview = final_qa_plan_status()
         return {
@@ -1307,7 +1333,7 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "executed": False,
             "preview": {**preview, "executed": False, "planned_only": True},
         }
-    if recommended in {"ui.overlay", "ui.automation", "memory.daily_summary", "teams.assignment", "screen.ocr"}:
+    if recommended in {"ui.overlay", "ui.automation", "teams.assignment", "screen.ocr"}:
         preview = planned_tool_status(recommended)
         return {
             "recommended_tool": recommended,
@@ -2220,6 +2246,26 @@ def _looks_like_elevation_status(lower: str) -> bool:
     return (
         any(cue in lower for cue in elevation_cues)
         and any(cue in lower for cue in status_cues)
+        and not any(cue in lower for cue in mutation_cues)
+    )
+
+
+def _looks_like_daily_memory_summary(lower: str) -> bool:
+    memory_cues = (
+        "daily memory summary",
+        "today's memory",
+        "todays memory",
+        "codex daily memory",
+        "jarvis-codex memory",
+        "jarvis codex memory",
+        "what did codex do today",
+        "what has jarvis sent to codex today",
+    )
+    summary_cues = ("summary", "summarize", "show", "check", "status", "today", "events")
+    mutation_cues = ("sync now", "copy now", "upload", "delete", "erase", "export all", "read all chat")
+    return (
+        any(cue in lower for cue in memory_cues)
+        and any(cue in lower for cue in summary_cues)
         and not any(cue in lower for cue in mutation_cues)
     )
 

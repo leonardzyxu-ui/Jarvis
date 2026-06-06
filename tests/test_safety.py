@@ -63,6 +63,7 @@ from jarvis.tools import (
     browser_open_url_plan,
     codex_chat_status,
     codex_delegate_plan,
+    daily_memory_summary,
     deep_tool_catalog_status,
     email_backend_status,
     elevation_status,
@@ -380,6 +381,8 @@ class PlannerTests(unittest.TestCase):
             "MacBook Air SSH status": "diagnostics.remote_worker",
             "elevation status": "diagnostics.elevation",
             "memory status": "diagnostics.memory",
+            "daily memory summary": "memory.daily_summary",
+            "Jarvis-Codex memory today": "memory.daily_summary",
             "tts status": "diagnostics.tts",
             "can you speak": "diagnostics.tts",
             "screen status": "screenshot.capability",
@@ -1007,6 +1010,38 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result.result["next_tool_preview"]["preview"]["planned_only"])
         self.assertFalse(result.result["next_tool_preview"]["preview"]["called_fast_model"])
         context_mock.assert_called_once()
+
+    def test_tools_more_daily_memory_recommendation_previews_without_raw_history(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "memory.daily_summary",
+            "entities": {},
+            "reply": "Yes sir, checking today's memory summary now.",
+        }
+        fake_memory = {
+            "tool": "memory.daily_summary",
+            "status": "active",
+            "executed": True,
+            "read_chat_history": False,
+            "synced_remote": False,
+            "session_ids_hidden": True,
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan), \
+             patch("jarvis.planner.daily_memory_summary", return_value=fake_memory) as memory_mock:
+            result = Planner().handle_selected_tool("Show today's Jarvis-Codex memory.", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "memory.daily_summary")
+        preview = result.result["next_tool_preview"]["preview"]
+        self.assertFalse(preview["executed"])
+        self.assertTrue(preview["planned_only"])
+        self.assertFalse(preview["read_chat_history"])
+        self.assertFalse(preview["synced_remote"])
+        self.assertTrue(preview["session_ids_hidden"])
+        memory_mock.assert_called_once()
 
     def test_tools_more_tool_catalog_recommendation_previews_without_calling_models(self):
         fake_plan = {
@@ -1741,6 +1776,42 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("MEMORY.md", result["design"]["profile_memory_file"])
         self.assertIn("codex_daily_memory", result)
         self.assertTrue(result["codex_daily_memory"]["session_ids_hidden"])
+
+    def test_daily_memory_summary_reports_codex_memory_without_raw_history(self):
+        session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            memory = Path(temp_dir) / "codex_daily_memory.json"
+            memory.write_text(
+                json.dumps(
+                    {
+                        "schema": "jarvis.codex_daily_memory.v1",
+                        "date": time.strftime("%Y-%m-%d"),
+                        "events": [
+                            {
+                                "kind": "codex_job_started",
+                                "chat_name": "Default",
+                                "prompt_summary": "tightened Piper speech interruption",
+                                "detail": f"session {session_id}",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.CODEX_DAILY_MEMORY_PATH", memory):
+                result = daily_memory_summary()
+
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertEqual(result["tool"], "memory.daily_summary")
+        self.assertEqual(result["status"], "active")
+        self.assertEqual(result["event_count"], 1)
+        self.assertFalse(result["read_chat_history"])
+        self.assertFalse(result["synced_remote"])
+        self.assertFalse(result["called_model"])
+        self.assertTrue(result["session_ids_hidden"])
+        self.assertIn("tightened Piper speech interruption", result["compiled_summary"])
+        self.assertIn("Jarvis-to-Codex", result["reply"])
+        self.assertNotIn(session_id, serialized)
 
     def test_tts_status_does_not_play_audio(self):
         voices = "Alex en_US # sample voice\nSamantha en_US # sample voice\n"
@@ -2595,6 +2666,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("diagnostics.model_context", tool_ids)
         self.assertIn("diagnostics.tool_catalog", tool_ids)
         self.assertIn("diagnostics.permissions", tool_ids)
+        self.assertIn("memory.daily_summary", tool_ids)
         self.assertIn("safety.injection_scan", tool_ids)
         self.assertIn("diagnostics.codex_chats", tool_ids)
         self.assertIn("codex.activity", tool_ids)
@@ -5601,7 +5673,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(preflight["summary"]["recommended_total"], len(recommended_ids))
         self.assertEqual(preflight["summary"]["required_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "required" and check["passed"]))
         policy_gate = next(check for check in preflight["checks"] if check["id"] == "policy_gates_loaded")
-        self.assertIn("35/35", policy_gate["detail"])
+        self.assertIn("36/36", policy_gate["detail"])
         self.assertEqual(preflight["summary"]["recommended_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "recommended" and check["passed"]))
         self.assertEqual(check_ids, required_ids.union(recommended_ids))
 

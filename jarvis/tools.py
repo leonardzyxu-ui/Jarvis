@@ -544,6 +544,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Reports active Jarvis-Codex daily memory plus the broader planned memory system without reading or syncing chat history.",
             },
             {
+                "id": "memory.daily_summary",
+                "label": "Daily Memory Summary",
+                "mode": "execute",
+                "risk": "read_only_no_chat_export",
+                "available": True,
+                "description": "Summarizes today's local Jarvis-to-Codex memory events without reading raw chat history, exposing session IDs, or syncing to another machine.",
+            },
+            {
                 "id": "diagnostics.source_access",
                 "label": "Source Access Status",
                 "mode": "execute",
@@ -638,14 +646,6 @@ def tool_registry() -> dict[str, Any]:
                 "risk": "future_private_app_control",
                 "available": False,
                 "description": "Future permission-gated route for clicking, typing, and navigating app UI; never sends, submits, deletes, or changes private data without confirmation.",
-            },
-            {
-                "id": "memory.daily_summary",
-                "label": "Daily Memory Summary Plan",
-                "mode": "planned",
-                "risk": "future_private_memory",
-                "available": False,
-                "description": "Future daily memory summarization route; not enabled until retention/sync boundaries are approved.",
             },
             {
                 "id": "teams.assignment",
@@ -2028,6 +2028,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "tools.handoff_plan", "kind": "read_only_plan", "description": "Explain how a selected tool would route through policy before any execution."},
         {"id": "diagnostics.permissions", "kind": "read_only", "description": "Report privacy-permission readiness without prompting or changing settings."},
         {"id": "diagnostics.codex_chats", "kind": "read_only", "description": "Report configured Codex chats, default route, and daily memory without exposing session IDs."},
+        {"id": "memory.daily_summary", "kind": "read_only", "description": "Summarize today's local Jarvis-to-Codex memory without reading raw chat history or exposing session IDs."},
         {"id": "codex.activity", "kind": "read_only", "description": "Show redacted recent Codex job activity without starting a new Codex request."},
         {"id": "codex.job", "kind": "async_deep_work", "description": "Delegate broad coding/project work to Codex."},
         {"id": "diagnostics.final_qa", "kind": "read_only", "description": "Report the deferred foreground QA plan without opening apps or browsers."},
@@ -2041,7 +2042,6 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "voice.loop_simulation", "kind": "read_only_text_only", "description": "Simulate wake, greeting, command capture, and command preview without microphone or audio."},
         {"id": "ui.overlay", "kind": "planned", "description": "Future visible Jarvis overlay/popup UI."},
         {"id": "ui.automation", "kind": "planned_private_app_control", "description": "Future app UI clicking/typing/navigation route with permission checks and confirmation gates."},
-        {"id": "memory.daily_summary", "kind": "planned", "description": "Future daily memory summary route."},
         {"id": "teams.assignment", "kind": "planned_private_workflow", "description": "Future Teams assignment workflow; never submit without confirmation."},
     ]
 
@@ -3664,16 +3664,6 @@ def planned_tool_status(tool_id: str) -> dict[str, Any]:
                 "Verify visually after foreground app/browser QA is allowed.",
             ],
         },
-        "memory.daily_summary": {
-            "status": "planned_unavailable",
-            "category": "future_private_memory",
-            "requires_leo": True,
-            "next_steps": [
-                "Define retention, redaction, and sync boundaries before reading daily chat history.",
-                "Build a local summary format that refreshes the next morning.",
-                "Only enable MacBook Air sync after explicit approval.",
-            ],
-        },
         "ui.automation": {
             "status": "planned_unavailable",
             "category": "future_private_app_control",
@@ -4600,6 +4590,54 @@ def memory_status() -> dict[str, Any]:
         "design": design,
         "phases": phases,
         "codex_daily_memory": codex_memory,
+        "reply": reply,
+    }
+
+
+def daily_memory_summary() -> dict[str, Any]:
+    """Summarize today's local Jarvis-to-Codex memory without reading raw chat history."""
+    codex_memory = _codex_daily_memory_snapshot(latest_limit=8)
+    event_count = int(codex_memory.get("event_count") or 0)
+    compiled = str(codex_memory.get("compiled_summary") or "").strip()
+    recent_work = codex_memory.get("recent_work") if isinstance(codex_memory.get("recent_work"), list) else []
+    status = "active" if event_count else "empty"
+    if event_count:
+        reply = (
+            f"Daily memory summary: today's local Jarvis-to-Codex memory has {event_count} event"
+            f"{'s' if event_count != 1 else ''}. {compiled or 'No compact summary text is available yet.'} "
+            "Session IDs are hidden. I did not read raw chat history or sync anything to another machine."
+        )
+    else:
+        reply = (
+            "Daily memory summary: no Jarvis-to-Codex events have been recorded today yet. "
+            "The broader all-chat daily summarizer is still future work; I did not read raw chat history or sync anything."
+        )
+    return {
+        "tool": "memory.daily_summary",
+        "executed": True,
+        "status": status,
+        "scope": "local_jarvis_to_codex_events_only",
+        "read_private_content": False,
+        "read_chat_history": False,
+        "synced_remote": False,
+        "called_model": False,
+        "session_ids_hidden": True,
+        "date": codex_memory.get("date"),
+        "path": codex_memory.get("path"),
+        "event_count": event_count,
+        "chat_counts": codex_memory.get("chat_counts") or {},
+        "chat_counts_text": codex_memory.get("chat_counts_text") or "",
+        "compiled_summary": compiled,
+        "previous_day_summary": codex_memory.get("previous_day_summary") or "",
+        "recent_work": recent_work,
+        "latest_events": codex_memory.get("latest_events") or [],
+        "limitations": [
+            "Does not summarize arbitrary Jarvis chat history yet.",
+            "Does not read raw chat exports.",
+            "Does not sync to the MacBook Air.",
+            "Only compact Jarvis-to-Codex routing/job events are included.",
+        ],
+        "next_step": "Build a separate reviewable local Jarvis chat-history summarizer before any MacBook Air sync.",
         "reply": reply,
     }
 
