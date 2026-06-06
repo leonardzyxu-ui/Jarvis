@@ -3427,10 +3427,33 @@ def model_context_status(
     codex_prompt = _codex_jarvis_generated_prompt(prompt, codex_selection)
     sample_tts_reply = _sanitize_spoken_text("Hello sir. What would you like me to do?")
     tool_ids = [str(spec.get("tool") or "") for spec in tool_specs or [] if spec.get("tool")]
+    stream_tool_flow = {
+        "enabled": bool(tool_specs),
+        "normal_reply_rule": "If no real tool is needed, the fast model should answer directly and should not mention tools, skills, or routing.",
+        "hidden_call_syntax": "\\tool({\"tool\":\"tool.id\",\"entities\":{}})",
+        "legacy_email_shorthand_supported": "\\Email(count, from, to, unread_only, optional_sender)",
+        "visible_status_rule": "Text outside the hidden call is shown and may be spoken; the hidden machine call is removed before display and TTS.",
+        "hidden_call_can_appear_mid_sentence": True,
+        "server_parser": "_parse_fast_chat_tool_request",
+        "stream_final_status": "tool_requested",
+        "history_flow": {
+            "fast_model_receives_history": True,
+            "middle_planner_receives_same_history_when_tools_more": True,
+            "current_user_message_is_not_duplicated_in_history": True,
+            "fast_history_item_limit": 12,
+            "middle_history_item_limit": 8,
+            "preview_history_items": len(history_items),
+        },
+        "execution_gate": "Every selected tool is routed through Planner.handle_selected_tool and the safety policy before execution.",
+        "safe_followthrough_limit": "The middle planner can only follow through automatically for explicitly requested safe app.open or allowlisted terminal.read_only routes.",
+        "user_visible_status_example": "Yes sir, checking your email now.",
+        "machine_call_example": "\\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"unread_first\"}})",
+    }
     reply = (
         f"Model context preview for '{prompt}': fast chat would receive {len(fast_messages)} messages, "
         f"the middle planner would receive one JSON-planning prompt with {len(_middle_tool_catalog_ids())} tools, "
-        "Codex would receive a Jarvis-generated prompt only for deep delegated work, and TTS would receive sanitized final visible text. "
+        "Codex would receive a Jarvis-generated prompt only for deep delegated work, TTS would receive sanitized final visible text, "
+        "and streamed tool calls would be parsed as hidden machine calls before any selected tool is routed through policy. "
         "No model was called and no audio was played."
     )
     return {
@@ -3467,6 +3490,7 @@ def model_context_status(
                 "plan_only": True,
             },
         },
+        "stream_tool_flow": stream_tool_flow,
         "codex": {
             "model": DEFAULT_CODEX_MODEL,
             "reasoning_effort": DEFAULT_CODEX_REASONING_EFFORT,
