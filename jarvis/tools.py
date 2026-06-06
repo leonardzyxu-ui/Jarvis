@@ -4387,10 +4387,10 @@ def capabilities_status() -> dict[str, Any]:
         },
         {
             "id": "memory",
-            "status": "not_built",
-            "summary": "Memory architecture is designed around daily summaries and optional MacBook Air sync, but chat-history summarization is not enabled yet.",
-            "test_prompt": "memory status",
-            "needs_leo": True,
+            "status": "partial",
+            "summary": "Local Jarvis-to-Codex daily memory is active; full raw chat-history summarization, user profile retrieval, and MacBook Air sync are not enabled yet.",
+            "test_prompt": "daily memory summary",
+            "needs_leo": False,
         },
         {
             "id": "wake",
@@ -4455,8 +4455,8 @@ def capabilities_status() -> dict[str, Any]:
     reply = (
         f"Capability status: {working} working, {partial} partial, {not_ready} not ready. "
         "Working now includes typed chat, fast casual chat, latency status, Codex async delegation, launch diagnostics, source-access diagnostics, and the overnight workboard route. "
-        "Partial work includes email, quick device controls, guarded middle planning, remote helper diagnostics, wake, TTS, and computer control. "
-        "Not active yet: real microphone speech-to-text, memory summarization, and background wake-word listening. "
+        "Partial work includes email, quick device controls, guarded middle planning, remote helper diagnostics, Jarvis-Codex daily memory, wake, TTS, and computer control. "
+        "Not active yet: real microphone speech-to-text, full raw chat-history memory, and background wake-word listening. "
         "This diagnostic did not read email, screenshots, microphone audio, or files."
     )
     return {

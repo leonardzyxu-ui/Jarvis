@@ -61,6 +61,7 @@ from jarvis.tools import (
     app_status,
     app_task_workflow_plan,
     browser_open_url_plan,
+    capabilities_status,
     codex_chat_plan,
     codex_chat_status,
     codex_delegate_plan,
@@ -403,6 +404,15 @@ class PlannerTests(unittest.TestCase):
         for command, expected_tool in cases.items():
             with self.subTest(command=command):
                 self.assertEqual(Planner().handle(command).tool, expected_tool)
+
+    def test_capability_status_reports_daily_memory_as_partial(self):
+        result = capabilities_status()
+        memory = next(item for item in result["capabilities"] if item["id"] == "memory")
+
+        self.assertEqual(memory["status"], "partial")
+        self.assertEqual(memory["test_prompt"], "daily memory summary")
+        self.assertFalse(memory["needs_leo"])
+        self.assertIn("Jarvis-to-Codex daily memory", memory["summary"])
 
     def test_codex_route_starts_async_job_for_broad_requests(self):
         fake_result = {
