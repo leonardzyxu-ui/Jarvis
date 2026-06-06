@@ -512,6 +512,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Reports configured Codex chat names, purposes, default route, and daily memory counts without exposing session IDs.",
             },
             {
+                "id": "codex.chat_plan",
+                "label": "Codex Chat Plan",
+                "mode": "read_only_plan",
+                "risk": "read_only_no_session_ids",
+                "available": True,
+                "description": "Shows which configured Codex chat Jarvis would use for a request, why it chose that chat, and whether it falls back to Default without starting Codex or exposing session IDs.",
+            },
+            {
                 "id": "codex.activity",
                 "label": "Codex Activity",
                 "mode": "read_only",
@@ -2028,6 +2036,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "tools.handoff_plan", "kind": "read_only_plan", "description": "Explain how a selected tool would route through policy before any execution."},
         {"id": "diagnostics.permissions", "kind": "read_only", "description": "Report privacy-permission readiness without prompting or changing settings."},
         {"id": "diagnostics.codex_chats", "kind": "read_only", "description": "Report configured Codex chats, default route, and daily memory without exposing session IDs."},
+        {"id": "codex.chat_plan", "kind": "read_only_plan", "description": "Choose the named Codex chat Jarvis would use for a request without starting Codex or exposing session IDs."},
         {"id": "memory.daily_summary", "kind": "read_only", "description": "Summarize today's local Jarvis-to-Codex memory without reading raw chat history or exposing session IDs."},
         {"id": "codex.activity", "kind": "read_only", "description": "Show redacted recent Codex job activity without starting a new Codex request."},
         {"id": "codex.job", "kind": "async_deep_work", "description": "Delegate broad coding/project work to Codex."},
@@ -7792,6 +7801,60 @@ def codex_chat_status() -> dict[str, Any]:
         "future_selector": "GPT OSS can choose among configured chats once more than one meaningful chat exists.",
         "chats": safe_chats,
         "daily_memory": codex_memory,
+        "reply": reply,
+    }
+
+
+def codex_chat_plan(prompt: str | None = None) -> dict[str, Any]:
+    """Choose a Codex chat for a request without starting Codex or exposing session IDs."""
+    goal = re.sub(r"\s+", " ", str(prompt or "")).strip()
+    selection = _select_codex_chat(goal)
+    chat = selection.get("chat") if isinstance(selection.get("chat"), dict) else None
+    selected_name = str(chat.get("name") or "") if chat else None
+    default_chat = str(_load_codex_chat_registry().get("default_chat") or "Default")
+    fallback_to_default = bool(
+        chat
+        and selected_name
+        and selected_name.lower() == default_chat.lower()
+        and "default" in str(selection.get("reason") or "").lower()
+    )
+    safe_chat = None
+    if chat:
+        safe_chat = {
+            "name": selected_name,
+            "purpose": _codex_activity_tail(chat.get("purpose"), 500),
+            "context": _codex_activity_tail(chat.get("context"), 800),
+            "aliases": [str(alias) for alias in list(chat.get("aliases") or [])[:6]],
+            "session_id_configured": bool(chat.get("session_id")),
+        }
+    if safe_chat:
+        reply = (
+            f"Codex chat plan: I would use the {safe_chat['name']} Codex chat"
+            f"{' as the default fallback' if fallback_to_default else ''}. "
+            "I did not start Codex, and session IDs are hidden."
+        )
+    else:
+        reply = "Codex chat plan: no named Codex chat is configured, so Jarvis would start a normal Codex job."
+    return {
+        "tool": "codex.chat_plan",
+        "status": "planned" if safe_chat else "no_configured_chat",
+        "executed": True,
+        "planned_only": True,
+        "read_private_content": False,
+        "called_codex": False,
+        "started_codex_job": False,
+        "sent_prompt_to_codex": False,
+        "session_ids_hidden": True,
+        "goal": _codex_activity_tail(goal, 500),
+        "registry_path": selection.get("registry_path"),
+        "selection_status": selection.get("status"),
+        "selected_chat": safe_chat,
+        "selected_chat_name": selected_name,
+        "selection_reason": _codex_activity_tail(selection.get("reason"), 500),
+        "default_chat": default_chat,
+        "fallback_to_default": fallback_to_default,
+        "would_resume_configured_session": bool(chat and chat.get("session_id")),
+        "would_start_new_session": not bool(chat and chat.get("session_id")),
         "reply": reply,
     }
 

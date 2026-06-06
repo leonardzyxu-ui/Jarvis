@@ -20,6 +20,7 @@ from .tools import (
     browser_open_url_plan,
     capabilities_status,
     codex_activity_snapshot,
+    codex_chat_plan,
     codex_chat_status,
     codex_speed_status,
     codex_job_status,
@@ -284,6 +285,14 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": [],
     },
     {
+        "tool": "codex.chat_plan",
+        "description": "Choose which configured Codex chat Jarvis would use for a request without starting Codex or exposing session IDs.",
+        "entities": ["goal"],
+        "examples": [
+            'Yes sir, choosing the Codex chat now. \\tool({"tool":"codex.chat_plan","entities":{"goal":"inspect the newest Teams Music assignment and make the poster"}})',
+        ],
+    },
+    {
         "tool": "diagnostics.memory",
         "description": "Report Jarvis memory architecture and status without reading raw chat history or syncing memory.",
         "entities": [],
@@ -404,6 +413,8 @@ class Planner:
         if codex_job_query is not None:
             result = codex_job_status(codex_job_query)
             return self._result(text, "codex.job", "Checked Codex job status.", assessment, result, False)
+        if _looks_like_codex_chat_plan(lower):
+            return self._result(text, "codex.chat_plan", "Prepared Codex chat selection plan.", assessment, codex_chat_plan(text), True)
         if _looks_like_codex_chat_status(lower):
             return self._result(text, "diagnostics.codex_chats", "Read Codex chat routing status.", assessment, codex_chat_status(), True)
         if _looks_like_codex_activity_status(lower):
@@ -656,6 +667,8 @@ class Planner:
         codex_job_query = _extract_codex_job_query(text)
         if codex_job_query is not None:
             return self._preview_result(text, "codex.job", assessment, False)
+        if _looks_like_codex_chat_plan(lower):
+            return self._preview_result(text, "codex.chat_plan", assessment, True, plan=codex_chat_plan(text))
         if _looks_like_codex_chat_status(lower):
             return self._preview_result(text, "diagnostics.codex_chats", assessment, True)
         if _looks_like_codex_activity_status(lower):
@@ -999,6 +1012,11 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "diagnostics.codex_chats", assessment, True, plan={"intent": intent})
             return self._result(text, "diagnostics.codex_chats", "Read Codex chat routing status.", assessment, codex_chat_status(), True)
+        if selected_tool == "codex.chat_plan":
+            goal = _clean_optional_entity(entities.get("goal")) or text
+            if not execute:
+                return self._preview_result(text, "codex.chat_plan", assessment, True, plan={"intent": intent, **codex_chat_plan(goal)})
+            return self._result(text, "codex.chat_plan", "Prepared Codex chat selection plan.", assessment, codex_chat_plan(goal), True)
         if selected_tool == "codex.activity":
             if not execute:
                 return self._preview_result(text, "codex.activity", assessment, True, plan={"intent": intent})
@@ -1390,6 +1408,14 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
         }
     if recommended == "diagnostics.codex_chats":
         preview = codex_chat_status()
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended == "codex.chat_plan":
+        goal = _clean_optional_entity(entities.get("goal")) or text
+        preview = codex_chat_plan(goal)
         return {
             "recommended_tool": recommended,
             "executed": False,
@@ -1870,6 +1896,7 @@ def _voice_loop_status_text_for_tool(tool: str) -> str:
         "shell.read_only": "Yes sir, checking that locally now.",
         "teams.assignment": "Yes sir, preparing the Teams assignment plan now.",
         "ui.overlay": "Yes sir, planning the Jarvis overlay now.",
+        "codex.chat_plan": "Yes sir, choosing the Codex chat now.",
         "quick.local_control": "Yes sir, handling that now.",
         "system.status": "Yes sir, checking Jarvis status now.",
         "conversation.fast_local": "Yes sir, preparing a direct answer now.",
@@ -2500,6 +2527,29 @@ def _looks_like_codex_chat_status(lower: str) -> bool:
         and any(cue in lower for cue in status_cues)
         and not any(cue in lower for cue in mutation_cues)
     )
+
+
+def _looks_like_codex_chat_plan(lower: str) -> bool:
+    if "codex" not in lower or "chat" not in lower:
+        return False
+    plan_cues = (
+        "codex chat plan",
+        "chat route plan",
+        "which codex chat would",
+        "which codex chat should",
+        "what codex chat would",
+        "what codex chat should",
+        "choose a codex chat",
+        "pick a codex chat",
+        "select a codex chat",
+        "which chat would you use",
+        "which chat should you use",
+        "which chat to use",
+        "route this to codex",
+        "route that to codex",
+    )
+    mutation_cues = ("change", "switch", "set ", "delete", "remove", "rename", "edit")
+    return any(cue in lower for cue in plan_cues) and not any(cue in lower for cue in mutation_cues)
 
 
 def _looks_like_codex_activity_status(lower: str) -> bool:

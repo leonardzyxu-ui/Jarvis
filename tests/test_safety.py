@@ -61,6 +61,7 @@ from jarvis.tools import (
     app_status,
     app_task_workflow_plan,
     browser_open_url_plan,
+    codex_chat_plan,
     codex_chat_status,
     codex_delegate_plan,
     daily_memory_summary,
@@ -390,6 +391,7 @@ class PlannerTests(unittest.TestCase):
             "screen status": "screenshot.capability",
             "codex chat status": "diagnostics.codex_chats",
             "which default Codex chat are you using": "diagnostics.codex_chats",
+            "which Codex chat would you use for a Teams Music assignment": "codex.chat_plan",
             "codex activity": "codex.activity",
             "what is Codex doing": "codex.activity",
             "codex speed status": "diagnostics.codex_speed",
@@ -1070,6 +1072,42 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(preview["synced_remote"])
         self.assertTrue(preview["session_ids_hidden"])
         memory_mock.assert_called_once()
+
+    def test_tools_more_codex_chat_plan_recommendation_previews_without_starting_codex(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "codex.chat_plan",
+            "entities": {"goal": "finish the newest Teams Music poster assignment"},
+            "reply": "Yes sir, choosing the Codex chat now.",
+        }
+        fake_chat_plan = {
+            "tool": "codex.chat_plan",
+            "status": "planned",
+            "executed": True,
+            "planned_only": True,
+            "called_codex": False,
+            "started_codex_job": False,
+            "sent_prompt_to_codex": False,
+            "session_ids_hidden": True,
+            "selected_chat_name": "Music",
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan), \
+             patch("jarvis.planner.codex_chat_plan", return_value=fake_chat_plan) as chat_plan_mock:
+            result = Planner().handle_selected_tool("Choose a Codex chat for the Music poster.", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "codex.chat_plan")
+        preview = result.result["next_tool_preview"]["preview"]
+        self.assertFalse(preview["executed"])
+        self.assertTrue(preview["planned_only"])
+        self.assertFalse(preview["called_codex"])
+        self.assertFalse(preview["started_codex_job"])
+        self.assertFalse(preview["sent_prompt_to_codex"])
+        self.assertTrue(preview["session_ids_hidden"])
+        chat_plan_mock.assert_called_once_with("finish the newest Teams Music poster assignment")
 
     def test_tools_more_tool_catalog_recommendation_previews_without_calling_models(self):
         fake_plan = {
@@ -5334,6 +5372,85 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Name: Music", delegated_prompt)
         self.assertIn("Teams Music class assignments", delegated_prompt)
 
+    def test_codex_chat_plan_selects_default_without_exposing_session_id(self):
+        session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            registry = Path(temp_dir) / "codex_chats.json"
+            registry.write_text(
+                json.dumps(
+                    {
+                        "schema": "jarvis.codex_chats.v1",
+                        "default_chat": "Default",
+                        "chats": [
+                            {
+                                "name": "Default",
+                                "session_id": session_id,
+                                "aliases": ["general"],
+                                "purpose": "General Jarvis-to-Codex work.",
+                                "context": "Use for ambiguous project requests.",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.CODEX_CHAT_REGISTRY_PATH", registry):
+                result = codex_chat_plan("inspect this Jarvis prototype")
+
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertEqual(result["tool"], "codex.chat_plan")
+        self.assertEqual(result["status"], "planned")
+        self.assertTrue(result["planned_only"])
+        self.assertTrue(result["session_ids_hidden"])
+        self.assertFalse(result["called_codex"])
+        self.assertFalse(result["started_codex_job"])
+        self.assertFalse(result["sent_prompt_to_codex"])
+        self.assertEqual(result["selected_chat_name"], "Default")
+        self.assertTrue(result["fallback_to_default"])
+        self.assertTrue(result["would_resume_configured_session"])
+        self.assertNotIn(session_id, serialized)
+
+    def test_codex_chat_plan_selects_specialized_chat_by_context(self):
+        default_session = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        music_session = "019effff-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            registry = Path(temp_dir) / "codex_chats.json"
+            registry.write_text(
+                json.dumps(
+                    {
+                        "schema": "jarvis.codex_chats.v1",
+                        "default_chat": "Default",
+                        "chats": [
+                            {
+                                "name": "Default",
+                                "session_id": default_session,
+                                "purpose": "General Jarvis-to-Codex work.",
+                                "context": "Use for ambiguous project requests.",
+                            },
+                            {
+                                "name": "Music",
+                                "session_id": music_session,
+                                "aliases": ["music assignment"],
+                                "purpose": "Teams Music class assignments, posters, rubrics, and school creative deliverables.",
+                                "context": "Use when Leo asks Jarvis to inspect Teams Music work or make a poster from a rubric.",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.CODEX_CHAT_REGISTRY_PATH", registry):
+                result = codex_chat_plan("inspect the newest Teams creative rubric and make the poster")
+
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertEqual(result["status"], "planned")
+        self.assertEqual(result["selected_chat_name"], "Music")
+        self.assertFalse(result["fallback_to_default"])
+        self.assertTrue(result["would_resume_configured_session"])
+        self.assertIn("matched the request", result["selection_reason"])
+        self.assertNotIn(music_session, serialized)
+        self.assertNotIn(default_session, serialized)
+
     def test_codex_daily_memory_refreshes_next_day(self):
         yesterday = "2026-06-05"
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -5796,7 +5913,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(preflight["summary"]["recommended_total"], len(recommended_ids))
         self.assertEqual(preflight["summary"]["required_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "required" and check["passed"]))
         policy_gate = next(check for check in preflight["checks"] if check["id"] == "policy_gates_loaded")
-        self.assertIn("36/36", policy_gate["detail"])
+        self.assertIn("37/37", policy_gate["detail"])
         self.assertEqual(preflight["summary"]["recommended_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "recommended" and check["passed"]))
         self.assertEqual(check_ids, required_ids.union(recommended_ids))
 
