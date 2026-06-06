@@ -79,6 +79,7 @@ from jarvis.tools import (
     screenshot_capability,
     stream_fast_local_chat_events,
     stt_audition_status,
+    stt_candidate_status,
     tts_status,
     tool_registry,
     wake_status,
@@ -313,6 +314,8 @@ class PlannerTests(unittest.TestCase):
             "wake status": "diagnostics.wake",
             "stt audition status": "voice.stt_audition",
             "speech recognition audition page": "voice.stt_audition",
+            "speech recognition candidates": "voice.stt_candidates",
+            "voice recognition models": "voice.stt_candidates",
             "overnight status": "diagnostics.overnight",
             "morning report draft status": "diagnostics.overnight",
             "email backend status": "diagnostics.email",
@@ -506,6 +509,36 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result.result["next_tool_preview"]["preview"]["planned_only"])
         self.assertFalse(result.result["next_tool_preview"]["preview"]["opened_app"])
         list_mock.assert_called_once_with(limit=40)
+
+    def test_tools_more_stt_candidate_recommendation_previews_without_audio(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "voice.stt_candidates",
+            "entities": {},
+            "reply": "Yes sir, checking speech recognition options now.",
+        }
+        fake_candidates = {
+            "tool": "voice.stt_candidates",
+            "status": "checked",
+            "executed": True,
+            "recorded_audio": False,
+            "opened_browser": False,
+            "candidates": [],
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan), \
+             patch("jarvis.planner.stt_candidate_status", return_value=fake_candidates) as stt_mock:
+            result = Planner().handle_selected_tool("Which speech recognition model should Jarvis test?", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "voice.stt_candidates")
+        self.assertFalse(result.result["next_tool_preview"]["executed"])
+        self.assertFalse(result.result["next_tool_preview"]["preview"]["executed"])
+        self.assertTrue(result.result["next_tool_preview"]["preview"]["planned_only"])
+        self.assertFalse(result.result["next_tool_preview"]["preview"]["recorded_audio"])
+        stt_mock.assert_called_once_with()
 
     def test_tools_more_preview_does_not_call_middle_model(self):
         intent = {"status": "completed", "selected_tool": "tools.more", "confidence": 0.8, "entities": {}}
@@ -1124,6 +1157,40 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result["requested_microphone_permission"])
         self.assertFalse(result["opened_browser"])
         self.assertIn("word_accuracy", result["metrics"])
+        self.assertGreaterEqual(result["candidate_count"], 1)
+        self.assertIn("voice.stt_candidates", result["candidate_status_tool"])
+        self.assertTrue(result["reference_sentences"])
+
+    def test_stt_candidate_status_reports_catalog_without_audio_or_installs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            page = root / "runtime" / "stt_audition" / "index.html"
+            page.parent.mkdir(parents=True)
+            page.write_text("<!doctype html><title>Jarvis STT Audition</title>", encoding="utf-8")
+
+            def fake_find_executable(name: str) -> str | None:
+                if name == "whisper-cli":
+                    return "/opt/homebrew/bin/whisper-cli"
+                return None
+
+            with patch("jarvis.tools.PROJECT_ROOT", root), patch("jarvis.tools._find_executable", side_effect=fake_find_executable):
+                result = stt_candidate_status()
+
+        candidates = {candidate["id"]: candidate for candidate in result["candidates"]}
+        self.assertEqual(result["tool"], "voice.stt_candidates")
+        self.assertEqual(result["status"], "checked")
+        self.assertTrue(result["page_exists"])
+        self.assertFalse(result["recorded_audio"])
+        self.assertFalse(result["requested_microphone_permission"])
+        self.assertFalse(result["opened_browser"])
+        self.assertFalse(result["installed_anything"])
+        self.assertFalse(result["sent_audio"])
+        self.assertIn("chrome-web-speech", candidates)
+        self.assertIn("whisper-cpp-base-en", candidates)
+        self.assertTrue(candidates["whisper-cpp-base-en"]["local_engine_installed"])
+        self.assertTrue(candidates["chrome-web-speech"]["requires_foreground_browser"])
+        self.assertGreaterEqual(result["audition_ready_count"], 2)
+        self.assertTrue(result["reference_sentences"])
 
     def test_overnight_work_status_reports_paths_without_foreground_activity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1320,6 +1387,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("quick.local_control", tool_ids)
         self.assertIn("voice.wake_simulation", tool_ids)
         self.assertIn("voice.stt_audition", tool_ids)
+        self.assertIn("voice.stt_candidates", tool_ids)
         self.assertIn("diagnostics.overnight", tool_ids)
         self.assertIn("safety.injection_scan", tool_ids)
         self.assertIn("codex.delegate", tool_ids)
@@ -4124,7 +4192,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(preflight["summary"]["recommended_total"], len(recommended_ids))
         self.assertEqual(preflight["summary"]["required_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "required" and check["passed"]))
         policy_gate = next(check for check in preflight["checks"] if check["id"] == "policy_gates_loaded")
-        self.assertIn("14/14", policy_gate["detail"])
+        self.assertIn("15/15", policy_gate["detail"])
         self.assertEqual(preflight["summary"]["recommended_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "recommended" and check["passed"]))
         self.assertEqual(check_ids, required_ids.union(recommended_ids))
 

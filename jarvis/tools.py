@@ -176,6 +176,90 @@ FILE_SEARCH_EXCLUDED_DIRS = {
     "runtime",
     "venv",
 }
+STT_REFERENCE_SENTENCES = [
+    "Yes sir, I found the newest Music assignment and I am checking the rubric now.",
+    "Jarvis should answer quickly, show the text, and keep speaking only when it is useful.",
+    "Open Teams, go to Music class, find the newest assignment, and tell me what it asks for.",
+]
+STT_CANDIDATE_DEFINITIONS = [
+    {
+        "id": "chrome-web-speech",
+        "name": "Chrome Web Speech",
+        "kind": "browser_builtin",
+        "accent_fit": "unknown_until_leo_tests",
+        "privacy": "browser_recognition_cloud_behavior_depends_on_chrome",
+        "expected_latency": "fast_start_if_browser_permission_is_ready",
+        "executables": [],
+        "audition_mode": "live_browser_or_manual_paste",
+        "notes": "Useful as a quick baseline through the STT audition page.",
+    },
+    {
+        "id": "macos-dictation-manual",
+        "name": "macOS Dictation manual paste",
+        "kind": "system_manual",
+        "accent_fit": "unknown_until_leo_tests",
+        "privacy": "uses_apple_system_dictation_when_leo_invokes_it",
+        "expected_latency": "human_driven",
+        "executables": [],
+        "audition_mode": "manual_transcript_paste",
+        "notes": "Good fallback for comparing Apple's recognition without wiring microphone capture yet.",
+    },
+    {
+        "id": "whisper-cpp-tiny-en",
+        "name": "whisper.cpp tiny.en",
+        "kind": "local_cli_future",
+        "accent_fit": "moderate",
+        "privacy": "local_after_install",
+        "expected_latency": "fastest_local_whisper_candidate",
+        "executables": ["whisper-cli", "whisper-cpp"],
+        "audition_mode": "future_local_audio_file_test",
+        "notes": "Likely fast enough for a baseline but may miss words.",
+    },
+    {
+        "id": "whisper-cpp-base-en",
+        "name": "whisper.cpp base.en",
+        "kind": "local_cli_future",
+        "accent_fit": "better_than_tiny",
+        "privacy": "local_after_install",
+        "expected_latency": "moderate_local",
+        "executables": ["whisper-cli", "whisper-cpp"],
+        "audition_mode": "future_local_audio_file_test",
+        "notes": "Likely a better accuracy/latency tradeoff than tiny on this Mac.",
+    },
+    {
+        "id": "vosk-small-en",
+        "name": "Vosk small English",
+        "kind": "local_python_future",
+        "accent_fit": "fair_but_older_quality",
+        "privacy": "local_after_install",
+        "expected_latency": "fast_streaming",
+        "executables": ["vosk-transcriber"],
+        "audition_mode": "future_local_audio_file_or_stream_test",
+        "notes": "Fast offline baseline, but natural command transcription quality may lag newer models.",
+    },
+    {
+        "id": "moonshine-tiny",
+        "name": "Moonshine tiny",
+        "kind": "local_python_future",
+        "accent_fit": "promising_for_streaming",
+        "privacy": "local_after_install",
+        "expected_latency": "streaming_oriented",
+        "executables": [],
+        "audition_mode": "future_local_audio_file_or_stream_test",
+        "notes": "Worth evaluating if installation/runtime stays light.",
+    },
+    {
+        "id": "parakeet-tdt",
+        "name": "Parakeet local",
+        "kind": "local_python_future",
+        "accent_fit": "potentially_high_accuracy",
+        "privacy": "local_after_install",
+        "expected_latency": "unknown_on_16gb_mac",
+        "executables": [],
+        "audition_mode": "future_local_audio_file_test",
+        "notes": "Quality candidate, but runtime size and speed need evidence on Leo's Mac.",
+    },
+]
 
 
 def _safe_getcwd() -> tuple[str | None, str | None]:
@@ -311,6 +395,14 @@ def tool_registry() -> dict[str, Any]:
                 "risk": "local_metadata",
                 "available": True,
                 "description": "Reports the local speech-recognition audition page and what it can test without recording audio.",
+            },
+            {
+                "id": "voice.stt_candidates",
+                "label": "STT Candidate Status",
+                "mode": "read_only",
+                "risk": "local_metadata",
+                "available": True,
+                "description": "Lists speech-recognition candidates, privacy/latency expectations, and installed local engine evidence without recording audio.",
             },
             {
                 "id": "diagnostics.overnight",
@@ -1744,6 +1836,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "screenshot.capability", "kind": "read_only", "description": "Report screenshot/OCR readiness."},
         {"id": "codex.job", "kind": "async_deep_work", "description": "Delegate broad coding/project work to Codex."},
         {"id": "voice.stt_audition", "kind": "planned", "description": "Prepare a speech-recognition audition workflow."},
+        {"id": "voice.stt_candidates", "kind": "read_only", "description": "List speech-recognition candidates and installed local engine evidence."},
         {"id": "ui.overlay", "kind": "planned", "description": "Future visible Jarvis overlay/popup UI."},
         {"id": "memory.daily_summary", "kind": "planned", "description": "Future daily memory summary route."},
         {"id": "teams.assignment", "kind": "planned_private_workflow", "description": "Future Teams assignment workflow; never submit without confirmation."},
@@ -2087,10 +2180,85 @@ def wake_status() -> dict[str, Any]:
     }
 
 
+def _stt_executable_status(names: list[str]) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for name in names:
+        path = _find_executable(name)
+        results.append({"name": name, "path": path, "available": bool(path)})
+    return results
+
+
+def stt_candidate_status() -> dict[str, Any]:
+    """Return speech-to-text candidate readiness without recording audio."""
+    page_path = PROJECT_ROOT / "runtime" / "stt_audition" / "index.html"
+    page_exists = page_path.exists()
+    candidates: list[dict[str, Any]] = []
+    installed_engine_count = 0
+    audition_ready_count = 0
+    for definition in STT_CANDIDATE_DEFINITIONS:
+        executable_checks = _stt_executable_status(list(definition.get("executables") or []))
+        executable_available = any(item["available"] for item in executable_checks)
+        if executable_available:
+            installed_engine_count += 1
+        kind = str(definition.get("kind") or "")
+        manual_ready = kind in {"browser_builtin", "system_manual"} and page_exists
+        audition_ready = bool(manual_ready or executable_available)
+        if audition_ready:
+            audition_ready_count += 1
+        candidates.append(
+            {
+                **definition,
+                "executable_checks": executable_checks,
+                "local_engine_installed": executable_available,
+                "audition_ready": audition_ready,
+                "requires_foreground_browser": kind == "browser_builtin",
+                "requires_microphone_permission": kind == "browser_builtin",
+                "requires_install": kind.endswith("_future") and not executable_available,
+            }
+        )
+    reply = (
+        f"Speech-recognition candidates: {len(candidates)} candidates are cataloged; "
+        f"{audition_ready_count} can be auditioned with the current page/manual flow; "
+        f"{installed_engine_count} local engine candidate{'s' if installed_engine_count != 1 else ''} appear installed. "
+        "This check did not open a browser, record audio, request microphone permission, install anything, or send audio anywhere."
+    )
+    return {
+        "tool": "voice.stt_candidates",
+        "executed": True,
+        "status": "checked",
+        "read_private_content": False,
+        "recorded_audio": False,
+        "requested_microphone_permission": False,
+        "opened_browser": False,
+        "installed_anything": False,
+        "sent_audio": False,
+        "page_path": str(page_path),
+        "page_exists": page_exists,
+        "reference_sentences": list(STT_REFERENCE_SENTENCES),
+        "candidate_count": len(candidates),
+        "audition_ready_count": audition_ready_count,
+        "installed_engine_count": installed_engine_count,
+        "candidates": candidates,
+        "recommended_first_pass": [
+            "chrome-web-speech",
+            "macos-dictation-manual",
+            "whisper-cpp-base-en",
+            "vosk-small-en",
+        ],
+        "next_steps": [
+            "Use the STT audition page with Leo reading the same reference sentence.",
+            "Record first-result latency, final latency, word accuracy, WER, and Leo's human score.",
+            "Only after Leo approves installation, add local model install/run scripts for the best offline candidates.",
+        ],
+        "reply": reply,
+    }
+
+
 def stt_audition_status() -> dict[str, Any]:
     """Return local speech-to-text audition readiness without capturing audio."""
     page_path = PROJECT_ROOT / "runtime" / "stt_audition" / "index.html"
     exists = page_path.exists()
+    candidate_snapshot = stt_candidate_status()
     reply = (
         "STT audition status: the local speech-recognition audition page is "
         f"{'available' if exists else 'not created yet'}. "
@@ -2114,6 +2282,10 @@ def stt_audition_status() -> dict[str, Any]:
             "manual transcript paste from macOS Dictation or local engines",
             "future local candidates such as whisper.cpp, Vosk, Moonshine, and Parakeet",
         ],
+        "candidate_count": candidate_snapshot["candidate_count"],
+        "audition_ready_count": candidate_snapshot["audition_ready_count"],
+        "candidate_status_tool": "voice.stt_candidates",
+        "reference_sentences": candidate_snapshot["reference_sentences"],
         "metrics": [
             "word_accuracy",
             "character_accuracy",
@@ -2209,6 +2381,7 @@ def capabilities_status() -> dict[str, Any]:
     launch = launch_status()
     wake = wake_status()
     stt = stt_audition_status()
+    stt_candidates = stt_candidate_status()
     email = email_backend_status()
     source_access = source_access_status()
     status = system_status()
@@ -2300,6 +2473,9 @@ def capabilities_status() -> dict[str, Any]:
             "test_prompt": "stt audition status",
             "needs_leo": True,
             "audition_page": stt.get("page_path"),
+            "candidate_tool": "voice.stt_candidates",
+            "candidate_count": stt_candidates.get("candidate_count"),
+            "audition_ready_count": stt_candidates.get("audition_ready_count"),
         },
         {
             "id": "overnight_workboard",

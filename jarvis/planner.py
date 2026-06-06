@@ -43,6 +43,7 @@ from .tools import (
     start_codex_continue_job,
     start_codex_delegate_job,
     stt_audition_status,
+    stt_candidate_status,
     system_status,
     terminal_command_plan,
     tts_status,
@@ -77,6 +78,11 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     {
         "tool": "diagnostics.overnight",
         "description": "Report the overnight workboard, morning report draft, and deferred QA paths without opening apps or browsers.",
+        "entities": [],
+    },
+    {
+        "tool": "voice.stt_candidates",
+        "description": "Report speech-recognition candidates and installed local engine evidence without recording audio.",
         "entities": [],
     },
     {
@@ -311,6 +317,8 @@ class Planner:
             return self._result(text, "diagnostics.wake", "Read local Jarvis wake status.", assessment, wake_status(), True)
         if _looks_like_stt_audition_status(lower):
             return self._result(text, "voice.stt_audition", "Read local STT audition status.", assessment, stt_audition_status(), True)
+        if _looks_like_stt_candidate_status(lower):
+            return self._result(text, "voice.stt_candidates", "Read speech-recognition candidate status.", assessment, stt_candidate_status(), True)
         if _looks_like_overnight_work_status(lower):
             return self._result(text, "diagnostics.overnight", "Read overnight workboard status.", assessment, overnight_work_status(), True)
         if _is_exact_email_status_command(lower):
@@ -455,6 +463,8 @@ class Planner:
             return self._preview_result(text, "diagnostics.wake", assessment, True)
         if _looks_like_stt_audition_status(lower):
             return self._preview_result(text, "voice.stt_audition", assessment, True)
+        if _looks_like_stt_candidate_status(lower):
+            return self._preview_result(text, "voice.stt_candidates", assessment, True)
         if _looks_like_overnight_work_status(lower):
             return self._preview_result(text, "diagnostics.overnight", assessment, True)
         if _is_exact_email_status_command(lower):
@@ -520,6 +530,10 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "diagnostics.overnight", assessment, True, plan={"intent": intent})
             return self._result(text, "diagnostics.overnight", "Read overnight workboard status.", assessment, overnight_work_status(), True)
+        if selected_tool == "voice.stt_candidates":
+            if not execute:
+                return self._preview_result(text, "voice.stt_candidates", assessment, True, plan={"intent": intent})
+            return self._result(text, "voice.stt_candidates", "Read speech-recognition candidate status.", assessment, stt_candidate_status(), True)
         if selected_tool == "outlook.visible_summary":
             sender_query = _clean_optional_entity(entities.get("sender_query")) or _extract_email_sender_constraint(text)
             selection = (
@@ -727,6 +741,13 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "recommended_tool": recommended,
             "executed": False,
             "preview": outlook_read_only_plan(),
+        }
+    if recommended == "voice.stt_candidates":
+        preview = stt_candidate_status()
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
         }
     return None
 
@@ -1025,6 +1046,37 @@ def _looks_like_stt_audition_status(lower: str) -> bool:
     return (
         any(cue in lower for cue in stt_cues)
         and any(cue in lower for cue in audition_cues)
+        and not any(cue in lower for cue in mutation_cues)
+    )
+
+
+def _looks_like_stt_candidate_status(lower: str) -> bool:
+    stt_cues = (
+        "stt",
+        "speech to text",
+        "speech-to-text",
+        "speech recognition",
+        "voice recognition",
+        "transcription",
+    )
+    candidate_cues = (
+        "candidate",
+        "candidates",
+        "engine",
+        "engines",
+        "model",
+        "models",
+        "option",
+        "options",
+        "which one",
+        "what can we test",
+        "recognizer",
+        "recognizers",
+    )
+    mutation_cues = ("start recording", "record now", "listen now", "turn on microphone", "enable microphone", "install ")
+    return (
+        any(cue in lower for cue in stt_cues)
+        and any(cue in lower for cue in candidate_cues)
         and not any(cue in lower for cue in mutation_cues)
     )
 
