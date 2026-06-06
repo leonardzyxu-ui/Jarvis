@@ -16,9 +16,18 @@ os.environ["JARVIS_ENV_FILE"] = "/dev/null"
 for key in (
     "JARVIS_TTS_AUTOMATIC_ENABLED",
     "JARVIS_TTS_SPEAK_STATUS",
+    "JARVIS_TTS_PROVIDER",
+    "JARVIS_TTS_FALLBACK_PROVIDER",
     "JARVIS_TTS_VOICE",
     "JARVIS_TTS_RATE",
     "JARVIS_TTS_MAX_CHARS",
+    "JARVIS_TTS_PIPER_MODEL",
+    "JARVIS_TTS_PIPER_CONFIG",
+    "JARVIS_TTS_PIPER_BIN",
+    "JARVIS_TTS_PIPER_ESPEAK_DATA",
+    "JARVIS_TTS_PIPER_LABEL",
+    "JARVIS_TTS_PIPER_TIMEOUT_SECONDS",
+    "JARVIS_TTS_AFPLAY",
 ):
     os.environ.pop(key, None)
 
@@ -647,6 +656,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["tool"], "diagnostics.tts")
         self.assertFalse(result["read_private_content"])
         self.assertFalse(result["played_audio"])
+        self.assertEqual(result["provider"], "macos")
         self.assertTrue(result["explicit_tts_available"])
         self.assertFalse(result["automatic_tts_enabled"])
         self.assertFalse(result["spoken_status_enabled"])
@@ -654,6 +664,27 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["rate"], 152)
         self.assertEqual(result["voice_count"], 2)
         self.assertIn("did not play audio", result["reply"])
+
+    def test_tts_status_reports_piper_when_configured(self):
+        def fake_exists(self):
+            return str(self) in {"/tmp/piper", "/tmp/ryan.onnx", "/tmp/ryan.onnx.json", "/tmp/espeak-ng-data", "/usr/bin/afplay"}
+
+        with patch("jarvis.tools.TTS_PROVIDER", "piper"), \
+             patch("jarvis.tools.TTS_PIPER_BIN", "/tmp/piper"), \
+             patch("jarvis.tools.TTS_PIPER_MODEL", Path("/tmp/ryan.onnx")), \
+             patch("jarvis.tools.TTS_PIPER_CONFIG", Path("/tmp/ryan.onnx.json")), \
+             patch("jarvis.tools.TTS_PIPER_ESPEAK_DATA", Path("/tmp/espeak-ng-data")), \
+             patch("jarvis.tools.TTS_AFPLAY", "/usr/bin/afplay"), \
+             patch("pathlib.Path.exists", fake_exists), \
+             patch("os.access", return_value=True), \
+             patch("jarvis.tools._find_executable", return_value="/usr/bin/say"), \
+             patch("jarvis.tools._command_output", return_value="Samantha en_US # sample voice\n"):
+            result = tts_status()
+
+        self.assertEqual(result["provider"], "piper")
+        self.assertTrue(result["piper_available"])
+        self.assertTrue(result["explicit_tts_available"])
+        self.assertIn("Piper Ryan is ready", result["reply"])
 
     def test_screen_status_does_not_capture_screen(self):
         with patch("jarvis.tools._find_executable", return_value="/usr/sbin/screencapture"):
@@ -1548,6 +1579,66 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(first_process.terminated)
         self.assertTrue(second["interrupted_previous"])
         self.assertEqual(second["previous_stop_method"], "terminate")
+
+    def test_auto_speech_uses_piper_provider_without_shell(self):
+        class FakeStdin:
+            def __init__(self):
+                self.written = ""
+                self.closed = False
+
+            def write(self, text):
+                self.written += text
+
+            def close(self):
+                self.closed = True
+
+        class FakeProcess:
+            def __init__(self):
+                self.stdin = FakeStdin()
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                return 0
+
+        class FakeThread:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start(self):
+                pass
+
+        fake_process = FakeProcess()
+        readiness = {
+            "ready": True,
+            "provider": "piper",
+            "label": "Piper Ryan high American male",
+            "piper_bin": "/tmp/piper",
+            "model": "/tmp/ryan.onnx",
+            "config": "/tmp/ryan.onnx.json",
+            "espeak_data": "/tmp/espeak-ng-data",
+            "afplay": "/usr/bin/afplay",
+            "missing": [],
+            "timeout_seconds": 8,
+        }
+        jarvis_tools.SPEECH_PROCESS = None
+        try:
+            with patch("jarvis.tools.TTS_AUTOMATIC_ENABLED", True), \
+                 patch("jarvis.tools.TTS_PROVIDER", "piper"), \
+                 patch("jarvis.tools._piper_readiness", return_value=readiness), \
+                 patch("jarvis.tools.threading.Thread", FakeThread), \
+                 patch("jarvis.tools.subprocess.Popen", return_value=fake_process) as popen_mock:
+                result = jarvis_tools.speak_text_async("hello from Ryan")
+        finally:
+            jarvis_tools.SPEECH_PROCESS = None
+
+        self.assertTrue(result["spoken"])
+        self.assertEqual(result["provider"], "piper")
+        self.assertEqual(fake_process.stdin.written, "hello from Ryan")
+        self.assertTrue(fake_process.stdin.closed)
+        self.assertFalse(popen_mock.call_args.kwargs["shell"])
+        self.assertEqual(popen_mock.call_args.args[0][1:3], ["-m", "jarvis.piper_speaker"])
 
     def test_quick_local_control_plans_brightness_without_side_effect(self):
         result = quick_local_control("brightness up", execute=False)

@@ -7,6 +7,7 @@ import os
 import plistlib
 import platform
 import re
+import signal
 import shutil
 import shlex
 import sqlite3
@@ -59,8 +60,17 @@ from .config import (
     PROJECT_ROOT,
     RUNTIME_DIR,
     SAFE_SHELL_TIMEOUT_SECONDS,
+    TTS_AFPLAY,
     TTS_AUTOMATIC_ENABLED,
+    TTS_FALLBACK_PROVIDER,
     TTS_MAX_CHARS,
+    TTS_PIPER_BIN,
+    TTS_PIPER_CONFIG,
+    TTS_PIPER_ESPEAK_DATA,
+    TTS_PIPER_LABEL,
+    TTS_PIPER_MODEL,
+    TTS_PIPER_TIMEOUT_SECONDS,
+    TTS_PROVIDER,
     TTS_RATE,
     TTS_SPEAK_STATUS,
     TTS_VOICE,
@@ -710,6 +720,109 @@ def _sanitize_spoken_text(text: str) -> str:
     return spoken.strip()[:TTS_MAX_CHARS]
 
 
+def _normalize_tts_provider(provider: str) -> str:
+    normalized = str(provider or "").strip().lower()
+    if normalized in {"piper", "piper-tts", "local-piper"}:
+        return "piper"
+    return "macos"
+
+
+def _configured_executable(configured: str, fallback_name: str) -> str | None:
+    value = str(configured or "").strip()
+    if value:
+        if os.sep not in value and not value.startswith("~"):
+            return _find_executable(value)
+        path = Path(value).expanduser()
+        if path.exists() and os.access(path, os.X_OK):
+            return str(path)
+    return _find_executable(fallback_name)
+
+
+def _find_piper_executable() -> str | None:
+    configured = _configured_executable(TTS_PIPER_BIN, "piper")
+    if configured:
+        return configured
+    bundled = RUNTIME_DIR / "tts_models" / "piper" / ".venv" / "bin" / "piper"
+    if bundled.exists() and os.access(bundled, os.X_OK):
+        return str(bundled)
+    return None
+
+
+def _piper_readiness() -> dict[str, Any]:
+    model_path = Path(TTS_PIPER_MODEL).expanduser()
+    config_path = Path(TTS_PIPER_CONFIG).expanduser()
+    espeak_data_path = Path(TTS_PIPER_ESPEAK_DATA).expanduser()
+    piper_bin = _find_piper_executable()
+    piper_python = None
+    if piper_bin:
+        sibling_python = Path(piper_bin).parent / "python"
+        if sibling_python.exists() and os.access(sibling_python, os.X_OK):
+            piper_python = str(sibling_python)
+    afplay_path = _configured_executable(TTS_AFPLAY, "afplay")
+    missing: list[str] = []
+    if not piper_bin:
+        missing.append("piper executable")
+    if not model_path.exists():
+        missing.append("Ryan voice model")
+    if not config_path.exists():
+        missing.append("Ryan voice config")
+    if not espeak_data_path.exists():
+        missing.append("Piper eSpeak data")
+    if not afplay_path:
+        missing.append("audio player")
+    return {
+        "ready": not missing,
+        "provider": "piper",
+        "label": TTS_PIPER_LABEL,
+        "piper_bin": piper_bin,
+        "piper_python": piper_python,
+        "model": str(model_path),
+        "config": str(config_path),
+        "espeak_data": str(espeak_data_path),
+        "afplay": afplay_path,
+        "missing": missing,
+        "timeout_seconds": TTS_PIPER_TIMEOUT_SECONDS,
+    }
+
+
+def _piper_speaker_command(readiness: dict[str, Any]) -> list[str]:
+    command = [
+        sys.executable,
+        "-m",
+        "jarvis.piper_speaker",
+        "--piper-bin",
+        str(readiness["piper_bin"]),
+        "--model",
+        str(readiness["model"]),
+        "--config",
+        str(readiness["config"]),
+        "--espeak-data",
+        str(readiness["espeak_data"]),
+        "--afplay",
+        str(readiness["afplay"]),
+        "--piper-timeout",
+        str(TTS_PIPER_TIMEOUT_SECONDS),
+    ]
+    if readiness.get("piper_python"):
+        command.extend(["--piper-python", str(readiness["piper_python"])])
+    return command
+
+
+def _send_process_signal(process: subprocess.Popen[str], sig: signal.Signals) -> str:
+    pid = getattr(process, "pid", None)
+    if isinstance(pid, int) and pid > 0:
+        try:
+            os.killpg(pid, sig)
+            return "process_group"
+        except OSError:
+            pass
+    if sig == signal.SIGKILL:
+        process.kill()
+        return "process"
+    process.terminate()
+    return "process"
+
+
 def _stop_active_speech_locked(timeout_seconds: float = 0.45) -> dict[str, Any]:
     global SPEECH_PROCESS
     process = SPEECH_PROCESS
@@ -720,12 +833,12 @@ def _stop_active_speech_locked(timeout_seconds: float = 0.45) -> dict[str, Any]:
         return {"interrupted_previous": False}
     status: dict[str, Any] = {"interrupted_previous": True}
     try:
-        process.terminate()
+        status["previous_stop_target"] = _send_process_signal(process, signal.SIGTERM)
         process.wait(timeout=timeout_seconds)
         status["previous_stop_method"] = "terminate"
     except subprocess.TimeoutExpired:
         try:
-            process.kill()
+            status["previous_stop_target"] = _send_process_signal(process, signal.SIGKILL)
             process.wait(timeout=timeout_seconds)
             status["previous_stop_method"] = "kill"
         except (subprocess.TimeoutExpired, OSError) as error:
@@ -752,57 +865,180 @@ def _reap_speech_process(process: subprocess.Popen[str]) -> None:
                 SPEECH_PROCESS = None
 
 
-def speak_text_async(text: str, *, reason: str = "reply") -> dict[str, Any]:
-    """Speak text through macOS without blocking the command response."""
-    if not TTS_AUTOMATIC_ENABLED:
-        return {"spoken": False, "status": "disabled", "reason": reason}
-    if reason == "status" and not TTS_SPEAK_STATUS:
-        return {"spoken": False, "status": "status_speech_disabled", "reason": reason}
+def _start_macos_speech_async(
+    spoken: str,
+    *,
+    reason: str,
+    started_at: float,
+    stop_status: dict[str, Any],
+    fallback_from: str | None = None,
+    fallback_reason: str | None = None,
+) -> dict[str, Any]:
     say_path = _find_executable("say") or "/usr/bin/say"
-    spoken = _sanitize_spoken_text(text)
-    if not spoken:
-        return {"spoken": False, "status": "empty", "reason": reason}
     command = [say_path, "-v", TTS_VOICE, "-r", str(TTS_RATE), spoken]
-    started_at = time.monotonic()
     global SPEECH_PROCESS
-    with SPEECH_LOCK:
-        stop_status = _stop_active_speech_locked()
-        try:
-            process = subprocess.Popen(
-                command,
-                shell=False,
-                cwd=PROJECT_ROOT,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                start_new_session=True,
-            )
-            SPEECH_PROCESS = process
-            threading.Thread(target=_reap_speech_process, args=(process,), daemon=True).start()
-        except OSError as error:
-            return {
-                "spoken": False,
-                "status": "unavailable",
-                "reason": reason,
-                "error": str(error),
-                **stop_status,
-                **_duration_fields(started_at),
-            }
-    return {
+    try:
+        process = subprocess.Popen(
+            command,
+            shell=False,
+            cwd=PROJECT_ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            start_new_session=True,
+        )
+        SPEECH_PROCESS = process
+        threading.Thread(target=_reap_speech_process, args=(process,), daemon=True).start()
+    except OSError as error:
+        return {
+            "spoken": False,
+            "status": "unavailable",
+            "reason": reason,
+            "provider": "macos",
+            "fallback_from": fallback_from,
+            "fallback_reason": fallback_reason,
+            "error": str(error),
+            **stop_status,
+            **_duration_fields(started_at),
+        }
+    result = {
         "spoken": True,
         "status": "started",
         "reason": reason,
+        "provider": "macos",
         "voice": TTS_VOICE,
         "rate": TTS_RATE,
         "text_length": len(spoken),
         **stop_status,
         **_duration_fields(started_at),
     }
+    if fallback_from:
+        result["fallback_from"] = fallback_from
+        result["fallback_reason"] = fallback_reason
+    return result
+
+
+def _start_piper_speech_async(
+    spoken: str,
+    *,
+    reason: str,
+    started_at: float,
+    stop_status: dict[str, Any],
+) -> dict[str, Any]:
+    readiness = _piper_readiness()
+    if not readiness["ready"]:
+        return {
+            "spoken": False,
+            "status": "unavailable",
+            "reason": reason,
+            "provider": "piper",
+            "voice": TTS_PIPER_LABEL,
+            "missing": readiness["missing"],
+            "text_length": len(spoken),
+            **stop_status,
+            **_duration_fields(started_at),
+        }
+    command = _piper_speaker_command(readiness)
+    global SPEECH_PROCESS
+    try:
+        process = subprocess.Popen(
+            command,
+            shell=False,
+            cwd=PROJECT_ROOT,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            start_new_session=True,
+        )
+    except OSError as error:
+        return {
+            "spoken": False,
+            "status": "unavailable",
+            "reason": reason,
+            "provider": "piper",
+            "voice": TTS_PIPER_LABEL,
+            "error": str(error),
+            **stop_status,
+            **_duration_fields(started_at),
+        }
+    try:
+        if process.stdin is not None:
+            process.stdin.write(spoken)
+            process.stdin.close()
+    except (BrokenPipeError, OSError) as error:
+        try:
+            process.kill()
+        except OSError:
+            pass
+        return {
+            "spoken": False,
+            "status": "failed",
+            "reason": reason,
+            "provider": "piper",
+            "voice": TTS_PIPER_LABEL,
+            "error": str(error),
+            **stop_status,
+            **_duration_fields(started_at),
+        }
+    SPEECH_PROCESS = process
+    threading.Thread(target=_reap_speech_process, args=(process,), daemon=True).start()
+    return {
+        "spoken": True,
+        "status": "started",
+        "reason": reason,
+        "provider": "piper",
+        "voice": TTS_PIPER_LABEL,
+        "text_length": len(spoken),
+        **stop_status,
+        **_duration_fields(started_at),
+    }
+
+
+def speak_text_async(text: str, *, reason: str = "reply") -> dict[str, Any]:
+    """Speak text without blocking the command response."""
+    if not TTS_AUTOMATIC_ENABLED:
+        return {"spoken": False, "status": "disabled", "reason": reason}
+    if reason == "status" and not TTS_SPEAK_STATUS:
+        return {"spoken": False, "status": "status_speech_disabled", "reason": reason}
+    spoken = _sanitize_spoken_text(text)
+    if not spoken:
+        return {"spoken": False, "status": "empty", "reason": reason}
+    started_at = time.monotonic()
+    with SPEECH_LOCK:
+        stop_status = _stop_active_speech_locked()
+        provider = _normalize_tts_provider(TTS_PROVIDER)
+        if provider == "piper":
+            piper_result = _start_piper_speech_async(
+                spoken,
+                reason=reason,
+                started_at=started_at,
+                stop_status=stop_status,
+            )
+            if piper_result["spoken"] or _normalize_tts_provider(TTS_FALLBACK_PROVIDER) != "macos":
+                return piper_result
+            return _start_macos_speech_async(
+                spoken,
+                reason=reason,
+                started_at=started_at,
+                stop_status=stop_status,
+                fallback_from="piper",
+                fallback_reason=", ".join(piper_result.get("missing", [])) or piper_result.get("status"),
+            )
+        return _start_macos_speech_async(
+            spoken,
+            reason=reason,
+            started_at=started_at,
+            stop_status=stop_status,
+        )
 
 
 def tts_status() -> dict[str, Any]:
     """Return text-to-speech readiness without playing audio."""
+    provider = _normalize_tts_provider(TTS_PROVIDER)
+    fallback_provider = _normalize_tts_provider(TTS_FALLBACK_PROVIDER)
+    piper = _piper_readiness()
     say_path = _find_executable("say")
     voice_names: list[str] = []
     voice_output = ""
@@ -815,22 +1051,35 @@ def tts_status() -> dict[str, Any]:
             name = stripped.split(maxsplit=1)[0]
             if name and name not in voice_names:
                 voice_names.append(name)
-    available = bool(say_path)
+    macos_available = bool(say_path)
     selected_voice_available = _say_voice_available(TTS_VOICE, voice_output)
     sample_voices = voice_names[:8]
+    preferred_available = bool(piper["ready"]) if provider == "piper" else macos_available
+    fallback_available = macos_available if fallback_provider == "macos" else bool(piper["ready"])
+    available = preferred_available or fallback_available
     reply = (
-        "TTS status: macOS `say` is "
-        f"{'available' if available else 'not available'}"
+        f"TTS status: preferred provider is {provider}. macOS `say` is "
+        f"{'available' if macos_available else 'not available'}"
     )
     if say_path:
         reply += f" at {say_path}"
     reply += (
-        ". Explicit speech commands are "
-        f"{'available' if available else 'not available'}: `speak ...`, `say out loud ...`, and `read ... loud ...`."
+        f". Piper Ryan is {'ready' if piper['ready'] else 'not ready'}"
+    )
+    if piper["ready"]:
+        reply += f" using {piper['label']}."
+    elif piper["missing"]:
+        reply += f" ({', '.join(piper['missing'])})."
+    else:
+        reply += "."
+    reply += (
+        " Explicit speech commands are "
+        f"{'available' if available else 'not available'}"
+        ": `speak ...`, `say out loud ...`, and `read ... loud ...`."
         f" Automatic spoken replies are {'on' if TTS_AUTOMATIC_ENABLED else 'off'}."
     )
     reply += f" Spoken progress lines are {'on' if TTS_SPEAK_STATUS else 'off'}."
-    if available:
+    if macos_available:
         reply += f" Voice: {TTS_VOICE} at {TTS_RATE} words per minute."
         if not selected_voice_available:
             reply += " The selected voice was not listed by `say -v ?`, so macOS may fall back to its default voice."
@@ -846,6 +1095,15 @@ def tts_status() -> dict[str, Any]:
         "status": "available" if available else "missing",
         "read_private_content": False,
         "played_audio": False,
+        "provider": provider,
+        "fallback_provider": fallback_provider,
+        "piper_available": bool(piper["ready"]),
+        "piper_voice": piper["label"],
+        "piper_model": piper["model"],
+        "piper_config": piper["config"],
+        "piper_espeak_data": piper["espeak_data"],
+        "piper_bin": piper["piper_bin"],
+        "piper_missing": piper["missing"],
         "say_path": say_path,
         "explicit_tts_available": available,
         "automatic_tts_enabled": TTS_AUTOMATIC_ENABLED,
@@ -4658,21 +4916,14 @@ def _extract_speech_text(text: str) -> str | None:
     return None
 
 
-def _run_say_text(text: str) -> dict[str, Any]:
+def _run_macos_say_text(
+    spoken: str,
+    *,
+    started_at: float,
+    fallback_from: str | None = None,
+    fallback_reason: str | None = None,
+) -> dict[str, Any]:
     say_path = _find_executable("say") or "/usr/bin/say"
-    spoken = _sanitize_spoken_text(text)
-    started_at = time.monotonic()
-    if not spoken:
-        return {
-            "tool": "quick.local_control",
-            "matched": True,
-            "status": "empty",
-            "executed": False,
-            "action": "speech.say",
-            "text_length": 0,
-            **_duration_fields(started_at),
-            "reply": "I did not find anything readable to speak.",
-        }
     try:
         completed = subprocess.run(
             [say_path, "-v", TTS_VOICE, "-r", str(TTS_RATE), spoken],
@@ -4691,6 +4942,9 @@ def _run_say_text(text: str) -> dict[str, Any]:
             "status": "timeout",
             "executed": True,
             "action": "speech.say",
+            "provider": "macos",
+            "fallback_from": fallback_from,
+            "fallback_reason": fallback_reason,
             "text_length": len(spoken),
             "voice": TTS_VOICE,
             "rate": TTS_RATE,
@@ -4704,6 +4958,9 @@ def _run_say_text(text: str) -> dict[str, Any]:
             "status": "unavailable",
             "executed": False,
             "action": "speech.say",
+            "provider": "macos",
+            "fallback_from": fallback_from,
+            "fallback_reason": fallback_reason,
             "text_length": len(spoken),
             "voice": TTS_VOICE,
             "rate": TTS_RATE,
@@ -4717,6 +4974,9 @@ def _run_say_text(text: str) -> dict[str, Any]:
         "status": "completed" if completed.returncode == 0 else "failed",
         "executed": True,
         "action": "speech.say",
+        "provider": "macos",
+        "fallback_from": fallback_from,
+        "fallback_reason": fallback_reason,
         "text_length": len(spoken),
         "voice": TTS_VOICE,
         "rate": TTS_RATE,
@@ -4725,6 +4985,106 @@ def _run_say_text(text: str) -> dict[str, Any]:
         **_duration_fields(started_at),
         "reply": "Spoke the text locally." if completed.returncode == 0 else "I tried to speak the text locally, but macOS returned an error.",
     }
+
+
+def _run_piper_text(spoken: str, *, started_at: float) -> dict[str, Any]:
+    readiness = _piper_readiness()
+    if not readiness["ready"]:
+        return {
+            "tool": "quick.local_control",
+            "matched": True,
+            "status": "unavailable",
+            "executed": False,
+            "action": "speech.say",
+            "provider": "piper",
+            "text_length": len(spoken),
+            "voice": TTS_PIPER_LABEL,
+            "missing": readiness["missing"],
+            **_duration_fields(started_at),
+            "reply": "I could not start the Piper voice.",
+        }
+    command = _piper_speaker_command(readiness)
+    try:
+        completed = subprocess.run(
+            command,
+            input=spoken,
+            shell=False,
+            cwd=PROJECT_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=max(15, TTS_PIPER_TIMEOUT_SECONDS + 20),
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "tool": "quick.local_control",
+            "matched": True,
+            "status": "timeout",
+            "executed": True,
+            "action": "speech.say",
+            "provider": "piper",
+            "text_length": len(spoken),
+            "voice": TTS_PIPER_LABEL,
+            **_duration_fields(started_at),
+            "reply": "I started speaking, but the Piper speech command ran too long.",
+        }
+    except OSError as error:
+        return {
+            "tool": "quick.local_control",
+            "matched": True,
+            "status": "unavailable",
+            "executed": False,
+            "action": "speech.say",
+            "provider": "piper",
+            "text_length": len(spoken),
+            "voice": TTS_PIPER_LABEL,
+            "error": str(error),
+            **_duration_fields(started_at),
+            "reply": "I could not start the Piper voice.",
+        }
+    return {
+        "tool": "quick.local_control",
+        "matched": True,
+        "status": "completed" if completed.returncode == 0 else "failed",
+        "executed": True,
+        "action": "speech.say",
+        "provider": "piper",
+        "text_length": len(spoken),
+        "voice": TTS_PIPER_LABEL,
+        "returncode": completed.returncode,
+        "stderr": (completed.stderr or "").strip()[-500:],
+        **_duration_fields(started_at),
+        "reply": "Spoke the text locally." if completed.returncode == 0 else "I tried to speak the text locally, but Piper returned an error.",
+    }
+
+
+def _run_say_text(text: str) -> dict[str, Any]:
+    spoken = _sanitize_spoken_text(text)
+    started_at = time.monotonic()
+    if not spoken:
+        return {
+            "tool": "quick.local_control",
+            "matched": True,
+            "status": "empty",
+            "executed": False,
+            "action": "speech.say",
+            "text_length": 0,
+            **_duration_fields(started_at),
+            "reply": "I did not find anything readable to speak.",
+        }
+    provider = _normalize_tts_provider(TTS_PROVIDER)
+    if provider == "piper":
+        result = _run_piper_text(spoken, started_at=started_at)
+        if result["executed"] or _normalize_tts_provider(TTS_FALLBACK_PROVIDER) != "macos":
+            return result
+        return _run_macos_say_text(
+            spoken,
+            started_at=started_at,
+            fallback_from="piper",
+            fallback_reason=", ".join(result.get("missing", [])) or result.get("status"),
+        )
+    return _run_macos_say_text(spoken, started_at=started_at)
 
 
 def _parse_volume_delta(lower: str) -> int | None:
