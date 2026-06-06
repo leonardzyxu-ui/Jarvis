@@ -416,6 +416,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Reports the local speech-recognition audition page and what it can test without recording audio.",
             },
             {
+                "id": "voice.stt_session_plan",
+                "label": "STT Audition Session Plan",
+                "mode": "read_only_plan",
+                "risk": "local_metadata",
+                "available": True,
+                "description": "Prepares a speech-recognition audition run plan with reference sentence, metrics, and export checklist without recording audio.",
+            },
+            {
                 "id": "voice.stt_candidates",
                 "label": "STT Candidate Status",
                 "mode": "read_only",
@@ -1995,6 +2003,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "diagnostics.final_qa", "kind": "read_only", "description": "Report the deferred foreground QA plan without opening apps or browsers."},
         {"id": "workflow.app_task_plan", "kind": "read_only_plan", "description": "Create a structured safe plan for future multi-step app work without executing the workflow."},
         {"id": "voice.stt_audition", "kind": "planned", "description": "Prepare a speech-recognition audition workflow."},
+        {"id": "voice.stt_session_plan", "kind": "read_only_plan", "description": "Plan one speech-recognition audition run with reference sentence, candidate, metrics, and export checklist."},
         {"id": "voice.stt_candidates", "kind": "read_only", "description": "List speech-recognition candidates and installed local engine evidence."},
         {"id": "voice.stt_score", "kind": "read_only", "description": "Score a pasted STT transcript against a reference sentence without recording audio."},
         {"id": "voice.loop_simulation", "kind": "read_only_text_only", "description": "Simulate wake, greeting, command capture, and command preview without microphone or audio."},
@@ -2861,6 +2870,76 @@ def stt_audition_status() -> dict[str, Any]:
             "human_score",
         ],
         "requires_foreground_browser_for_live_test": True,
+        "reply": reply,
+    }
+
+
+def stt_session_plan(candidate_id: str | None = None, reference_sentence: str | None = None) -> dict[str, Any]:
+    """Prepare one STT audition run without recording audio or opening the page."""
+    candidates = stt_candidate_status()
+    audition = stt_audition_status()
+    requested_candidate = re.sub(r"\s+", " ", str(candidate_id or "")).strip()
+    available_ids = [str(candidate.get("id") or "") for candidate in candidates.get("candidates", [])]
+    candidate = requested_candidate if requested_candidate in available_ids else ""
+    if not candidate:
+        for candidate_id_option in candidates.get("recommended_first_pass", []):
+            if candidate_id_option in available_ids:
+                candidate = str(candidate_id_option)
+                break
+    reference = re.sub(r"\s+", " ", str(reference_sentence or "")).strip()
+    if not reference:
+        reference = STT_REFERENCE_SENTENCES[0]
+    candidate_details = next(
+        (candidate_info for candidate_info in candidates.get("candidates", []) if candidate_info.get("id") == candidate),
+        {},
+    )
+    steps = [
+        "Open the local STT audition page when foreground browser activity is acceptable.",
+        f"Select candidate {candidate or 'manual'} and read the reference sentence exactly once.",
+        "Capture first-result latency, final-result latency, recognized transcript, and Leo's 1-10 human score.",
+        "Save the row in the audition table and export JSON after at least three comparable candidates.",
+        "Compare WER first, then natural correction behavior, latency, and whether the engine stays local.",
+    ]
+    reply = (
+        f"STT audition plan prepared for {candidate or 'manual transcript paste'}: read one reference sentence, "
+        "score WER and latency, save the row, then export the comparison JSON."
+    )
+    return {
+        "tool": "voice.stt_session_plan",
+        "executed": True,
+        "status": "planned",
+        "planned_only": True,
+        "read_private_content": False,
+        "recorded_audio": False,
+        "requested_microphone_permission": False,
+        "opened_browser": False,
+        "started_recognition": False,
+        "sent_audio": False,
+        "installed_anything": False,
+        "changed_state": False,
+        "candidate_id": candidate,
+        "requested_candidate_id": requested_candidate,
+        "candidate": candidate_details,
+        "reference_sentence": reference,
+        "page_path": audition.get("page_path"),
+        "page_exists": bool(audition.get("page_exists")),
+        "metrics": list(audition.get("metrics") or []),
+        "steps": steps,
+        "export_expectation": {
+            "format": "JSON",
+            "minimum_rows_before_choice": 3,
+            "fields": [
+                "candidate_id",
+                "reference",
+                "transcript",
+                "word_error_rate",
+                "word_accuracy",
+                "character_accuracy",
+                "first_result_ms",
+                "final_result_ms",
+                "human_score",
+            ],
+        },
         "reply": reply,
     }
 

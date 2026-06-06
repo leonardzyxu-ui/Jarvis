@@ -89,6 +89,7 @@ from jarvis.tools import (
     stream_fast_local_chat_events,
     stt_audition_status,
     stt_candidate_status,
+    stt_session_plan,
     stt_score_transcript,
     tool_catalog_status,
     tts_status,
@@ -341,6 +342,8 @@ class PlannerTests(unittest.TestCase):
             "speech recognition audition page": "voice.stt_audition",
             "speech recognition candidates": "voice.stt_candidates",
             "voice recognition models": "voice.stt_candidates",
+            "speech recognition test plan": "voice.stt_session_plan",
+            "stt audition plan": "voice.stt_session_plan",
             "score stt transcript: hello Jarvis => hello Jarvis": "voice.stt_score",
             "voice loop: Hey Jarvis status": "voice.loop_simulation",
             "simulate voice loop Hey Jarvis final QA plan": "voice.loop_simulation",
@@ -723,6 +726,34 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result.result["next_tool_preview"]["preview"]["planned_only"])
         self.assertFalse(result.result["next_tool_preview"]["preview"]["recorded_audio"])
         stt_mock.assert_called_once_with()
+
+    def test_tools_more_stt_session_plan_recommendation_previews_without_audio(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "voice.stt_session_plan",
+            "entities": {
+                "candidate_id": "chrome-web-speech",
+                "reference_sentence": "Hey Jarvis, check my email.",
+            },
+            "reply": "Yes sir, preparing the speech recognition test plan now.",
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
+            result = Planner().handle_selected_tool("Plan a speech recognition test.", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "voice.stt_session_plan")
+        preview = result.result["next_tool_preview"]["preview"]
+        self.assertFalse(preview["executed"])
+        self.assertTrue(preview["planned_only"])
+        self.assertEqual(preview["candidate_id"], "chrome-web-speech")
+        self.assertEqual(preview["reference_sentence"], "Hey Jarvis, check my email.")
+        self.assertFalse(preview["recorded_audio"])
+        self.assertFalse(preview["requested_microphone_permission"])
+        self.assertFalse(preview["opened_browser"])
+        self.assertFalse(preview["sent_audio"])
 
     def test_tools_more_stt_score_recommendation_previews_without_audio(self):
         fake_plan = {
@@ -1733,6 +1764,33 @@ class PlannerTests(unittest.TestCase):
         self.assertGreaterEqual(result["audition_ready_count"], 2)
         self.assertTrue(result["reference_sentences"])
 
+    def test_stt_session_plan_prepares_run_without_audio_or_browser(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            page = root / "runtime" / "stt_audition" / "index.html"
+            page.parent.mkdir(parents=True)
+            page.write_text("<!doctype html><title>Jarvis STT Audition</title>", encoding="utf-8")
+            with patch("jarvis.tools.PROJECT_ROOT", root):
+                result = stt_session_plan(
+                    "chrome-web-speech",
+                    "Hey Jarvis, check my email.",
+                )
+
+        self.assertEqual(result["tool"], "voice.stt_session_plan")
+        self.assertEqual(result["status"], "planned")
+        self.assertTrue(result["planned_only"])
+        self.assertEqual(result["candidate_id"], "chrome-web-speech")
+        self.assertEqual(result["reference_sentence"], "Hey Jarvis, check my email.")
+        self.assertTrue(result["page_exists"])
+        self.assertIn("word_error_rate", result["metrics"])
+        self.assertIn("candidate_id", result["export_expectation"]["fields"])
+        self.assertFalse(result["recorded_audio"])
+        self.assertFalse(result["requested_microphone_permission"])
+        self.assertFalse(result["opened_browser"])
+        self.assertFalse(result["started_recognition"])
+        self.assertFalse(result["sent_audio"])
+        self.assertFalse(result["installed_anything"])
+
     def test_stt_score_transcript_scores_text_without_audio(self):
         result = stt_score_transcript(
             "Hey Jarvis, check my email.",
@@ -2210,6 +2268,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("voice.wake_simulation", tool_ids)
         self.assertIn("voice.stt_audition", tool_ids)
         self.assertIn("voice.stt_candidates", tool_ids)
+        self.assertIn("voice.stt_session_plan", tool_ids)
         self.assertIn("voice.stt_score", tool_ids)
         self.assertIn("voice.loop_simulation", tool_ids)
         self.assertIn("diagnostics.overnight", tool_ids)
@@ -5144,7 +5203,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(preflight["summary"]["recommended_total"], len(recommended_ids))
         self.assertEqual(preflight["summary"]["required_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "required" and check["passed"]))
         policy_gate = next(check for check in preflight["checks"] if check["id"] == "policy_gates_loaded")
-        self.assertIn("31/31", policy_gate["detail"])
+        self.assertIn("32/32", policy_gate["detail"])
         self.assertEqual(preflight["summary"]["recommended_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "recommended" and check["passed"]))
         self.assertEqual(check_ids, required_ids.union(recommended_ids))
 

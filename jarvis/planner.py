@@ -54,6 +54,7 @@ from .tools import (
     start_codex_delegate_job,
     stt_audition_status,
     stt_candidate_status,
+    stt_session_plan,
     stt_score_transcript,
     system_status,
     terminal_command_plan,
@@ -122,6 +123,11 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "tool": "voice.stt_candidates",
         "description": "Report speech-recognition candidates and installed local engine evidence without recording audio.",
         "entities": [],
+    },
+    {
+        "tool": "voice.stt_session_plan",
+        "description": "Prepare one speech-recognition audition run with candidate, reference sentence, timing metrics, and export checklist without recording audio.",
+        "entities": ["candidate_id", "reference_sentence"],
     },
     {
         "tool": "voice.stt_score",
@@ -446,6 +452,8 @@ class Planner:
         if stt_score_payload is not None:
             result = stt_score_transcript(**stt_score_payload)
             return self._result(text, "voice.stt_score", "Scored speech-recognition transcript.", assessment, result, True)
+        if _looks_like_stt_session_plan(lower):
+            return self._result(text, "voice.stt_session_plan", "Prepared STT audition session plan.", assessment, stt_session_plan(), True)
         if _looks_like_stt_audition_status(lower):
             return self._result(text, "voice.stt_audition", "Read local STT audition status.", assessment, stt_audition_status(), True)
         if _looks_like_stt_candidate_status(lower):
@@ -620,6 +628,8 @@ class Planner:
         stt_score_payload = _extract_stt_score_payload(text)
         if stt_score_payload is not None:
             return self._preview_result(text, "voice.stt_score", assessment, True, plan={"planned_only": True, **stt_score_payload})
+        if _looks_like_stt_session_plan(lower):
+            return self._preview_result(text, "voice.stt_session_plan", assessment, True)
         if _looks_like_stt_audition_status(lower):
             return self._preview_result(text, "voice.stt_audition", assessment, True)
         if _looks_like_stt_candidate_status(lower):
@@ -725,6 +735,18 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "voice.stt_candidates", assessment, True, plan={"intent": intent})
             return self._result(text, "voice.stt_candidates", "Read speech-recognition candidate status.", assessment, stt_candidate_status(), True)
+        if selected_tool == "voice.stt_session_plan":
+            candidate_id = _clean_optional_entity(entities.get("candidate_id"))
+            reference_sentence = _clean_optional_entity(entities.get("reference_sentence"))
+            if not execute:
+                return self._preview_result(
+                    text,
+                    "voice.stt_session_plan",
+                    assessment,
+                    True,
+                    plan={"intent": intent, "candidate_id": candidate_id, "reference_sentence": reference_sentence},
+                )
+            return self._result(text, "voice.stt_session_plan", "Prepared STT audition session plan.", assessment, stt_session_plan(candidate_id, reference_sentence), True)
         if selected_tool == "voice.stt_score":
             payload = _stt_score_payload_from_entities(entities) or _extract_stt_score_payload(text) or {
                 "reference": "",
@@ -1035,6 +1057,15 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
         }
     if recommended == "voice.stt_candidates":
         preview = stt_candidate_status()
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended == "voice.stt_session_plan":
+        candidate_id = _clean_optional_entity(entities.get("candidate_id"))
+        reference_sentence = _clean_optional_entity(entities.get("reference_sentence"))
+        preview = stt_session_plan(candidate_id, reference_sentence)
         return {
             "recommended_tool": recommended,
             "executed": False,
@@ -1542,6 +1573,7 @@ def _voice_loop_status_text_for_tool(tool: str) -> str:
         "tools.deep_catalog": "Yes sir, checking the deeper tool catalog now.",
         "diagnostics.permissions": "Yes sir, checking permissions readiness now.",
         "voice.stt_candidates": "Yes sir, checking speech recognition options now.",
+        "voice.stt_session_plan": "Yes sir, preparing the speech recognition test plan now.",
         "voice.stt_score": "Yes sir, scoring that transcript now.",
         "screenshot.capability": "Yes sir, checking the screen setup now.",
         "app.list": "Yes sir, checking which apps I can open now.",
@@ -1721,6 +1753,31 @@ def _looks_like_tts_status(lower: str) -> bool:
     return (
         any(cue in lower for cue in tts_cues)
         and any(cue in lower for cue in status_cues)
+        and not any(cue in lower for cue in mutation_cues)
+    )
+
+
+def _looks_like_stt_session_plan(lower: str) -> bool:
+    stt_cues = (
+        "stt",
+        "speech to text",
+        "speech-to-text",
+        "speech recognition",
+        "voice recognition",
+        "transcription",
+    )
+    plan_cues = (
+        "session plan",
+        "test plan",
+        "audition plan",
+        "prepare",
+        "run plan",
+        "testing plan",
+    )
+    mutation_cues = ("start recording", "record now", "listen now", "turn on microphone", "enable microphone")
+    return (
+        any(cue in lower for cue in stt_cues)
+        and any(cue in lower for cue in plan_cues)
         and not any(cue in lower for cue in mutation_cues)
     )
 
