@@ -22,6 +22,7 @@ model_path = Path(sys.argv[1])
 config_path = Path(sys.argv[2])
 wav_path = Path(sys.argv[3])
 espeak_data_dir = Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else ESPEAK_DATA_DIR
+length_scale = float(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else 0.76
 text = sys.stdin.read().strip()
 if not text:
     raise SystemExit(2)
@@ -31,7 +32,7 @@ voice = PiperVoice.load(
     config_path=config_path,
     espeak_data_dir=espeak_data_dir,
 )
-syn_config = SynthesisConfig()
+syn_config = SynthesisConfig(length_scale=length_scale)
 params_set = False
 with wave.open(str(wav_path), "wb") as wav_file:
     for audio_chunk in voice.synthesize(text, syn_config):
@@ -53,6 +54,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--espeak-data")
     parser.add_argument("--afplay", required=True)
     parser.add_argument("--piper-timeout", type=float, default=8.0)
+    parser.add_argument("--length-scale", type=float, default=0.76)
     return parser.parse_args()
 
 
@@ -90,6 +92,7 @@ def main() -> int:
                 str(config_path),
                 str(wav_path),
                 str(Path(args.espeak_data).expanduser()) if args.espeak_data else "",
+                str(args.length_scale),
             ]
         else:
             synth_command = [
@@ -100,6 +103,8 @@ def main() -> int:
                 str(config_path),
                 "-f",
                 str(wav_path),
+                "--length-scale",
+                str(args.length_scale),
             ]
         synth = subprocess.run(
             synth_command,

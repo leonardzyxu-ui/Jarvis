@@ -24,6 +24,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config", required=True)
     parser.add_argument("--espeak-data")
     parser.add_argument("--afplay", required=True)
+    parser.add_argument("--length-scale", type=float, default=0.76)
     return parser.parse_args()
 
 
@@ -36,8 +37,8 @@ def _chunk_text(text: str) -> list[str]:
     clean = re.sub(r"\s+", " ", text.strip())
     if not clean:
         return []
-    first_target = 45
-    later_target = 180
+    first_target = 90
+    later_target = 260
     pieces = re.split(r"(?<=[.!?;:])\s+", clean)
     chunks: list[str] = []
     current = ""
@@ -45,7 +46,7 @@ def _chunk_text(text: str) -> list[str]:
         piece = piece.strip()
         if not piece:
             continue
-        if len(piece) > 180:
+        if len(piece) > later_target:
             subpieces = re.split(r"(?<=,)\s+", piece)
         else:
             subpieces = [piece]
@@ -62,15 +63,15 @@ def _chunk_text(text: str) -> list[str]:
             current = subpiece
     if current:
         chunks.append(current)
-    if len(chunks) <= 1 and len(clean) > 140:
-        chunks = [clean[index : index + 140].strip() for index in range(0, len(clean), 140)]
-    if chunks and len(chunks[0]) > 34:
+    if len(chunks) <= 1 and len(clean) > 260:
+        chunks = [clean[index : index + 260].strip() for index in range(0, len(clean), 260)]
+    if chunks and len(chunks[0]) > first_target:
         words = chunks[0].split()
         first_words: list[str] = []
         remaining_words: list[str] = []
         for word in words:
             candidate = " ".join([*first_words, word])
-            if first_words and len(candidate) > 32:
+            if first_words and len(candidate) > first_target:
                 remaining_words.append(word)
             elif remaining_words:
                 remaining_words.append(word)
@@ -231,7 +232,7 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001
         _emit("fatal", status="load_failed", error=str(error)[-500:])
         return 2
-    syn_config = SynthesisConfig()
+    syn_config = SynthesisConfig(length_scale=args.length_scale)
     prime_started = time.monotonic()
     try:
         with tempfile.TemporaryDirectory(prefix="jarvis-piper-prime-") as tmpdir:
@@ -248,6 +249,7 @@ def main() -> int:
         model=str(model_path),
         config=str(config_path),
         espeak_data=str(espeak_data_dir),
+        length_scale=args.length_scale,
     )
     for raw_line in sys.stdin:
         raw_line = raw_line.strip()

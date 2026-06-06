@@ -71,6 +71,7 @@ from .config import (
     TTS_PIPER_CONFIG,
     TTS_PIPER_ESPEAK_DATA,
     TTS_PIPER_LABEL,
+    TTS_PIPER_LENGTH_SCALE,
     TTS_PIPER_MODEL,
     TTS_PIPER_TIMEOUT_SECONDS,
     TTS_PIPER_WARM_WORKER,
@@ -818,6 +819,7 @@ def _piper_readiness() -> dict[str, Any]:
         "afplay": afplay_path,
         "missing": missing,
         "timeout_seconds": TTS_PIPER_TIMEOUT_SECONDS,
+        "length_scale": TTS_PIPER_LENGTH_SCALE,
     }
 
 
@@ -838,6 +840,8 @@ def _piper_speaker_command(readiness: dict[str, Any]) -> list[str]:
         str(readiness["afplay"]),
         "--piper-timeout",
         str(TTS_PIPER_TIMEOUT_SECONDS),
+        "--length-scale",
+        str(TTS_PIPER_LENGTH_SCALE),
     ]
     if readiness.get("piper_python"):
         command.extend(["--piper-python", str(readiness["piper_python"])])
@@ -862,6 +866,8 @@ def _piper_warm_worker_command(readiness: dict[str, Any]) -> list[str]:
         str(readiness["espeak_data"]),
         "--afplay",
         str(readiness["afplay"]),
+        "--length-scale",
+        str(TTS_PIPER_LENGTH_SCALE),
     ]
 
 
@@ -1378,6 +1384,7 @@ def tts_status() -> dict[str, Any]:
     )
     if piper["ready"]:
         reply += f" using {piper['label']}."
+        reply += f" Piper length scale is {TTS_PIPER_LENGTH_SCALE:.2f}."
         if piper_worker["enabled"]:
             reply += (
                 " Warm worker is "
@@ -1395,7 +1402,8 @@ def tts_status() -> dict[str, Any]:
     )
     reply += f" Spoken progress lines are {'on' if TTS_SPEAK_STATUS else 'off'}."
     if macos_available:
-        reply += f" Voice: {TTS_VOICE} at {TTS_RATE} words per minute."
+        voice_label = "macOS fallback voice" if provider == "piper" else "Voice"
+        reply += f" {voice_label}: {TTS_VOICE} at {TTS_RATE} words per minute."
         if not selected_voice_available:
             reply += " The selected voice was not listed by `say -v ?`, so macOS may fall back to its default voice."
     if voice_names:
@@ -1418,6 +1426,7 @@ def tts_status() -> dict[str, Any]:
         "piper_config": piper["config"],
         "piper_espeak_data": piper["espeak_data"],
         "piper_bin": piper["piper_bin"],
+        "piper_length_scale": TTS_PIPER_LENGTH_SCALE,
         "piper_missing": piper["missing"],
         "piper_warm_worker": piper_worker,
         "say_path": say_path,
@@ -4330,7 +4339,7 @@ def stream_fast_local_chat_events(
 def _fast_chat_system_prompt(tool_specs: list[dict[str, Any]] | None = None) -> str:
     prompt = (
         "You are Jarvis, Leo's local Mac assistant prototype. "
-        "Leo is the user's real name for profile context, but do not address him as Leo, Sir, or by any title unless he explicitly asks. "
+        "Leo is the user's real name for profile context, but do not address him as Leo or by a title in normal chat unless he explicitly asks. "
         f"Current local date/time: {_current_local_datetime_label()}. "
         "Answer directly and briefly unless he asks for more. "
         "Follow Leo's requested output format, including exact text or bullet counts. "
@@ -4346,7 +4355,7 @@ def _fast_chat_system_prompt(tool_specs: list[dict[str, Any]] | None = None) -> 
             "\n\nIf and only if the user needs Jarvis to use a real tool, do not answer normally. "
             "Instead output exactly one line beginning with \\tool followed by compact JSON. "
             "The JSON shape is {\"tool\":\"tool.id\",\"status\":\"natural short status for Leo\",\"entities\":{}}. "
-            "The status must sound natural, for example \"Sure. I'll check your email.\" Do not use the word skill. "
+            "The status must sound natural and polite, for example \"Yes sir, checking your email now.\" Do not use the word skill. "
             "If no real tool is needed, answer directly and do not mention tools.\n"
             "Available tools:\n"
             f"{_fast_chat_tool_catalog(tool_specs)}"
@@ -4419,7 +4428,7 @@ def _parse_fast_chat_tool_request(text: str, tool_specs: list[dict[str, Any]]) -
         entities = {}
     status_text = re.sub(r"\s+", " ", str(parsed.get("status") or "")).strip()
     if not status_text:
-        status_text = f"Sure. I'll check {selected_tool}."
+        status_text = f"Yes sir, checking {selected_tool} now."
     return {
         "selected_tool": selected_tool,
         "status_text": status_text[:160],

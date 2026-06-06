@@ -143,9 +143,9 @@ class JarvisServer:
 
         if result.get("status") == "tool_requested":
             selected_tool = str(result.get("selected_tool") or "")
-            status_text = str(result.get("status_text") or "").strip()
+            status_text = _stream_status_text({"tool": selected_tool})
             if not status_text:
-                status_text = _stream_status_text({"tool": selected_tool})
+                status_text = str(result.get("status_text") or "").strip()
             if status_text:
                 speech = speak_text_async(status_text, reason="status")
                 yield {
@@ -536,27 +536,27 @@ STATE = JarvisServer()
 def _stream_status_text(preview: dict[str, Any]) -> str:
     tool = str(preview.get("tool") or "")
     labels = {
-        "outlook.visible_summary": "Sure. I'll check your email.",
-        "diagnostics.email": "Sure. I'll check the email setup.",
-        "screenshot.capability": "Sure. I'll check the screen setup.",
-        "browser.open_url": "Sure. I'll open that.",
-        "codex.job": "Sure. I'll check with Codex.",
-        "codex.delegate": "Sure. I'll check with Codex.",
-        "diagnostics.codex_chats": "Sure. I'll check the Codex chats.",
-        "diagnostics.codex_speed": "Sure. I'll check Codex timing.",
-        "diagnostics.remote_worker": "Sure. I'll check the MacBook Air.",
-        "diagnostics.fast_model": "Sure. I'll check the model setup.",
-        "diagnostics.memory": "Sure. I'll check Jarvis memory.",
-        "diagnostics.tts": "Sure. I'll check the voice setup.",
-        "files.search": "Sure. I'll search your files.",
-        "shell.read_only": "Sure. I'll check that locally.",
-        "quick.local_control": "Sure. I'll handle that.",
-        "system.status": "Sure. I'll check Jarvis status.",
+        "outlook.visible_summary": "Yes sir, checking your email now.",
+        "diagnostics.email": "Yes sir, checking the email setup now.",
+        "screenshot.capability": "Yes sir, checking the screen setup now.",
+        "browser.open_url": "Yes sir, opening that now.",
+        "codex.job": "Yes sir, checking with Codex now.",
+        "codex.delegate": "Yes sir, checking with Codex now.",
+        "diagnostics.codex_chats": "Yes sir, checking the Codex chats now.",
+        "diagnostics.codex_speed": "Yes sir, checking Codex timing now.",
+        "diagnostics.remote_worker": "Yes sir, checking the MacBook Air now.",
+        "diagnostics.fast_model": "Yes sir, checking the model setup now.",
+        "diagnostics.memory": "Yes sir, checking Jarvis memory now.",
+        "diagnostics.tts": "Yes sir, checking the voice setup now.",
+        "files.search": "Yes sir, searching your files now.",
+        "shell.read_only": "Yes sir, checking that locally now.",
+        "quick.local_control": "Yes sir, handling that now.",
+        "system.status": "Yes sir, checking Jarvis status now.",
         "policy.block": "Checking safety policy.",
         "policy.confirmation": "Checking safety policy.",
         "policy.strong_confirmation": "Checking safety policy.",
     }
-    return labels.get(tool, "Sure. I'll check this.")
+    return labels.get(tool, "Yes sir, checking this now.")
 
 
 def _attach_auto_speech(data: dict[str, Any], *, reason: str) -> None:

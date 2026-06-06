@@ -29,6 +29,7 @@ for key in (
     "JARVIS_TTS_PIPER_TIMEOUT_SECONDS",
     "JARVIS_TTS_PIPER_WARM_WORKER",
     "JARVIS_TTS_PIPER_WARMUP_TIMEOUT_SECONDS",
+    "JARVIS_TTS_PIPER_LENGTH_SCALE",
     "JARVIS_TTS_AFPLAY",
 ):
     os.environ.pop(key, None)
@@ -811,7 +812,9 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["provider"], "piper")
         self.assertTrue(result["piper_available"])
         self.assertTrue(result["explicit_tts_available"])
+        self.assertEqual(result["piper_length_scale"], 0.76)
         self.assertIn("Piper Ryan is ready", result["reply"])
+        self.assertIn("length scale is 0.76", result["reply"])
 
     def test_screen_status_does_not_capture_screen(self):
         with patch("jarvis.tools._find_executable", return_value="/usr/sbin/screencapture"):
@@ -1811,6 +1814,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(fake_process.stdin.closed)
         self.assertFalse(popen_mock.call_args.kwargs["shell"])
         self.assertEqual(popen_mock.call_args.args[0][1:3], ["-m", "jarvis.piper_speaker"])
+        self.assertIn("--length-scale", popen_mock.call_args.args[0])
+        self.assertIn("0.76", popen_mock.call_args.args[0])
 
     def test_auto_speech_queues_to_warm_piper_worker(self):
         class FakeStdin:
@@ -1874,6 +1879,20 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(messages[1]["id"], first["speech_id"])
         self.assertEqual(messages[2]["type"], "speak")
         self.assertEqual(messages[2]["text"], "second warm reply")
+
+    def test_warm_piper_worker_command_includes_length_scale(self):
+        readiness = {
+            "piper_python": "/tmp/python",
+            "model": "/tmp/ryan.onnx",
+            "config": "/tmp/ryan.onnx.json",
+            "espeak_data": "/tmp/espeak-ng-data",
+            "afplay": "/usr/bin/afplay",
+        }
+
+        command = jarvis_tools._piper_warm_worker_command(readiness)
+
+        self.assertIn("--length-scale", command)
+        self.assertIn("0.76", command)
 
     def test_quick_local_control_plans_brightness_without_side_effect(self):
         result = quick_local_control("brightness up", execute=False)
@@ -2023,7 +2042,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             def read(self):
                 return (
                     b'{"choices":[{"message":{"content":"\\\\tool '
-                    b'{\\"tool\\":\\"outlook.visible_summary\\",\\"status\\":\\"Sure. I\\\\u0027ll check your email.\\",'
+                    b'{\\"tool\\":\\"outlook.visible_summary\\",\\"status\\":\\"Yes sir, checking your email now.\\",'
                     b'\\"entities\\":{\\"selection\\":\\"latest\\"}}"}}]}'
                 )
 
@@ -2035,7 +2054,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "tool_requested")
         self.assertEqual(result["selected_tool"], "outlook.visible_summary")
-        self.assertEqual(result["status_text"], "Sure. I'll check your email.")
+        self.assertEqual(result["status_text"], "Yes sir, checking your email now.")
         self.assertNotIn("skill", result["status_text"].lower())
 
     def test_fast_local_chat_groq_falls_back_to_ollama(self):
@@ -2851,13 +2870,13 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 events = list(server.stream_command("please check my email"))
 
         self.assertEqual([event["event"] for event in events], ["status", "final"])
-        self.assertEqual(events[0]["data"]["text"], "Sure. I'll check your email.")
+        self.assertEqual(events[0]["data"]["text"], "Yes sir, checking your email now.")
         self.assertEqual(events[0]["data"]["tool"], "outlook.visible_summary")
         self.assertTrue(events[0]["data"]["speech"]["spoken"])
         self.assertEqual(events[-1]["data"]["tool"], "outlook.visible_summary")
         self.assertEqual(events[-1]["data"]["result"]["status"], "checked")
         self.assertEqual(mail_mock.call_args.kwargs["selection"], "latest")
-        speak_mock.assert_any_call("Sure. I'll check your email.", reason="status")
+        speak_mock.assert_any_call("Yes sir, checking your email now.", reason="status")
 
     def test_stream_command_passes_history_to_fast_chat_without_router_delay(self):
         fake_events = [
