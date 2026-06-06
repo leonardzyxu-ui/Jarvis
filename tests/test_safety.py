@@ -1764,6 +1764,31 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result["played_audio"])
         self.assertFalse(result["called_model"])
 
+    def test_voice_loop_simulation_captures_followup_utterance(self):
+        result = Planner().handle("voice loop: Hey Jarvis | status")
+
+        self.assertEqual(result.tool, "voice.loop_simulation")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["status"], "command_previewed")
+        self.assertEqual(result.result["command"], "status")
+        self.assertEqual(result.result["command_source"], "followup_utterance")
+        self.assertEqual(result.result["utterances"], ["Hey Jarvis", "status"])
+        self.assertEqual(result.result["route_preview"]["tool"], "system.status")
+        self.assertFalse(result.result["route_preview"]["executed"])
+        self.assertFalse(result.result["recorded_audio"])
+        self.assertFalse(result.result["played_audio"])
+        self.assertFalse(result.result["called_model"])
+
+    def test_voice_loop_simulation_finds_later_wake_utterance(self):
+        result = voice_loop_simulation("background noise | Hey Jarvis | check status")
+
+        self.assertEqual(result["status"], "command_previewed")
+        self.assertEqual(result["wake_utterance_index"], 1)
+        self.assertEqual(result["command"], "check status")
+        self.assertEqual(result["command_source"], "followup_utterance")
+        self.assertFalse(result["recorded_audio"])
+        self.assertFalse(result["captured_screen"])
+
     def test_model_context_status_previews_prompts_without_calling_models(self):
         tool_specs = [
             {"tool": "outlook.visible_summary", "description": "Read email.", "entities": ["selection"]},

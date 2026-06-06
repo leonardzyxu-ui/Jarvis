@@ -2495,18 +2495,43 @@ def voice_loop_simulation(
 ) -> dict[str, Any]:
     """Simulate the typed wake-to-command loop without microphone or audio."""
     clean_transcript = re.sub(r"\s+", " ", str(transcript or "")).strip()
+    utterances = _voice_loop_utterances(str(transcript or ""))
+    wake_index = -1
     detection = detect_wake_command(clean_transcript)
     command = detection.command
+    command_source = "wake_utterance"
+    if utterances:
+        for index, utterance in enumerate(utterances):
+            candidate = detect_wake_command(utterance)
+            if candidate.woke:
+                wake_index = index
+                detection = candidate
+                command = candidate.command
+                break
+        if wake_index >= 0 and detection.needs_followup:
+            for index, utterance in enumerate(utterances[wake_index + 1 :], start=wake_index + 1):
+                followup_detection = detect_wake_command(utterance)
+                if followup_detection.woke:
+                    followup_command = followup_detection.command
+                else:
+                    followup_command = utterance
+                followup_command = re.sub(r"\s+", " ", followup_command).strip()
+                if followup_command:
+                    command = followup_command
+                    command_source = "followup_utterance"
+                    break
     stages: list[dict[str, Any]] = [
         {
             "id": "typed_transcript",
             "status": "received",
             "source": "typed_text_only",
+            "utterance_count": len(utterances) or (1 if clean_transcript else 0),
         },
         {
             "id": "wake_detection",
             "status": "detected" if detection.woke else "ignored",
             "wake_phrase": detection.phrase,
+            "utterance_index": wake_index if wake_index >= 0 else None,
         },
     ]
     spoken_sequence: list[str] = []
@@ -2514,7 +2539,7 @@ def voice_loop_simulation(
     if not detection.woke:
         status = "ignored"
         reply = "Voice loop simulation ignored the transcript because no Jarvis wake phrase was detected."
-    elif detection.needs_followup:
+    elif detection.needs_followup and not command:
         status = "awaiting_command"
         spoken_sequence.append("Hello sir.")
         visible_sequence.append("Hello sir.")
@@ -2526,7 +2551,7 @@ def voice_loop_simulation(
         spoken_sequence.append("Hello sir.")
         visible_sequence.append("Hello sir.")
         stages.append({"id": "greeting", "status": "planned", "text": "Hello sir."})
-        stages.append({"id": "command_capture", "status": "captured", "command": command})
+        stages.append({"id": "command_capture", "status": "captured", "command": command, "source": command_source})
         if route_preview is not None:
             stages.append(
                 {
@@ -2549,8 +2574,11 @@ def voice_loop_simulation(
         "executed": True,
         "status": status,
         "transcript": clean_transcript[:500],
+        "utterances": utterances[:8],
+        "wake_utterance_index": wake_index if wake_index >= 0 else None,
         "detection": detection.to_dict(),
         "command": command,
+        "command_source": command_source if command else None,
         "route_preview": route_preview,
         "spoken_sequence": spoken_sequence,
         "visible_sequence": visible_sequence,
@@ -2704,6 +2732,17 @@ def stt_score_transcript(
         "character_accuracy": round(char_accuracy, 6),
         "reply": reply,
     }
+
+
+def _voice_loop_utterances(transcript: str) -> list[str]:
+    text = str(transcript or "").replace("\r", "\n").strip()
+    if not text:
+        return []
+    if "\n" in text:
+        raw_parts = text.splitlines()
+    else:
+        raw_parts = re.split(r"\s*(?:\|\||\||=>)\s*", text)
+    return [re.sub(r"\s+", " ", part).strip() for part in raw_parts if re.sub(r"\s+", " ", part).strip()]
 
 
 def stt_candidate_status() -> dict[str, Any]:

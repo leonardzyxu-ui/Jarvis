@@ -882,18 +882,15 @@ class Planner:
 
 
     def _voice_loop_result(self, text: str, assessment: Any, transcript: str) -> PlannedResult:
-        detection = detect_wake_command(transcript)
+        initial = voice_loop_simulation(transcript)
+        command = re.sub(r"\s+", " ", str(initial.get("command") or "")).strip()
         route_preview = None
         route_status_text = None
-        if detection.woke and detection.command:
-            preview = self.preview(detection.command, use_model_router=False)
+        if command:
+            preview = self.preview(command, use_model_router=False)
             route_preview = preview.to_dict()
             route_status_text = _voice_loop_status_text_for_tool(preview.tool)
-        result = voice_loop_simulation(
-            transcript,
-            route_preview=route_preview,
-            route_status_text=route_status_text,
-        )
+        result = initial if route_preview is None else voice_loop_simulation(transcript, route_preview=route_preview, route_status_text=route_status_text)
         return self._result(text, "voice.loop_simulation", "Ran text-only voice loop simulation.", assessment, result, True)
 
 
