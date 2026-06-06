@@ -2755,7 +2755,7 @@ def outlook_read_only_check(
             "mail_status": mail_result.get("status", "checked"),
             "injection_scan": injection_scan,
             "parsed_body_count": int(mail_result.get("parsed_body_count") or 0),
-            "email_body_source": "apple_mail_message_source" if mail_result.get("parsed_body_count") else "apple_mail_content_preview",
+            "email_body_source": _email_body_source_label("apple_mail", summary_messages, int(mail_result.get("parsed_body_count") or 0)),
             **summary,
             "prototype_behavior": "Reads sender, subject, received time, read state, and Apple Mail body text locally when available; email summarization follows the configured model, and Ollama cloud models send the summary prompt to Ollama Cloud.",
         })
@@ -2946,7 +2946,7 @@ def outlook_read_only_check(
         "source": source,
         "injection_scan": _messages_injection_scan(messages, source),
         **email_summary,
-        "prototype_behavior": "Reads sender, subject, received time, read state, and a short body preview locally; email summarization follows the configured model, and Ollama cloud models send the summary prompt to Ollama Cloud.",
+        "prototype_behavior": "Reads sender, subject, received time, read state, and a short body preview locally when available; email summarization follows the configured model, and Ollama cloud models send the summary prompt to Ollama Cloud.",
     })
 
 
@@ -3287,6 +3287,14 @@ def _email_summary_quality(messages: list[dict[str, Any]]) -> str:
     if any(_email_preview_sentence(message.get("snippet")) for message in messages[:5]):
         return "body_summary"
     return "metadata_only"
+
+
+def _email_body_source_label(prefix: str, messages: list[dict[str, Any]], parsed_body_count: int) -> str:
+    if parsed_body_count:
+        return f"{prefix}_message_source"
+    if any(_clean_local_field(message.get("snippet")) for message in messages):
+        return f"{prefix}_content_preview"
+    return f"{prefix}_metadata_only"
 
 
 def _voice_friendly_english_email_summary(
@@ -7339,33 +7347,37 @@ end cleanText
 	    repeat with slotIndex from 1 to maxItems
 	        set bestIndex to 0
 	        set bestDate to missing value
-	        repeat with itemIndex from 1 to scanCount
-	            if selectedIndexes does not contain itemIndex then
-	                set currentMessage to item itemIndex of inboxMessages
-	                try
-	                    set includeMessage to true
-                        if senderFilter is not "" then
-                            set senderCandidate to ""
-                            set subjectCandidate to ""
-                            try
-                                set senderCandidate to sender of currentMessage as text
-                            end try
-                            try
-                                set subjectCandidate to subject of currentMessage as text
-                            end try
-                            if not ((senderCandidate contains senderFilter) or (subjectCandidate contains senderFilter)) then set includeMessage to false
-                        end if
-	                    if selectionMode is "unread" and read status of currentMessage then set includeMessage to false
-	                    if includeMessage then
-	                        set currentDate to date received of currentMessage
-	                        if bestDate is missing value or currentDate > bestDate then
-	                            set bestDate to currentDate
-	                            set bestIndex to itemIndex
-	                        end if
-	                    end if
-	                end try
-	            end if
-	        end repeat
+            if selectionMode is "recent" then
+                set bestIndex to slotIndex
+            else
+                repeat with itemIndex from 1 to scanCount
+                    if selectedIndexes does not contain itemIndex then
+                        set currentMessage to item itemIndex of inboxMessages
+                        try
+                            set includeMessage to true
+                            if senderFilter is not "" then
+                                set senderCandidate to ""
+                                set subjectCandidate to ""
+                                try
+                                    set senderCandidate to sender of currentMessage as text
+                                end try
+                                try
+                                    set subjectCandidate to subject of currentMessage as text
+                                end try
+                                if not ((senderCandidate contains senderFilter) or (subjectCandidate contains senderFilter)) then set includeMessage to false
+                            end if
+                            if selectionMode is "unread" and read status of currentMessage then set includeMessage to false
+                            if includeMessage then
+                                set currentDate to date received of currentMessage
+                                if bestDate is missing value or currentDate > bestDate then
+                                    set bestDate to currentDate
+                                    set bestIndex to itemIndex
+                                end if
+                            end if
+                        end try
+                    end if
+                end repeat
+            end if
         if bestIndex is 0 then exit repeat
         set end of selectedIndexes to bestIndex
         set currentMessage to item bestIndex of inboxMessages
@@ -7390,14 +7402,20 @@ end cleanText
             end if
         end try
         set snippetText to ""
-        try
-            set snippetText to my cleanText(content of currentMessage)
-        end try
-        set sourcePathText to ""
-        if sourceRoot is not "" then
+        if selectionMode is not "recent" then
             try
-                set sourcePathText to sourceRoot & "/message_" & (slotIndex as text) & ".eml"
-                set sourcePathText to my writeSourceFile(source of currentMessage, sourcePathText)
+                with timeout of 1 seconds
+                    set snippetText to my cleanText(content of currentMessage)
+                end timeout
+            end try
+        end if
+        set sourcePathText to ""
+        if sourceRoot is not "" and selectionMode is not "recent" then
+            try
+                with timeout of 1 seconds
+                    set sourcePathText to sourceRoot & "/message_" & (slotIndex as text) & ".eml"
+                    set sourcePathText to my writeSourceFile(source of currentMessage, sourcePathText)
+                end timeout
             end try
         end if
         set outputText to outputText & linefeed & "MESSAGE" & tab & my cleanText(senderText) & tab & my cleanText(subjectText) & tab & my cleanText(receivedText) & tab & readText & tab & snippetText & tab & sourcePathText

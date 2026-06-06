@@ -2665,6 +2665,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('selectionHint is "recent"', script)
         self.assertIn('set selectionMode to "recent"', script)
         self.assertIn('if selectionMode is "unread" and unreadCount', script)
+        self.assertIn('if selectionMode is "recent" then', script)
+        self.assertIn("set bestIndex to slotIndex", script)
+        self.assertIn('if selectionMode is not "recent" then', script)
 
     def test_outlook_parser_keeps_mail_unicode_line_separators_inside_message_row(self):
         parsed = jarvis_tools._parse_outlook_newest_output(
