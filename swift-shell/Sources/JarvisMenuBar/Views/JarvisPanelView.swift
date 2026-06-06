@@ -120,6 +120,11 @@ struct JarvisPanelView: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.green)
                 }
+                Button("Refresh") {
+                    model.refreshCodexActivityNow()
+                }
+                .controlSize(.small)
+                .help("Refresh redacted Codex job activity.")
             }
 
             if let job = model.codexActivity?.latestJob {

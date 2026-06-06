@@ -99,6 +99,13 @@ final class JarvisShellModel: ObservableObject {
         }
     }
 
+    func refreshCodexActivityNow() {
+        Task {
+            codexActivityText = "Refreshing Codex activity..."
+            await refreshCodexActivity()
+        }
+    }
+
     func startWorkerMonitoring() {
         workerSupervisor.startMonitoring { [weak self] status in
             guard let self else {
@@ -244,14 +251,8 @@ final class JarvisShellModel: ObservableObject {
             connection = health.ok ? "Online" : "Issue"
             codexText = health.status.codex.version ?? "Codex CLI not found"
             lastHealthDiagnostics = Self.healthDiagnostics(from: health)
-            let codexJobCount = health.status.codexJobs?.trackedCount ?? 0
             let runningCodexJobCount = health.status.codexJobs?.runningCount ?? 0
-            if codexJobCount > 0 {
-                await refreshCodexActivity()
-            } else {
-                codexActivity = nil
-                codexActivityText = "No Codex activity yet"
-            }
+            await refreshCodexActivity()
             if runningCodexJobCount > 0 {
                 startCodexActivityPolling()
             }
