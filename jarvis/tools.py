@@ -448,6 +448,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Scores a typed or pasted speech-recognition transcript against a reference sentence without recording audio.",
             },
             {
+                "id": "voice.stt_recommendation",
+                "label": "STT Recommendation",
+                "mode": "read_only",
+                "risk": "local_text_only",
+                "available": True,
+                "description": "Ranks pasted STT audition export rows by accuracy, human score, latency, and privacy without recording audio or opening the browser.",
+            },
+            {
                 "id": "diagnostics.overnight",
                 "label": "Overnight Work Status",
                 "mode": "read_only",
@@ -2024,6 +2032,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "voice.session_plan", "kind": "read_only_plan", "description": "Plan the full voice-command loop from wake to visible status, STT, routing, speech, and text fallback without recording audio."},
         {"id": "voice.stt_candidates", "kind": "read_only", "description": "List speech-recognition candidates and installed local engine evidence."},
         {"id": "voice.stt_score", "kind": "read_only", "description": "Score a pasted STT transcript against a reference sentence without recording audio."},
+        {"id": "voice.stt_recommendation", "kind": "read_only", "description": "Rank pasted STT audition export rows and recommend the strongest candidate without recording audio."},
         {"id": "voice.loop_simulation", "kind": "read_only_text_only", "description": "Simulate wake, greeting, command capture, and command preview without microphone or audio."},
         {"id": "ui.overlay", "kind": "planned", "description": "Future visible Jarvis overlay/popup UI."},
         {"id": "ui.automation", "kind": "planned_private_app_control", "description": "Future app UI clicking/typing/navigation route with permission checks and confirmation gates."},
@@ -2872,6 +2881,227 @@ def stt_score_transcript(
         "character_accuracy": round(char_accuracy, 6),
         "reply": reply,
     }
+
+
+def stt_recommendation_from_export(export_payload: Any) -> dict[str, Any]:
+    """Rank pasted STT audition export rows without recording or reading files."""
+    base = {
+        "tool": "voice.stt_recommendation",
+        "executed": True,
+        "read_private_content": False,
+        "recorded_audio": False,
+        "requested_microphone_permission": False,
+        "opened_browser": False,
+        "started_recognition": False,
+        "played_audio": False,
+        "called_model": False,
+        "changed_state": False,
+    }
+    parsed, parse_error = _parse_stt_export_payload(export_payload)
+    if parse_error:
+        return {
+            **base,
+            "status": "parse_error",
+            "ranked_candidates": [],
+            "recommended_candidate_id": None,
+            "error": parse_error,
+            "reply": "STT recommendation needs pasted JSON from the audition page export.",
+        }
+    rows = _stt_export_rows(parsed)
+    if not rows:
+        return {
+            **base,
+            "status": "missing_results",
+            "ranked_candidates": [],
+            "recommended_candidate_id": None,
+            "row_count": 0,
+            "reply": "STT recommendation needs at least one saved audition row.",
+        }
+
+    definitions = {str(item.get("id") or ""): item for item in STT_CANDIDATE_DEFINITIONS}
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        candidate_id = _clean_local_field(row.get("candidate_id")) or _clean_local_field(row.get("candidate_name")) or "unknown"
+        grouped.setdefault(candidate_id, []).append(row)
+
+    ranked: list[dict[str, Any]] = []
+    for candidate_id, candidate_rows in grouped.items():
+        candidate_name = _clean_local_field(candidate_rows[0].get("candidate_name")) or candidate_id
+        definition = definitions.get(candidate_id, {})
+        accuracy_values: list[float] = []
+        wer_values: list[float] = []
+        human_values: list[float] = []
+        first_values: list[float] = []
+        final_values: list[float] = []
+        blank_transcripts = 0
+        for row in candidate_rows:
+            transcript = _clean_local_field(row.get("transcript"))
+            if not transcript:
+                blank_transcripts += 1
+            word_accuracy = _stt_number(row.get("word_accuracy"))
+            wer = _stt_number(row.get("wer"))
+            if wer is None:
+                wer = _stt_number(row.get("word_error_rate"))
+            if word_accuracy is None and wer is not None:
+                word_accuracy = max(0.0, 1.0 - wer)
+            if wer is None and word_accuracy is not None:
+                wer = max(0.0, 1.0 - word_accuracy)
+            if word_accuracy is not None:
+                accuracy_values.append(_clamp_float(word_accuracy, 0.0, 1.0))
+            if wer is not None:
+                wer_values.append(max(0.0, wer))
+            human_score = _stt_number(row.get("human_score"))
+            if human_score is not None:
+                human_values.append(_clamp_float(human_score, 0.0, 10.0))
+            first_ms = _stt_number(row.get("first_result_ms"))
+            if first_ms is not None and first_ms >= 0:
+                first_values.append(first_ms)
+            final_ms = _stt_number(row.get("final_result_ms"))
+            if final_ms is not None and final_ms >= 0:
+                final_values.append(final_ms)
+
+        avg_accuracy = _avg(accuracy_values)
+        avg_wer = _avg(wer_values)
+        avg_human = _avg(human_values)
+        avg_first = _avg(first_values)
+        avg_final = _avg(final_values)
+        latency_basis = avg_first if avg_first is not None else avg_final
+        latency_score = 0.5 if latency_basis is None else max(0.0, 1.0 - min(latency_basis, 3000.0) / 3000.0)
+        privacy_score = _stt_privacy_score(definition)
+        accuracy_component = avg_accuracy if avg_accuracy is not None else 0.0
+        human_component = (avg_human / 10.0) if avg_human is not None else 0.5
+        weighted_score = round(
+            accuracy_component * 0.55
+            + human_component * 0.25
+            + latency_score * 0.15
+            + privacy_score * 0.05,
+            6,
+        )
+        ranked.append(
+            {
+                "candidate_id": candidate_id,
+                "candidate_name": candidate_name,
+                "row_count": len(candidate_rows),
+                "average_word_accuracy": None if avg_accuracy is None else round(avg_accuracy, 6),
+                "average_wer": None if avg_wer is None else round(avg_wer, 6),
+                "average_human_score": None if avg_human is None else round(avg_human, 3),
+                "average_first_result_ms": None if avg_first is None else round(avg_first, 1),
+                "average_final_result_ms": None if avg_final is None else round(avg_final, 1),
+                "blank_transcript_count": blank_transcripts,
+                "privacy": definition.get("privacy") or "unknown",
+                "expected_latency": definition.get("expected_latency") or "unknown",
+                "weighted_score": weighted_score,
+                "score_formula": "0.55 accuracy + 0.25 human score + 0.15 first/final latency + 0.05 privacy",
+            }
+        )
+    ranked.sort(
+        key=lambda item: (
+            item["weighted_score"],
+            item["row_count"],
+            -(item["average_wer"] if item["average_wer"] is not None else 99),
+        ),
+        reverse=True,
+    )
+    recommended = ranked[0] if ranked else None
+    recommendation_strength = "none"
+    if recommended:
+        if len(ranked) == 1:
+            recommendation_strength = "single_candidate"
+        else:
+            gap = recommended["weighted_score"] - ranked[1]["weighted_score"]
+            recommendation_strength = "strong" if gap >= 0.08 else "close"
+    reply = (
+        f"STT recommendation: {recommended['candidate_name']} leads"
+        if recommended
+        else "STT recommendation needs more audition rows"
+    )
+    if recommended and recommended.get("average_wer") is not None:
+        reply += f" with average WER {recommended['average_wer']:.3f}"
+    if recommended and recommended.get("average_human_score") is not None:
+        reply += f" and human score {recommended['average_human_score']:.3f}"
+    if recommended:
+        reply += "."
+    return {
+        **base,
+        "status": "ranked",
+        "row_count": len(rows),
+        "candidate_count": len(ranked),
+        "recommended_candidate_id": recommended["candidate_id"] if recommended else None,
+        "recommended_candidate_name": recommended["candidate_name"] if recommended else None,
+        "recommendation_strength": recommendation_strength,
+        "ranked_candidates": ranked,
+        "minimum_next_rows": "Test at least three rows per serious candidate before locking a default recognizer.",
+        "reply": reply,
+    }
+
+
+def _parse_stt_export_payload(export_payload: Any) -> tuple[Any | None, str | None]:
+    if isinstance(export_payload, (dict, list)):
+        return export_payload, None
+    text = str(export_payload or "").strip()
+    if not text:
+        return None, "empty_payload"
+    try:
+        return json.loads(text), None
+    except json.JSONDecodeError:
+        start = min([index for index in (text.find("{"), text.find("[")) if index >= 0], default=-1)
+        end = max(text.rfind("}"), text.rfind("]"))
+        if start >= 0 and end > start:
+            try:
+                return json.loads(text[start : end + 1]), None
+            except json.JSONDecodeError as error:
+                return None, f"invalid_json: {error.msg}"
+        return None, "invalid_json"
+
+
+def _stt_export_rows(parsed: Any) -> list[dict[str, Any]]:
+    if isinstance(parsed, list):
+        rows = parsed
+    elif isinstance(parsed, dict):
+        rows = parsed.get("results")
+        if rows is None and isinstance(parsed.get("current_score"), dict):
+            current = {
+                "candidate_id": parsed.get("current_candidate"),
+                "candidate_name": parsed.get("current_candidate"),
+                "reference": parsed.get("current_reference"),
+                "transcript": parsed.get("current_transcript"),
+                **parsed.get("current_score", {}),
+            }
+            rows = [current]
+    else:
+        rows = []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _stt_number(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number:
+        return None
+    return number
+
+
+def _clamp_float(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _avg(values: list[float]) -> float | None:
+    return (sum(values) / len(values)) if values else None
+
+
+def _stt_privacy_score(definition: dict[str, Any]) -> float:
+    privacy = str(definition.get("privacy") or "").lower()
+    if "local" in privacy:
+        return 1.0
+    if "apple" in privacy or "system" in privacy:
+        return 0.75
+    if "browser" in privacy or "cloud" in privacy:
+        return 0.4
+    return 0.5
 
 
 def _voice_loop_utterances(transcript: str) -> list[str]:

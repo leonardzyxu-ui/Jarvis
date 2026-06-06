@@ -89,6 +89,7 @@ from jarvis.tools import (
     stream_fast_local_chat_events,
     stt_audition_status,
     stt_candidate_status,
+    stt_recommendation_from_export,
     stt_session_plan,
     stt_score_transcript,
     tool_catalog_status,
@@ -349,6 +350,8 @@ class PlannerTests(unittest.TestCase):
             "full voice session plan": "voice.session_plan",
             "end-to-end voice loop plan": "voice.session_plan",
             "score stt transcript: hello Jarvis => hello Jarvis": "voice.stt_score",
+            "stt recommendation results": "voice.stt_recommendation",
+            "rank speech recognition results": "voice.stt_recommendation",
             "voice loop: Hey Jarvis status": "voice.loop_simulation",
             "simulate voice loop Hey Jarvis final QA plan": "voice.loop_simulation",
             "teams assignment plan": "workflow.app_task_plan",
@@ -909,6 +912,42 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result.result["next_tool_preview"]["preview"]["recorded_audio"])
         self.assertFalse(result.result["next_tool_preview"]["preview"]["requested_microphone_permission"])
         self.assertGreater(result.result["next_tool_preview"]["preview"]["word_error_rate"], 0)
+
+    def test_tools_more_stt_recommendation_previews_export_without_audio(self):
+        export = {
+            "artifact": "Jarvis STT Audition",
+            "results": [
+                {
+                    "candidate_id": "chrome-web-speech",
+                    "candidate_name": "Chrome Web Speech",
+                    "human_score": 9.0,
+                    "word_accuracy": 0.99,
+                    "wer": 0.01,
+                    "first_result_ms": 300,
+                    "transcript": "Hey Jarvis check my email",
+                }
+            ],
+        }
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "voice.stt_recommendation",
+            "entities": {"export_json": json.dumps(export)},
+            "reply": "Yes sir, ranking the speech recognition results now.",
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
+            result = Planner().handle_selected_tool("Rank these STT results.", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "voice.stt_recommendation")
+        preview = result.result["next_tool_preview"]["preview"]
+        self.assertEqual(preview["status"], "ranked")
+        self.assertEqual(preview["recommended_candidate_id"], "chrome-web-speech")
+        self.assertFalse(preview["recorded_audio"])
+        self.assertFalse(preview["opened_browser"])
+        self.assertFalse(preview["called_model"])
 
     def test_tools_more_voice_loop_recommendation_previews_without_audio_or_actions(self):
         fake_plan = {
@@ -1990,6 +2029,75 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result["opened_browser"])
         self.assertFalse(result["sent_audio"])
 
+    def test_stt_recommendation_ranks_export_rows_without_audio_or_browser(self):
+        export = {
+            "artifact": "Jarvis STT Audition",
+            "results": [
+                {
+                    "candidate_id": "chrome-web-speech",
+                    "candidate_name": "Chrome Web Speech",
+                    "human_score": 9.0,
+                    "word_accuracy": 0.99,
+                    "wer": 0.01,
+                    "first_result_ms": 300,
+                    "final_result_ms": 900,
+                    "transcript": "Hey Jarvis check my email",
+                },
+                {
+                    "candidate_id": "whisper-cpp-base-en",
+                    "candidate_name": "whisper.cpp base.en",
+                    "human_score": 8.5,
+                    "word_accuracy": 0.9,
+                    "wer": 0.1,
+                    "first_result_ms": 800,
+                    "final_result_ms": 1400,
+                    "transcript": "Hey Jarvis check email",
+                },
+            ],
+        }
+        result = stt_recommendation_from_export(json.dumps(export))
+
+        self.assertEqual(result["tool"], "voice.stt_recommendation")
+        self.assertEqual(result["status"], "ranked")
+        self.assertEqual(result["row_count"], 2)
+        self.assertEqual(result["candidate_count"], 2)
+        self.assertEqual(result["recommended_candidate_id"], "chrome-web-speech")
+        self.assertEqual(result["ranked_candidates"][0]["candidate_id"], "chrome-web-speech")
+        self.assertGreater(result["ranked_candidates"][0]["weighted_score"], result["ranked_candidates"][1]["weighted_score"])
+        self.assertFalse(result["recorded_audio"])
+        self.assertFalse(result["requested_microphone_permission"])
+        self.assertFalse(result["opened_browser"])
+        self.assertFalse(result["called_model"])
+
+    def test_stt_recommendation_extracts_json_from_pasted_text(self):
+        export = {
+            "results": [
+                {
+                    "candidate_id": "macos-dictation-manual",
+                    "candidate_name": "macOS Dictation manual paste",
+                    "human_score": 8,
+                    "wer": 0,
+                    "first_result_ms": None,
+                    "transcript": "Jarvis should answer quickly",
+                }
+            ],
+        }
+        result = Planner().handle(f"rank speech recognition results please {json.dumps(export)}")
+
+        self.assertEqual(result.tool, "voice.stt_recommendation")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["status"], "ranked")
+        self.assertEqual(result.result["recommended_candidate_id"], "macos-dictation-manual")
+        self.assertFalse(result.result["recorded_audio"])
+
+    def test_stt_recommendation_reports_missing_payload(self):
+        result = stt_recommendation_from_export("")
+
+        self.assertEqual(result["status"], "parse_error")
+        self.assertEqual(result["recommended_candidate_id"], None)
+        self.assertFalse(result["recorded_audio"])
+        self.assertFalse(result["opened_browser"])
+
     def test_stt_score_route_parses_reference_and_transcript(self):
         result = Planner().handle("score stt transcript: Hey Jarvis check email => Hey Jarvis check my email")
 
@@ -2480,6 +2588,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("voice.stt_session_plan", tool_ids)
         self.assertIn("voice.session_plan", tool_ids)
         self.assertIn("voice.stt_score", tool_ids)
+        self.assertIn("voice.stt_recommendation", tool_ids)
         self.assertIn("voice.loop_simulation", tool_ids)
         self.assertIn("diagnostics.overnight", tool_ids)
         self.assertIn("diagnostics.final_qa", tool_ids)
@@ -5413,7 +5522,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(preflight["summary"]["recommended_total"], len(recommended_ids))
         self.assertEqual(preflight["summary"]["required_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "required" and check["passed"]))
         policy_gate = next(check for check in preflight["checks"] if check["id"] == "policy_gates_loaded")
-        self.assertIn("34/34", policy_gate["detail"])
+        self.assertIn("35/35", policy_gate["detail"])
         self.assertEqual(preflight["summary"]["recommended_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "recommended" and check["passed"]))
         self.assertEqual(check_ids, required_ids.union(recommended_ids))
 

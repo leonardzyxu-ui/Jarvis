@@ -54,6 +54,7 @@ from .tools import (
     start_codex_delegate_job,
     stt_audition_status,
     stt_candidate_status,
+    stt_recommendation_from_export,
     stt_session_plan,
     stt_score_transcript,
     system_status,
@@ -153,6 +154,14 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": ["reference", "transcript", "candidate_id", "first_result_ms", "final_result_ms", "human_score"],
         "examples": [
             'Yes sir, scoring that transcript now. \\tool({"tool":"voice.stt_score","entities":{"reference":"Hey Jarvis, check my email.","transcript":"hey jarvis check my email"}})',
+        ],
+    },
+    {
+        "tool": "voice.stt_recommendation",
+        "description": "Rank pasted JSON exported from the STT audition page and recommend the strongest recognizer without recording audio, opening the browser, or calling a model.",
+        "entities": ["export_json"],
+        "examples": [
+            'Yes sir, ranking the speech recognition results now. \\tool({"tool":"voice.stt_recommendation","entities":{"export_json":"{... pasted audition export ...}"}})',
         ],
     },
     {
@@ -482,6 +491,9 @@ class Planner:
         if stt_score_payload is not None:
             result = stt_score_transcript(**stt_score_payload)
             return self._result(text, "voice.stt_score", "Scored speech-recognition transcript.", assessment, result, True)
+        if _looks_like_stt_recommendation(lower):
+            result = stt_recommendation_from_export(_extract_stt_recommendation_payload(text))
+            return self._result(text, "voice.stt_recommendation", "Ranked STT audition results.", assessment, result, True)
         if _looks_like_voice_session_plan(lower):
             return self._result(text, "voice.session_plan", "Prepared voice session plan.", assessment, voice_session_plan(_extract_voice_session_command(text)), True)
         if _looks_like_stt_session_plan(lower):
@@ -660,6 +672,8 @@ class Planner:
         stt_score_payload = _extract_stt_score_payload(text)
         if stt_score_payload is not None:
             return self._preview_result(text, "voice.stt_score", assessment, True, plan={"planned_only": True, **stt_score_payload})
+        if _looks_like_stt_recommendation(lower):
+            return self._preview_result(text, "voice.stt_recommendation", assessment, True, plan={"payload_present": bool(_extract_stt_recommendation_payload(text))})
         if _looks_like_voice_session_plan(lower):
             return self._preview_result(text, "voice.session_plan", assessment, True, plan={"command": _extract_voice_session_command(text)})
         if _looks_like_stt_session_plan(lower):
@@ -814,6 +828,11 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "voice.stt_score", assessment, True, plan={"intent": intent, **payload})
             return self._result(text, "voice.stt_score", "Scored speech-recognition transcript.", assessment, stt_score_transcript(**payload), True)
+        if selected_tool == "voice.stt_recommendation":
+            payload = entities.get("export_json") or entities.get("results_json") or entities.get("payload") or _extract_stt_recommendation_payload(text)
+            if not execute:
+                return self._preview_result(text, "voice.stt_recommendation", assessment, True, plan={"intent": intent, "payload_present": bool(payload)})
+            return self._result(text, "voice.stt_recommendation", "Ranked STT audition results.", assessment, stt_recommendation_from_export(payload), True)
         if selected_tool == "voice.loop_simulation":
             transcript = _clean_optional_entity(entities.get("transcript")) or _extract_voice_loop_transcript(text) or text
             return self._voice_loop_result(text, assessment, transcript)
@@ -1216,6 +1235,14 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "executed": False,
             "preview": {**preview, "executed": False, "planned_only": True},
         }
+    if recommended == "voice.stt_recommendation":
+        payload = entities.get("export_json") or entities.get("results_json") or entities.get("payload") or _extract_stt_recommendation_payload(text)
+        preview = stt_recommendation_from_export(payload)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
     if recommended == "voice.loop_simulation":
         transcript = _clean_optional_entity(entities.get("transcript")) or _extract_voice_loop_transcript(text) or text
         preview = Planner()._voice_loop_result(text, classify_command(text), transcript).result
@@ -1608,6 +1635,18 @@ def _extract_stt_score_payload(text: str) -> dict[str, Any] | None:
     }
 
 
+def _extract_stt_recommendation_payload(text: str) -> str:
+    raw = str(text or "").strip()
+    starts = [index for index in (raw.find("{"), raw.find("[")) if index >= 0]
+    if not starts:
+        return ""
+    start = min(starts)
+    end = max(raw.rfind("}"), raw.rfind("]"))
+    if end <= start:
+        return ""
+    return raw[start : end + 1]
+
+
 def _entity_truthy(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -1745,6 +1784,7 @@ def _voice_loop_status_text_for_tool(tool: str) -> str:
         "voice.stt_session_plan": "Yes sir, preparing the speech recognition test plan now.",
         "voice.session_plan": "Yes sir, planning the voice session now.",
         "voice.stt_score": "Yes sir, scoring that transcript now.",
+        "voice.stt_recommendation": "Yes sir, ranking the speech recognition results now.",
         "screenshot.capability": "Yes sir, checking the screen setup now.",
         "app.list": "Yes sir, checking which apps I can open now.",
         "app.status": "Yes sir, checking that app now.",
@@ -1967,6 +2007,38 @@ def _looks_like_stt_session_plan(lower: str) -> bool:
     return (
         any(cue in lower for cue in stt_cues)
         and any(cue in lower for cue in plan_cues)
+        and not any(cue in lower for cue in mutation_cues)
+    )
+
+
+def _looks_like_stt_recommendation(lower: str) -> bool:
+    stt_cues = (
+        "stt",
+        "speech to text",
+        "speech-to-text",
+        "speech recognition",
+        "voice recognition",
+        "transcription",
+        "recognizer",
+        "recognition",
+    )
+    recommend_cues = (
+        "recommend",
+        "recommendation",
+        "rank",
+        "ranking",
+        "which",
+        "choose",
+        "best",
+        "winner",
+        "export",
+        "results",
+        "audition json",
+    )
+    mutation_cues = ("start recording", "record now", "listen now", "turn on microphone", "enable microphone")
+    return (
+        any(cue in lower for cue in stt_cues)
+        and any(cue in lower for cue in recommend_cues)
         and not any(cue in lower for cue in mutation_cues)
     )
 
