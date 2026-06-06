@@ -70,6 +70,8 @@ from .config import (
     TTS_PIPER_LABEL,
     TTS_PIPER_MODEL,
     TTS_PIPER_TIMEOUT_SECONDS,
+    TTS_PIPER_WARM_WORKER,
+    TTS_PIPER_WARMUP_TIMEOUT_SECONDS,
     TTS_PROVIDER,
     TTS_RATE,
     TTS_SPEAK_STATUS,
@@ -84,8 +86,16 @@ APP_STARTED_AT = time.time()
 ACTIVE_TIMERS: dict[str, threading.Timer] = {}
 ACTIVE_TIMER_DETAILS: dict[str, dict[str, Any]] = {}
 ACTIVE_TIMERS_LOCK = threading.Lock()
-SPEECH_PROCESS: subprocess.Popen[str] | None = None
+SPEECH_PROCESS: Any | None = None
 SPEECH_LOCK = threading.Lock()
+PIPER_WORKER_PROCESS: subprocess.Popen[str] | None = None
+PIPER_WORKER_LOCK = threading.RLock()
+PIPER_WORKER_READY = False
+PIPER_WORKER_LOAD_SECONDS: float | None = None
+PIPER_WORKER_STARTED_AT: float | None = None
+PIPER_WORKER_LAST_EVENT: dict[str, Any] | None = None
+PIPER_WORKER_ACTIVE_ID: str | None = None
+PIPER_WORKER_SPEECH_EVENTS: dict[str, dict[str, Any]] = {}
 CODEX_JOBS: dict[str, dict[str, Any]] = {}
 CODEX_JOBS_LOCK = threading.Lock()
 CODEX_JOBS_LOADED = False
@@ -808,6 +818,201 @@ def _piper_speaker_command(readiness: dict[str, Any]) -> list[str]:
     return command
 
 
+def _piper_warm_worker_command(readiness: dict[str, Any]) -> list[str]:
+    piper_python = str(readiness.get("piper_python") or "")
+    if not piper_python:
+        return []
+    worker_script = Path(__file__).resolve().with_name("piper_warm_worker.py")
+    if not worker_script.exists():
+        return []
+    return [
+        piper_python,
+        str(worker_script),
+        "--model",
+        str(readiness["model"]),
+        "--config",
+        str(readiness["config"]),
+        "--espeak-data",
+        str(readiness["espeak_data"]),
+        "--afplay",
+        str(readiness["afplay"]),
+    ]
+
+
+class _PiperWorkerSpeechHandle:
+    def __init__(self, speech_id: str) -> None:
+        self.speech_id = speech_id
+
+    def poll(self) -> int | None:
+        with PIPER_WORKER_LOCK:
+            return None if PIPER_WORKER_ACTIVE_ID == self.speech_id else 0
+
+    def terminate(self) -> None:
+        _send_piper_worker_message({"type": "stop", "id": self.speech_id})
+        global PIPER_WORKER_ACTIVE_ID
+        with PIPER_WORKER_LOCK:
+            if PIPER_WORKER_ACTIVE_ID == self.speech_id:
+                PIPER_WORKER_ACTIVE_ID = None
+
+    def kill(self) -> None:
+        self.terminate()
+
+    def wait(self, timeout: float | None = None) -> int:
+        started_at = time.monotonic()
+        while self.poll() is None:
+            if timeout is not None and time.monotonic() - started_at > timeout:
+                raise subprocess.TimeoutExpired(cmd="piper_warm_worker", timeout=timeout)
+            time.sleep(0.02)
+        return 0
+
+
+def _record_piper_worker_event(event: dict[str, Any]) -> None:
+    global PIPER_WORKER_READY, PIPER_WORKER_LOAD_SECONDS, PIPER_WORKER_LAST_EVENT, PIPER_WORKER_ACTIVE_ID
+    event_name = str(event.get("event") or "")
+    speech_id = str(event.get("id") or "")
+    with PIPER_WORKER_LOCK:
+        PIPER_WORKER_LAST_EVENT = event
+        if event_name == "ready":
+            PIPER_WORKER_READY = True
+            try:
+                PIPER_WORKER_LOAD_SECONDS = float(event.get("load_seconds"))
+            except (TypeError, ValueError):
+                PIPER_WORKER_LOAD_SECONDS = None
+        elif event_name == "accepted" and speech_id:
+            PIPER_WORKER_ACTIVE_ID = speech_id
+        elif event_name in {"done", "stopped", "error"} and speech_id:
+            PIPER_WORKER_SPEECH_EVENTS[speech_id] = event
+            if PIPER_WORKER_ACTIVE_ID == speech_id:
+                PIPER_WORKER_ACTIVE_ID = None
+        elif event_name == "fatal":
+            PIPER_WORKER_READY = False
+            PIPER_WORKER_ACTIVE_ID = None
+
+
+def _read_piper_worker_stdout(process: subprocess.Popen[str]) -> None:
+    stream = process.stdout
+    if stream is None:
+        return
+    try:
+        for line in stream:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                event = {"event": "parse_error", "line": line[-500:]}
+            if isinstance(event, dict):
+                _record_piper_worker_event(event)
+    finally:
+        global PIPER_WORKER_PROCESS, PIPER_WORKER_READY, PIPER_WORKER_ACTIVE_ID
+        with PIPER_WORKER_LOCK:
+            if PIPER_WORKER_PROCESS is process:
+                PIPER_WORKER_READY = False
+                PIPER_WORKER_ACTIVE_ID = None
+
+
+def _ensure_piper_worker_locked(readiness: dict[str, Any], *, wait_ready: bool = False) -> dict[str, Any]:
+    global PIPER_WORKER_PROCESS, PIPER_WORKER_READY, PIPER_WORKER_STARTED_AT, PIPER_WORKER_LOAD_SECONDS
+    if not TTS_PIPER_WARM_WORKER:
+        return {"ok": False, "status": "warm_worker_disabled"}
+    command = _piper_warm_worker_command(readiness)
+    if not command:
+        return {"ok": False, "status": "warm_worker_unavailable"}
+    if PIPER_WORKER_PROCESS is not None and PIPER_WORKER_PROCESS.poll() is None:
+        if wait_ready and not PIPER_WORKER_READY:
+            _wait_for_piper_worker_ready_locked()
+        return {
+            "ok": True,
+            "status": "running",
+            "ready": PIPER_WORKER_READY,
+            "pid": PIPER_WORKER_PROCESS.pid,
+            "load_seconds": PIPER_WORKER_LOAD_SECONDS,
+        }
+    PIPER_WORKER_READY = False
+    PIPER_WORKER_LOAD_SECONDS = None
+    PIPER_WORKER_STARTED_AT = time.monotonic()
+    try:
+        process = subprocess.Popen(
+            command,
+            shell=False,
+            cwd=PROJECT_ROOT,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+            start_new_session=True,
+        )
+    except OSError as error:
+        return {"ok": False, "status": "start_failed", "error": str(error)}
+    PIPER_WORKER_PROCESS = process
+    threading.Thread(target=_read_piper_worker_stdout, args=(process,), daemon=True).start()
+    if wait_ready:
+        _wait_for_piper_worker_ready_locked()
+    return {
+        "ok": True,
+        "status": "started",
+        "ready": PIPER_WORKER_READY,
+        "pid": process.pid,
+        "load_seconds": PIPER_WORKER_LOAD_SECONDS,
+    }
+
+
+def _wait_for_piper_worker_ready_locked() -> None:
+    deadline = time.monotonic() + TTS_PIPER_WARMUP_TIMEOUT_SECONDS
+    while not PIPER_WORKER_READY and time.monotonic() < deadline:
+        process = PIPER_WORKER_PROCESS
+        if process is None or process.poll() is not None:
+            return
+        PIPER_WORKER_LOCK.release()
+        try:
+            time.sleep(0.02)
+        finally:
+            PIPER_WORKER_LOCK.acquire()
+
+
+def _send_piper_worker_message(message: dict[str, Any]) -> bool:
+    with PIPER_WORKER_LOCK:
+        process = PIPER_WORKER_PROCESS
+        if process is None or process.poll() is not None or process.stdin is None:
+            return False
+        try:
+            process.stdin.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
+            process.stdin.flush()
+        except (BrokenPipeError, OSError):
+            return False
+        return True
+
+
+def _piper_worker_status() -> dict[str, Any]:
+    with PIPER_WORKER_LOCK:
+        process = PIPER_WORKER_PROCESS
+        running = process is not None and process.poll() is None
+        uptime = round(time.monotonic() - PIPER_WORKER_STARTED_AT, 3) if running and PIPER_WORKER_STARTED_AT else None
+        return {
+            "enabled": TTS_PIPER_WARM_WORKER,
+            "running": running,
+            "ready": bool(PIPER_WORKER_READY and running),
+            "pid": process.pid if running and process is not None else None,
+            "load_seconds": PIPER_WORKER_LOAD_SECONDS,
+            "uptime_seconds": uptime,
+            "active_id": PIPER_WORKER_ACTIVE_ID,
+            "last_event": PIPER_WORKER_LAST_EVENT,
+        }
+
+
+def prewarm_tts_async(*, reason: str = "startup") -> dict[str, Any]:
+    if not TTS_AUTOMATIC_ENABLED or _normalize_tts_provider(TTS_PROVIDER) != "piper":
+        return {"started": False, "status": "not_needed", "reason": reason}
+    readiness = _piper_readiness()
+    if not readiness["ready"]:
+        return {"started": False, "status": "unavailable", "reason": reason, "missing": readiness["missing"]}
+    with PIPER_WORKER_LOCK:
+        worker = _ensure_piper_worker_locked(readiness, wait_ready=False)
+    return {"started": bool(worker.get("ok")), "reason": reason, **worker}
+
+
 def _send_process_signal(process: subprocess.Popen[str], sig: signal.Signals) -> str:
     pid = getattr(process, "pid", None)
     if isinstance(pid, int) and pid > 0:
@@ -919,6 +1124,75 @@ def _start_macos_speech_async(
     return result
 
 
+def _start_piper_warm_speech_async(
+    spoken: str,
+    *,
+    reason: str,
+    started_at: float,
+    stop_status: dict[str, Any],
+) -> dict[str, Any]:
+    readiness = _piper_readiness()
+    if not readiness["ready"]:
+        return {
+            "spoken": False,
+            "status": "unavailable",
+            "reason": reason,
+            "provider": "piper",
+            "warm_worker": True,
+            "voice": TTS_PIPER_LABEL,
+            "missing": readiness["missing"],
+            "text_length": len(spoken),
+            **stop_status,
+            **_duration_fields(started_at),
+        }
+    speech_id = uuid.uuid4().hex
+    with PIPER_WORKER_LOCK:
+        worker = _ensure_piper_worker_locked(readiness, wait_ready=False)
+        if not worker.get("ok"):
+            return {
+                "spoken": False,
+                "status": str(worker.get("status") or "worker_unavailable"),
+                "reason": reason,
+                "provider": "piper",
+                "warm_worker": True,
+                "voice": TTS_PIPER_LABEL,
+                "text_length": len(spoken),
+                **stop_status,
+                **_duration_fields(started_at),
+            }
+        sent = _send_piper_worker_message({"type": "speak", "id": speech_id, "text": spoken})
+        if not sent:
+            return {
+                "spoken": False,
+                "status": "worker_pipe_unavailable",
+                "reason": reason,
+                "provider": "piper",
+                "warm_worker": True,
+                "voice": TTS_PIPER_LABEL,
+                "text_length": len(spoken),
+                **stop_status,
+                **_duration_fields(started_at),
+            }
+        global SPEECH_PROCESS, PIPER_WORKER_ACTIVE_ID
+        PIPER_WORKER_ACTIVE_ID = speech_id
+        SPEECH_PROCESS = _PiperWorkerSpeechHandle(speech_id)
+    return {
+        "spoken": True,
+        "status": "queued",
+        "reason": reason,
+        "provider": "piper",
+        "warm_worker": True,
+        "warm_worker_ready": bool(worker.get("ready")),
+        "warm_worker_pid": worker.get("pid"),
+        "warm_worker_load_seconds": worker.get("load_seconds"),
+        "speech_id": speech_id,
+        "voice": TTS_PIPER_LABEL,
+        "text_length": len(spoken),
+        **stop_status,
+        **_duration_fields(started_at),
+    }
+
+
 def _start_piper_speech_async(
     spoken: str,
     *,
@@ -926,6 +1200,15 @@ def _start_piper_speech_async(
     started_at: float,
     stop_status: dict[str, Any],
 ) -> dict[str, Any]:
+    if TTS_PIPER_WARM_WORKER:
+        warm_result = _start_piper_warm_speech_async(
+            spoken,
+            reason=reason,
+            started_at=started_at,
+            stop_status=stop_status,
+        )
+        if warm_result["spoken"] or warm_result["status"] not in {"worker_pipe_unavailable", "start_failed"}:
+            return warm_result
     readiness = _piper_readiness()
     if not readiness["ready"]:
         return {
@@ -1039,6 +1322,7 @@ def tts_status() -> dict[str, Any]:
     provider = _normalize_tts_provider(TTS_PROVIDER)
     fallback_provider = _normalize_tts_provider(TTS_FALLBACK_PROVIDER)
     piper = _piper_readiness()
+    piper_worker = _piper_worker_status()
     say_path = _find_executable("say")
     voice_names: list[str] = []
     voice_output = ""
@@ -1068,6 +1352,11 @@ def tts_status() -> dict[str, Any]:
     )
     if piper["ready"]:
         reply += f" using {piper['label']}."
+        if piper_worker["enabled"]:
+            reply += (
+                " Warm worker is "
+                f"{'ready' if piper_worker['ready'] else 'not ready'}."
+            )
     elif piper["missing"]:
         reply += f" ({', '.join(piper['missing'])})."
     else:
@@ -1104,6 +1393,7 @@ def tts_status() -> dict[str, Any]:
         "piper_espeak_data": piper["espeak_data"],
         "piper_bin": piper["piper_bin"],
         "piper_missing": piper["missing"],
+        "piper_warm_worker": piper_worker,
         "say_path": say_path,
         "explicit_tts_available": available,
         "automatic_tts_enabled": TTS_AUTOMATIC_ENABLED,

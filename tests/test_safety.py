@@ -27,6 +27,8 @@ for key in (
     "JARVIS_TTS_PIPER_ESPEAK_DATA",
     "JARVIS_TTS_PIPER_LABEL",
     "JARVIS_TTS_PIPER_TIMEOUT_SECONDS",
+    "JARVIS_TTS_PIPER_WARM_WORKER",
+    "JARVIS_TTS_PIPER_WARMUP_TIMEOUT_SECONDS",
     "JARVIS_TTS_AFPLAY",
 ):
     os.environ.pop(key, None)
@@ -1626,6 +1628,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         try:
             with patch("jarvis.tools.TTS_AUTOMATIC_ENABLED", True), \
                  patch("jarvis.tools.TTS_PROVIDER", "piper"), \
+                 patch("jarvis.tools.TTS_PIPER_WARM_WORKER", False), \
                  patch("jarvis.tools._piper_readiness", return_value=readiness), \
                  patch("jarvis.tools.threading.Thread", FakeThread), \
                  patch("jarvis.tools.subprocess.Popen", return_value=fake_process) as popen_mock:
@@ -1639,6 +1642,69 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(fake_process.stdin.closed)
         self.assertFalse(popen_mock.call_args.kwargs["shell"])
         self.assertEqual(popen_mock.call_args.args[0][1:3], ["-m", "jarvis.piper_speaker"])
+
+    def test_auto_speech_queues_to_warm_piper_worker(self):
+        class FakeStdin:
+            def __init__(self):
+                self.lines: list[str] = []
+
+            def write(self, text):
+                self.lines.append(text)
+
+            def flush(self):
+                pass
+
+        class FakeWorker:
+            def __init__(self):
+                self.stdin = FakeStdin()
+                self.pid = 4321
+
+            def poll(self):
+                return None
+
+        readiness = {
+            "ready": True,
+            "provider": "piper",
+            "label": "Piper Ryan high American male",
+            "piper_bin": "/tmp/piper",
+            "piper_python": "/tmp/python",
+            "model": "/tmp/ryan.onnx",
+            "config": "/tmp/ryan.onnx.json",
+            "espeak_data": "/tmp/espeak-ng-data",
+            "afplay": "/usr/bin/afplay",
+            "missing": [],
+            "timeout_seconds": 8,
+        }
+        fake_worker = FakeWorker()
+        jarvis_tools.SPEECH_PROCESS = None
+        jarvis_tools.PIPER_WORKER_PROCESS = fake_worker
+        jarvis_tools.PIPER_WORKER_READY = True
+        jarvis_tools.PIPER_WORKER_ACTIVE_ID = None
+        try:
+            with patch("jarvis.tools.TTS_AUTOMATIC_ENABLED", True), \
+                 patch("jarvis.tools.TTS_PROVIDER", "piper"), \
+                 patch("jarvis.tools.TTS_PIPER_WARM_WORKER", True), \
+                 patch("jarvis.tools._piper_readiness", return_value=readiness), \
+                 patch("jarvis.tools._ensure_piper_worker_locked", return_value={"ok": True, "status": "running", "ready": True, "pid": 4321, "load_seconds": 1.2}):
+                first = jarvis_tools.speak_text_async("first warm reply")
+                second = jarvis_tools.speak_text_async("second warm reply")
+        finally:
+            jarvis_tools.SPEECH_PROCESS = None
+            jarvis_tools.PIPER_WORKER_PROCESS = None
+            jarvis_tools.PIPER_WORKER_READY = False
+            jarvis_tools.PIPER_WORKER_ACTIVE_ID = None
+
+        self.assertTrue(first["spoken"])
+        self.assertEqual(first["status"], "queued")
+        self.assertTrue(first["warm_worker"])
+        self.assertTrue(second["interrupted_previous"])
+        messages = [json.loads(line) for line in fake_worker.stdin.lines]
+        self.assertEqual(messages[0]["type"], "speak")
+        self.assertEqual(messages[0]["text"], "first warm reply")
+        self.assertEqual(messages[1]["type"], "stop")
+        self.assertEqual(messages[1]["id"], first["speech_id"])
+        self.assertEqual(messages[2]["type"], "speak")
+        self.assertEqual(messages[2]["text"], "second warm reply")
 
     def test_quick_local_control_plans_brightness_without_side_effect(self):
         result = quick_local_control("brightness up", execute=False)

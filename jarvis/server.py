@@ -26,7 +26,14 @@ from .config import (
 from .planner import NATURAL_LANGUAGE_TOOL_SPECS, Planner
 from .safety import classify_command, policy_summary
 from .self_check import run_self_checks
-from .tools import outlook_visible_text_summary, speak_text_async, stream_fast_local_chat_events, system_status, tool_registry
+from .tools import (
+    outlook_visible_text_summary,
+    prewarm_tts_async,
+    speak_text_async,
+    stream_fast_local_chat_events,
+    system_status,
+    tool_registry,
+)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 MAX_VERIFICATION_AGE_SECONDS = 12 * 60 * 60
@@ -42,6 +49,7 @@ class JarvisServer:
         )
         self.mode_updated_at = time.time()
         self._mode_lock = threading.RLock()
+        self.tts_prewarm = prewarm_tts_async(reason="server_startup")
 
     def command(self, command: str, history: list[dict[str, str]] | None = None) -> dict[str, Any]:
         with self._mode_lock:
