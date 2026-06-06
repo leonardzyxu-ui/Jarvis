@@ -157,7 +157,7 @@ class JarvisServer:
                     },
                 }
             entities = result.get("entities") if isinstance(result.get("entities"), dict) else {}
-            planned = self.planner.handle_selected_tool(command, selected_tool, entities)
+            planned = self.planner.handle_selected_tool(command, selected_tool, entities, history=history)
             if planned is None:
                 data = {
                     "command": command,

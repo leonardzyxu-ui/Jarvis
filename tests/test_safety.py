@@ -5156,6 +5156,47 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(events[-1]["data"]["result"]["reply"], "Correct, x is 3.")
         self.assertEqual(stream_mock.call_args.kwargs["history"], history)
 
+    def test_stream_command_passes_history_to_selected_tools_more(self):
+        fake_events = [
+            {
+                "event": "final_result",
+                "data": {
+                    "tool": "conversation.fast_local",
+                    "status": "tool_requested",
+                    "selected_tool": "tools.more",
+                    "status_text": "Yes sir, checking that now.",
+                    "entities": {},
+                    "executed": True,
+                },
+            }
+        ]
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "app.list",
+            "entities": {},
+            "reply": "Use the app list tool to choose a target app.",
+        }
+        history = [
+            {"role": "user", "text": "We were discussing Music homework."},
+            {"role": "assistant", "text": "You wanted the newest assignment handled."},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = JarvisServer()
+            server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
+            with patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events), \
+                 patch("jarvis.planner.more_tools_plan", return_value=fake_plan) as more_mock, \
+                 patch("jarvis.server.speak_text_async", return_value={"spoken": False, "status": "disabled", "reason": "status"}):
+                events = list(server.stream_command("choose the next tool", history=history))
+
+        more_mock.assert_called_once()
+        self.assertEqual(more_mock.call_args.kwargs["history"], history)
+        self.assertEqual([event["event"] for event in events], ["status", "final"])
+        self.assertEqual(events[0]["data"]["text"], "Yes sir, checking that now.")
+        self.assertEqual(events[-1]["data"]["tool"], "tools.more")
+        self.assertFalse(events[-1]["data"]["executed"])
+
     def test_conversation_history_payload_accepts_content_alias_and_skips_current(self):
         payload = {
             "history": [
