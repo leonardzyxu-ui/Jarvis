@@ -597,6 +597,7 @@ def _stream_status_text(preview: dict[str, Any]) -> str:
         "shell.read_only": "Yes sir, checking that locally now.",
         "terminal.read_only": "Yes sir, checking that locally now.",
         "workflow.app_task_plan": "Yes sir, preparing the app workflow plan now.",
+        "teams.assignment": "Yes sir, preparing the Teams assignment plan now.",
         "quick.local_control": "Yes sir, handling that now.",
         "system.status": "Yes sir, checking Jarvis status now.",
         "policy.block": "Checking safety policy.",

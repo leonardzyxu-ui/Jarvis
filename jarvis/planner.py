@@ -16,6 +16,7 @@ from .tools import (
     app_running,
     app_status,
     app_task_workflow_plan,
+    teams_assignment_workflow_plan,
     browser_open_url_plan,
     capabilities_status,
     codex_activity_snapshot,
@@ -261,6 +262,14 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         ],
     },
     {
+        "tool": "teams.assignment",
+        "description": "Prepare a safe Microsoft Teams assignment workflow plan without opening Teams, reading the screen, clicking, typing, downloading, submitting, calling Codex, or changing schoolwork.",
+        "entities": ["goal"],
+        "examples": [
+            'Yes sir, preparing the Teams assignment plan now. \\tool({"tool":"teams.assignment","entities":{"goal":"Go to Teams, open Music class, and find the newest assignment."}})',
+        ],
+    },
+    {
         "tool": "diagnostics.codex_chats",
         "description": "Report configured Codex chat names, purposes, default route, and daily Jarvis-to-Codex memory without exposing session IDs.",
         "entities": [],
@@ -400,6 +409,8 @@ class Planner:
         if _looks_like_final_qa_status(lower):
             return self._result(text, "diagnostics.final_qa", "Read deferred final QA plan.", assessment, final_qa_plan_status(), True)
         if _looks_like_workflow_plan_request(lower):
+            if _looks_like_teams_assignment_request(lower):
+                return self._result(text, "teams.assignment", "Prepared safe Teams assignment workflow plan.", assessment, teams_assignment_workflow_plan(text), True)
             return self._result(text, "workflow.app_task_plan", "Prepared safe app-task workflow plan.", assessment, app_task_workflow_plan(text), True)
         app_quit_name = _extract_app_quit_name(text)
         if app_quit_name is not None:
@@ -599,6 +610,8 @@ class Planner:
         if _looks_like_final_qa_status(lower):
             return self._preview_result(text, "diagnostics.final_qa", assessment, True)
         if _looks_like_workflow_plan_request(lower):
+            if _looks_like_teams_assignment_request(lower):
+                return self._preview_result(text, "teams.assignment", assessment, True, plan={"goal": text})
             return self._preview_result(text, "workflow.app_task_plan", assessment, True, plan={"goal": text})
         app_quit_name = _extract_app_quit_name(text)
         if app_quit_name is not None:
@@ -956,11 +969,16 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "workflow.app_task_plan", assessment, True, plan={"intent": intent, "goal": goal, "target_app": target_app})
             return self._result(text, "workflow.app_task_plan", "Prepared safe app-task workflow plan.", assessment, app_task_workflow_plan(goal, target_app=target_app), True)
+        if selected_tool == "teams.assignment":
+            goal = _clean_optional_entity(entities.get("goal")) or text
+            if not execute:
+                return self._preview_result(text, "teams.assignment", assessment, True, plan={"intent": intent, "goal": goal})
+            return self._result(text, "teams.assignment", "Prepared safe Teams assignment workflow plan.", assessment, teams_assignment_workflow_plan(goal), True)
         if selected_tool == "memory.daily_summary":
             if not execute:
                 return self._preview_result(text, "memory.daily_summary", assessment, True, plan={"intent": intent})
             return self._result(text, "memory.daily_summary", "Read local daily memory summary.", assessment, daily_memory_summary(), True)
-        if selected_tool in {"ui.overlay", "ui.automation", "teams.assignment", "screen.ocr"}:
+        if selected_tool in {"ui.overlay", "ui.automation", "screen.ocr"}:
             result = planned_tool_status(selected_tool)
             return self._result(text, selected_tool, "Prepared planned future tool status.", assessment, result, False)
         if selected_tool == "diagnostics.codex_chats":
@@ -1333,7 +1351,15 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "executed": False,
             "preview": {**preview, "executed": False, "planned_only": True},
         }
-    if recommended in {"ui.overlay", "ui.automation", "teams.assignment", "screen.ocr"}:
+    if recommended == "teams.assignment":
+        goal = _clean_optional_entity(entities.get("goal")) or text
+        preview = teams_assignment_workflow_plan(goal)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended in {"ui.overlay", "ui.automation", "screen.ocr"}:
         preview = planned_tool_status(recommended)
         return {
             "recommended_tool": recommended,
@@ -1820,6 +1846,7 @@ def _voice_loop_status_text_for_tool(tool: str) -> str:
         "browser.open_url": "Yes sir, preparing that browser action now.",
         "terminal.read_only": "Yes sir, checking that locally now.",
         "shell.read_only": "Yes sir, checking that locally now.",
+        "teams.assignment": "Yes sir, preparing the Teams assignment plan now.",
         "quick.local_control": "Yes sir, handling that now.",
         "system.status": "Yes sir, checking Jarvis status now.",
         "conversation.fast_local": "Yes sir, preparing a direct answer now.",
@@ -2210,6 +2237,13 @@ def _looks_like_workflow_plan_request(lower: str) -> bool:
         any(cue in lower for cue in workflow_cues)
         and any(cue in lower for cue in app_task_cues)
         and not any(cue in lower for cue in action_without_plan)
+    )
+
+
+def _looks_like_teams_assignment_request(lower: str) -> bool:
+    return bool(
+        re.search(r"\bteams?\b", lower)
+        and re.search(r"\b(assignment|homework|rubric|class|music|poster|schoolwork)\b", lower)
     )
 
 

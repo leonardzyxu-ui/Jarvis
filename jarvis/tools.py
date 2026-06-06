@@ -650,10 +650,10 @@ def tool_registry() -> dict[str, Any]:
             {
                 "id": "teams.assignment",
                 "label": "Teams Assignment Workflow Plan",
-                "mode": "planned",
-                "risk": "future_private_app_workflow",
-                "available": False,
-                "description": "Future Teams assignment workflow route; never submits, sends, or changes schoolwork without explicit confirmation.",
+                "mode": "read_only_plan",
+                "risk": "local_metadata_and_future_private_schoolwork_workflow",
+                "available": True,
+                "description": "Builds a safe plan for a Teams assignment workflow without opening Teams, reading the screen, downloading, submitting, or changing schoolwork.",
             },
             {
                 "id": "files.search",
@@ -2033,6 +2033,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "codex.job", "kind": "async_deep_work", "description": "Delegate broad coding/project work to Codex."},
         {"id": "diagnostics.final_qa", "kind": "read_only", "description": "Report the deferred foreground QA plan without opening apps or browsers."},
         {"id": "workflow.app_task_plan", "kind": "read_only_plan", "description": "Create a structured safe plan for future multi-step app work without executing the workflow."},
+        {"id": "teams.assignment", "kind": "read_only_plan", "description": "Plan a Microsoft Teams assignment workflow without opening Teams, reading private content, downloading, submitting, or changing schoolwork."},
         {"id": "voice.stt_audition", "kind": "planned", "description": "Prepare a speech-recognition audition workflow."},
         {"id": "voice.stt_session_plan", "kind": "read_only_plan", "description": "Plan one speech-recognition audition run with reference sentence, candidate, metrics, and export checklist."},
         {"id": "voice.session_plan", "kind": "read_only_plan", "description": "Plan the full voice-command loop from wake to visible status, STT, routing, speech, and text fallback without recording audio."},
@@ -2042,7 +2043,6 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "voice.loop_simulation", "kind": "read_only_text_only", "description": "Simulate wake, greeting, command capture, and command preview without microphone or audio."},
         {"id": "ui.overlay", "kind": "planned", "description": "Future visible Jarvis overlay/popup UI."},
         {"id": "ui.automation", "kind": "planned_private_app_control", "description": "Future app UI clicking/typing/navigation route with permission checks and confirmation gates."},
-        {"id": "teams.assignment", "kind": "planned_private_workflow", "description": "Future Teams assignment workflow; never submit without confirmation."},
     ]
 
 
@@ -3674,16 +3674,6 @@ def planned_tool_status(tool_id: str) -> dict[str, Any]:
                 "Keep send, submit, delete, purchase, settings, credential, and schoolwork-changing actions behind explicit confirmation.",
             ],
         },
-        "teams.assignment": {
-            "status": "planned_unavailable",
-            "category": "future_private_app_workflow",
-            "requires_leo": True,
-            "next_steps": [
-                "Build app/screen navigation tools with permission checks.",
-                "Find newest Teams assignments and download rubrics without submitting anything.",
-                "Require explicit confirmation before sending, submitting, or changing schoolwork.",
-            ],
-        },
         "screen.ocr": {
             "status": "planned_unavailable",
             "category": "future_private_screen_read",
@@ -3697,6 +3687,32 @@ def planned_tool_status(tool_id: str) -> dict[str, Any]:
     }
     definition = definitions.get(cleaned)
     registry_entry = tool_by_id.get(cleaned)
+    if cleaned == "teams.assignment" and registry_entry is not None:
+        return {
+            "tool": cleaned,
+            "executed": False,
+            "status": "available_plan_only",
+            "planned_only": True,
+            "available": bool(registry_entry.get("available")),
+            "registry": {
+                "label": registry_entry.get("label"),
+                "mode": registry_entry.get("mode"),
+                "risk": registry_entry.get("risk"),
+                "description": registry_entry.get("description"),
+            },
+            "category": "private_schoolwork_workflow_plan",
+            "requires_leo": False,
+            "read_private_content": False,
+            "opened_app": False,
+            "captured_screen": False,
+            "changed_state": False,
+            "next_steps": [
+                "Use teams.assignment with a goal to prepare a safe plan.",
+                "Enable screen.ocr and ui.automation later before real Teams inspection.",
+                "Require explicit confirmation before sending, submitting, or changing schoolwork.",
+            ],
+            "reply": "teams.assignment is available as a plan-only tool. It does not open Teams, read private content, or change schoolwork.",
+        }
     if definition is None or registry_entry is None:
         return {
             "tool": cleaned or "unknown",
@@ -3847,6 +3863,70 @@ def app_task_workflow_plan(goal: str, *, target_app: str | None = None) -> dict[
             "change system/app/account settings",
             "enter credentials or expose secrets",
         ],
+        "recommended_next_safe_tool": "diagnostics.permissions",
+        "reply": reply,
+    }
+
+
+def teams_assignment_workflow_plan(goal: str) -> dict[str, Any]:
+    """Create a safe Teams-assignment plan without touching Teams or schoolwork."""
+    base = app_task_workflow_plan(goal, target_app="Microsoft Teams")
+    phases = list(base.get("phases") or [])
+    schoolwork_index = next((index for index, phase in enumerate(phases) if phase.get("id") == "schoolwork_boundary"), 2)
+    teams_phases = [
+        {
+            "id": "locate_class_team",
+            "status": "planned_unavailable",
+            "tool": "ui.automation",
+            "summary": "Navigate to the requested Teams class/channel only after foreground UI automation is enabled and Leo allows it.",
+            "executes_now": False,
+        },
+        {
+            "id": "identify_newest_assignment",
+            "status": "planned_unavailable",
+            "tool": "screen.ocr",
+            "summary": "Read visible assignment titles/dates through ephemeral screen OCR after Screen Recording permission and target-window scope are ready.",
+            "executes_now": False,
+        },
+        {
+            "id": "collect_requirements",
+            "status": "planned_unavailable",
+            "tool": "screen.ocr",
+            "summary": "Capture the rubric/instructions as text for review; do not download or export private school content by default.",
+            "executes_now": False,
+        },
+    ]
+    for offset, phase in enumerate(teams_phases, start=1):
+        phases.insert(schoolwork_index + offset, phase)
+
+    clean_goal = str(base.get("goal") or goal or "").strip()
+    reply_goal = clean_goal or "the Teams assignment"
+    reply = (
+        f"Teams assignment plan prepared for {reply_goal}. "
+        "It did not open Teams, read the screen, click, type, download files, call Codex, submit work, or change schoolwork."
+    )
+    return {
+        **base,
+        "tool": "teams.assignment",
+        "source_tool": "workflow.app_task_plan",
+        "status": "planned",
+        "specialized_route": True,
+        "target_app": "Microsoft Teams",
+        "requested_target_app": "Microsoft Teams",
+        "phases": phases,
+        "downloaded_files": False,
+        "submitted_work": False,
+        "changed_schoolwork": False,
+        "requires_confirmation_before_submission": True,
+        "read_private_content": False,
+        "opened_app": False,
+        "launched_app": False,
+        "focused_app": False,
+        "captured_screen": False,
+        "clicked_ui": False,
+        "typed_text": False,
+        "called_codex": False,
+        "changed_state": False,
         "recommended_next_safe_tool": "diagnostics.permissions",
         "reply": reply,
     }
