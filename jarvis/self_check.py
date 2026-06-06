@@ -91,6 +91,7 @@ def run_self_checks() -> dict[str, Any]:
     add("planner_permissions_routes", planner.handle("permissions status").tool == "diagnostics.permissions")
     add("planner_daily_memory_summary_routes", planner.handle("daily memory summary").tool == "memory.daily_summary")
     add("planner_final_qa_routes", planner.handle("final QA plan").tool == "diagnostics.final_qa")
+    add("planner_ui_overlay_routes", planner.handle_selected_tool("plan Jarvis overlay", "ui.overlay", {"mode": "normal"}).tool == "ui.overlay")
     open_app_preview = planner.preview("open app Safari").to_dict()
     add(
         "planner_open_app_routes",

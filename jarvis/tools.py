@@ -634,10 +634,10 @@ def tool_registry() -> dict[str, Any]:
             {
                 "id": "ui.overlay",
                 "label": "Overlay UI Plan",
-                "mode": "planned",
-                "risk": "future_ui",
-                "available": False,
-                "description": "Future Hey Siri-like visible Jarvis overlay/popup route; registered so model planning cannot refer to an invisible tool.",
+                "mode": "read_only_plan",
+                "risk": "future_ui_no_side_effects",
+                "available": True,
+                "description": "Plans the future Hey Siri-like visible Jarvis overlay without opening windows, changing UI, recording audio, or capturing the screen.",
             },
             {
                 "id": "ui.automation",
@@ -2041,7 +2041,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "voice.stt_score", "kind": "read_only", "description": "Score a pasted STT transcript against a reference sentence without recording audio."},
         {"id": "voice.stt_recommendation", "kind": "read_only", "description": "Rank pasted STT audition export rows and recommend the strongest candidate without recording audio."},
         {"id": "voice.loop_simulation", "kind": "read_only_text_only", "description": "Simulate wake, greeting, command capture, and command preview without microphone or audio."},
-        {"id": "ui.overlay", "kind": "planned", "description": "Future visible Jarvis overlay/popup UI."},
+        {"id": "ui.overlay", "kind": "read_only_plan", "description": "Plan the future visible Jarvis overlay/popup UI without opening windows or changing UI."},
         {"id": "ui.automation", "kind": "planned_private_app_control", "description": "Future app UI clicking/typing/navigation route with permission checks and confirmation gates."},
     ]
 
@@ -2748,6 +2748,83 @@ def voice_session_plan(command: str | None = None) -> dict[str, Any]:
             "TTS check that no overlapping speech processes remain.",
         ],
         "reply": "Voice session plan prepared: wake, visible acknowledgement, STT, routing, safe execution, visible final text, and optional speech are mapped without using the microphone or speaker.",
+    }
+
+
+def ui_overlay_plan(mode: str | None = None) -> dict[str, Any]:
+    """Plan the future visible Jarvis overlay without launching or changing UI."""
+    cleaned_mode = re.sub(r"\s+", " ", str(mode or "normal")).strip().lower()
+    if cleaned_mode not in {"normal", "debug", "public", "compact"}:
+        cleaned_mode = "normal"
+    surfaces = [
+        {
+            "id": "wake_greeting",
+            "visible_text": "Hello sir.",
+            "purpose": "Immediate visible acknowledgement after the wake phrase or keyboard shortcut.",
+            "normal_mode": True,
+            "debug_mode": True,
+        },
+        {
+            "id": "listening_transcript",
+            "visible_text": "Listening...",
+            "purpose": "Shows that Jarvis heard Leo and is accepting speech/text input, useful in noisy public spaces.",
+            "normal_mode": True,
+            "debug_mode": True,
+        },
+        {
+            "id": "working_status",
+            "visible_text": "Yes sir, checking that now.",
+            "purpose": "Natural status line before slower tools or models, without words such as skill, route, or catalog.",
+            "normal_mode": True,
+            "debug_mode": True,
+        },
+        {
+            "id": "final_answer",
+            "visible_text": "Short spoken-safe final answer.",
+            "purpose": "Readable fallback when audio is quiet, delayed, disabled, or covered by public noise.",
+            "normal_mode": True,
+            "debug_mode": True,
+        },
+        {
+            "id": "debug_trace_drawer",
+            "visible_text": "Model/tool trace, redacted.",
+            "purpose": "Optional developer-only trace for model inputs and tool previews without exposing secrets by default.",
+            "normal_mode": False,
+            "debug_mode": True,
+        },
+    ]
+    implementation_steps = [
+        "Add a compact always-readable overlay surface separate from the bulky debug panel.",
+        "Keep normal mode free of model/tool jargon; expose trace details only behind debug mode.",
+        "Render status text before slower tool/model work starts.",
+        "Route final answers through the same text sanitizer used for TTS so raw links and internal metadata stay out of speech-first UI.",
+        "Verify visually after foreground QA is allowed, including small laptop width and Stage Manager behavior.",
+    ]
+    return {
+        "tool": "ui.overlay",
+        "executed": True,
+        "status": "planned",
+        "planned_only": True,
+        "mode": cleaned_mode,
+        "read_private_content": False,
+        "opened_window": False,
+        "launched_app": False,
+        "captured_screen": False,
+        "recorded_audio": False,
+        "played_audio": False,
+        "changed_ui": False,
+        "changed_state": False,
+        "surfaces": surfaces,
+        "implementation_steps": implementation_steps,
+        "constraints": [
+            "Do not open foreground windows while Leo is working.",
+            "Do not rely on speech only; every spoken/status line must also be visible.",
+            "Do not expose internal model routing in normal mode.",
+            "Do not capture the screen, request permissions, or start microphones from this plan.",
+        ],
+        "requires_foreground_qa": True,
+        "recommended_next_safe_tool": "diagnostics.final_qa",
+        "reply": "Overlay plan prepared: Jarvis should use a compact visible surface for wake, listening, working status, and final answers, with debug trace hidden unless requested.",
     }
 
 
@@ -3654,16 +3731,6 @@ def planned_tool_status(tool_id: str) -> dict[str, Any]:
     registry = tool_registry()
     tool_by_id = {str(tool.get("id") or ""): tool for tool in registry.get("tools", [])}
     definitions: dict[str, dict[str, Any]] = {
-        "ui.overlay": {
-            "status": "planned_unavailable",
-            "category": "future_ui",
-            "requires_leo": True,
-            "next_steps": [
-                "Design a small readable overlay that shows status and final text without a bulky panel.",
-                "Implement behind a normal/debug mode switch.",
-                "Verify visually after foreground app/browser QA is allowed.",
-            ],
-        },
         "ui.automation": {
             "status": "planned_unavailable",
             "category": "future_private_app_control",
@@ -3687,6 +3754,32 @@ def planned_tool_status(tool_id: str) -> dict[str, Any]:
     }
     definition = definitions.get(cleaned)
     registry_entry = tool_by_id.get(cleaned)
+    if cleaned == "ui.overlay" and registry_entry is not None:
+        return {
+            "tool": cleaned,
+            "executed": False,
+            "status": "available_plan_only",
+            "planned_only": True,
+            "available": bool(registry_entry.get("available")),
+            "registry": {
+                "label": registry_entry.get("label"),
+                "mode": registry_entry.get("mode"),
+                "risk": registry_entry.get("risk"),
+                "description": registry_entry.get("description"),
+            },
+            "category": "future_ui_plan",
+            "requires_leo": False,
+            "read_private_content": False,
+            "opened_app": False,
+            "captured_screen": False,
+            "changed_state": False,
+            "next_steps": [
+                "Use ui.overlay to prepare the compact visible UI plan.",
+                "Implement the actual Swift surface only after foreground QA is allowed.",
+                "Keep normal mode free of internal model/tool routing.",
+            ],
+            "reply": "ui.overlay is available as a plan-only tool. It does not open windows, capture the screen, or change the UI.",
+        }
     if cleaned == "teams.assignment" and registry_entry is not None:
         return {
             "tool": cleaned,

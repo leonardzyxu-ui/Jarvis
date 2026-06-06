@@ -98,6 +98,7 @@ from jarvis.tools import (
     tool_handoff_plan,
     tts_status,
     tool_registry,
+    ui_overlay_plan,
     voice_loop_simulation,
     voice_session_plan,
     wake_status,
@@ -837,6 +838,32 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result.result["next_tool_preview"]["preview"]["planned_only"])
         self.assertFalse(result.result["next_tool_preview"]["preview"]["recorded_audio"])
         stt_mock.assert_called_once_with()
+
+    def test_tools_more_ui_overlay_recommendation_returns_plan_without_ui_changes(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "ui.overlay",
+            "entities": {"mode": "normal"},
+            "reply": "Yes sir, planning the Jarvis overlay now.",
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
+            result = Planner().handle_selected_tool("Plan the Jarvis overlay UI.", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "ui.overlay")
+        self.assertFalse(result.result["next_tool_preview"]["executed"])
+        preview = result.result["next_tool_preview"]["preview"]
+        self.assertEqual(preview["tool"], "ui.overlay")
+        self.assertEqual(preview["status"], "planned")
+        self.assertTrue(preview["planned_only"])
+        self.assertFalse(preview["opened_window"])
+        self.assertFalse(preview["captured_screen"])
+        self.assertFalse(preview["recorded_audio"])
+        self.assertFalse(preview["changed_ui"])
+        self.assertFalse(preview["changed_state"])
 
     def test_tools_more_stt_session_plan_recommendation_previews_without_audio(self):
         fake_plan = {
@@ -1609,15 +1636,17 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.tool, "conversation.fast_local")
         mail_mock.assert_not_called()
 
-    def test_email_sender_constraint_is_forwarded_from_router(self):
+    def test_email_sender_constraint_is_forwarded_from_tool_request(self):
         fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
-        intent = {
-            "status": "completed",
+        tool_request = {
+            "tool": "conversation.fast_local",
+            "status": "tool_requested",
             "selected_tool": "outlook.visible_summary",
-            "confidence": 0.94,
+            "status_text": "Yes sir, checking your email now.",
             "entities": {"sender_query": "Sharpay", "selection": "latest"},
+            "executed": True,
         }
-        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+        with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request), \
              patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
             result = Planner().handle("Could you specifically check my email for the newest mail from Sharpay?")
 
@@ -1630,13 +1659,15 @@ class PlannerTests(unittest.TestCase):
 
     def test_email_sender_constraint_falls_back_to_original_prompt(self):
         fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
-        intent = {
-            "status": "completed",
+        tool_request = {
+            "tool": "conversation.fast_local",
+            "status": "tool_requested",
             "selected_tool": "outlook.visible_summary",
-            "confidence": 0.7,
+            "status_text": "Yes sir, checking your email now.",
             "entities": {},
+            "executed": True,
         }
-        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+        with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request), \
              patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
             Planner().handle("Could you specifically check my email for the newest mail from Sharpay?")
 
@@ -2377,6 +2408,20 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result["changed_state"])
         self.assertIn("plan-only", result["reply"])
 
+    def test_planned_tool_status_reports_ui_overlay_as_available_plan_only(self):
+        result = planned_tool_status("ui.overlay")
+
+        self.assertEqual(result["tool"], "ui.overlay")
+        self.assertEqual(result["status"], "available_plan_only")
+        self.assertFalse(result["executed"])
+        self.assertTrue(result["planned_only"])
+        self.assertTrue(result["available"])
+        self.assertFalse(result["read_private_content"])
+        self.assertFalse(result["opened_app"])
+        self.assertFalse(result["captured_screen"])
+        self.assertFalse(result["changed_state"])
+        self.assertIn("plan-only", result["reply"])
+
     def test_planned_screen_ocr_status_does_not_capture_or_read_screen(self):
         result = planned_tool_status("screen.ocr")
 
@@ -2452,6 +2497,25 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("locate_class_team", phase_ids)
         self.assertIn("identify_newest_assignment", phase_ids)
         self.assertIn("collect_requirements", phase_ids)
+
+    def test_ui_overlay_plan_is_plan_only_without_ui_changes(self):
+        result = ui_overlay_plan("normal")
+
+        self.assertEqual(result["tool"], "ui.overlay")
+        self.assertEqual(result["status"], "planned")
+        self.assertTrue(result["planned_only"])
+        self.assertFalse(result["read_private_content"])
+        self.assertFalse(result["opened_window"])
+        self.assertFalse(result["captured_screen"])
+        self.assertFalse(result["recorded_audio"])
+        self.assertFalse(result["played_audio"])
+        self.assertFalse(result["changed_ui"])
+        self.assertFalse(result["changed_state"])
+        surface_ids = {surface["id"] for surface in result["surfaces"]}
+        self.assertIn("wake_greeting", surface_ids)
+        self.assertIn("working_status", surface_ids)
+        self.assertIn("final_answer", surface_ids)
+        self.assertIn("debug_trace_drawer", surface_ids)
 
     def test_final_qa_plan_status_reports_deferred_no_foreground_work(self):
         result = final_qa_plan_status()
@@ -2578,8 +2642,15 @@ class PlannerTests(unittest.TestCase):
             "unread_count": 1,
             "messages": [{"sender": "Alice", "subject": "Prototype", "received": "Today"}],
         }
-        intent = {"status": "completed", "selected_tool": "outlook.visible_summary", "confidence": 0.91, "entities": {}}
-        with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+        tool_request = {
+            "tool": "conversation.fast_local",
+            "status": "tool_requested",
+            "selected_tool": "outlook.visible_summary",
+            "status_text": "Yes sir, checking your email now.",
+            "entities": {},
+            "executed": True,
+        }
+        with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request), \
              patch("jarvis.planner.outlook_read_only_check", return_value=fake_result):
             result = Planner().handle("check my Outlook email")
 

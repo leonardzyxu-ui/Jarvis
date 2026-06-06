@@ -64,6 +64,7 @@ from .tools import (
     tool_catalog_status,
     tool_handoff_plan,
     tts_status,
+    ui_overlay_plan,
     voice_session_plan,
     voice_loop_simulation,
     wake_status,
@@ -172,6 +173,14 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": ["transcript"],
         "examples": [
             'Yes sir, testing the voice loop now. \\tool({"tool":"voice.loop_simulation","entities":{"transcript":"Hey Jarvis status"}})',
+        ],
+    },
+    {
+        "tool": "ui.overlay",
+        "description": "Prepare a plan for the future compact visible Jarvis overlay/popup UI without opening windows, changing UI, recording audio, or capturing the screen.",
+        "entities": ["mode"],
+        "examples": [
+            'Yes sir, planning the Jarvis overlay now. \\tool({"tool":"ui.overlay","entities":{"mode":"normal"}})',
         ],
     },
     {
@@ -974,11 +983,16 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "teams.assignment", assessment, True, plan={"intent": intent, "goal": goal})
             return self._result(text, "teams.assignment", "Prepared safe Teams assignment workflow plan.", assessment, teams_assignment_workflow_plan(goal), True)
+        if selected_tool == "ui.overlay":
+            mode = _clean_optional_entity(entities.get("mode"))
+            if not execute:
+                return self._preview_result(text, "ui.overlay", assessment, True, plan={"intent": intent, "mode": mode})
+            return self._result(text, "ui.overlay", "Prepared visible overlay plan.", assessment, ui_overlay_plan(mode), True)
         if selected_tool == "memory.daily_summary":
             if not execute:
                 return self._preview_result(text, "memory.daily_summary", assessment, True, plan={"intent": intent})
             return self._result(text, "memory.daily_summary", "Read local daily memory summary.", assessment, daily_memory_summary(), True)
-        if selected_tool in {"ui.overlay", "ui.automation", "screen.ocr"}:
+        if selected_tool in {"ui.automation", "screen.ocr"}:
             result = planned_tool_status(selected_tool)
             return self._result(text, selected_tool, "Prepared planned future tool status.", assessment, result, False)
         if selected_tool == "diagnostics.codex_chats":
@@ -1359,7 +1373,15 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "executed": False,
             "preview": {**preview, "executed": False, "planned_only": True},
         }
-    if recommended in {"ui.overlay", "ui.automation", "screen.ocr"}:
+    if recommended == "ui.overlay":
+        mode = _clean_optional_entity(entities.get("mode"))
+        preview = ui_overlay_plan(mode)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended in {"ui.automation", "screen.ocr"}:
         preview = planned_tool_status(recommended)
         return {
             "recommended_tool": recommended,
@@ -1847,6 +1869,7 @@ def _voice_loop_status_text_for_tool(tool: str) -> str:
         "terminal.read_only": "Yes sir, checking that locally now.",
         "shell.read_only": "Yes sir, checking that locally now.",
         "teams.assignment": "Yes sir, preparing the Teams assignment plan now.",
+        "ui.overlay": "Yes sir, planning the Jarvis overlay now.",
         "quick.local_control": "Yes sir, handling that now.",
         "system.status": "Yes sir, checking Jarvis status now.",
         "conversation.fast_local": "Yes sir, preparing a direct answer now.",
