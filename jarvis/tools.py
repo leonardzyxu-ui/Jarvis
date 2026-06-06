@@ -6051,6 +6051,40 @@ def _run_groq_fast_chat(
     }
 
 
+class _FastChatVisibleStreamBuffer:
+    def __init__(self) -> None:
+        self.pending = ""
+        self.hidden_started = False
+
+    def push(self, chunk: str) -> str:
+        if not chunk:
+            return ""
+        if self.hidden_started:
+            self.pending += chunk
+            return ""
+        self.pending += chunk
+        hidden_match = re.search(r"\\[A-Za-z]", self.pending)
+        if hidden_match:
+            visible = self.pending[: hidden_match.start()]
+            self.pending = self.pending[hidden_match.start() :]
+            self.hidden_started = True
+            return visible
+        if self.pending.endswith("\\"):
+            visible = self.pending[:-1]
+            self.pending = "\\"
+            return visible
+        visible = self.pending
+        self.pending = ""
+        return visible
+
+    def finish(self) -> str:
+        if self.hidden_started:
+            return ""
+        visible = self.pending
+        self.pending = ""
+        return visible
+
+
 def stream_fast_local_chat_events(
     prompt: str,
     model: str | None = None,
@@ -6113,6 +6147,7 @@ def stream_fast_local_chat_events(
     }
 
     chunks: list[str] = []
+    visible_buffer = _FastChatVisibleStreamBuffer() if tool_specs else None
     first_visible_token_at: float | None = None
     try:
         with urllib.request.urlopen(request, timeout=FAST_MODEL_TIMEOUT_SECONDS, context=_https_context()) as response:
@@ -6133,6 +6168,11 @@ def stream_fast_local_chat_events(
                     continue
                 chunks.append(content)
                 if tool_specs:
+                    visible = visible_buffer.push(content) if visible_buffer is not None else ""
+                    if visible:
+                        if first_visible_token_at is None:
+                            first_visible_token_at = time.monotonic()
+                        yield {"event": "delta", "data": {"text": visible}}
                     continue
                 if first_visible_token_at is None:
                     first_visible_token_at = time.monotonic()
@@ -6204,6 +6244,8 @@ def stream_fast_local_chat_events(
             "executed": True,
             "fallback_used": False,
             "timeout_seconds": FAST_MODEL_TIMEOUT_SECONDS,
+            "first_visible_token_seconds": round(first_visible_token_at - started_at, 3) if first_visible_token_at else None,
+            "first_token_seconds": round(first_visible_token_at - started_at, 3) if first_visible_token_at else None,
             **duration,
             **tool_request,
         }
@@ -6225,9 +6267,12 @@ def stream_fast_local_chat_events(
         yield {"event": "final_result", "data": _fast_chat_with_fallback(prompt, result, history=history, tool_specs=tool_specs)}
         return
 
-    if tool_specs:
-        first_visible_token_at = time.monotonic()
-        yield {"event": "delta", "data": {"text": reply}}
+    if tool_specs and visible_buffer is not None:
+        visible_tail = visible_buffer.finish()
+        if visible_tail:
+            if first_visible_token_at is None:
+                first_visible_token_at = time.monotonic()
+            yield {"event": "delta", "data": {"text": visible_tail}}
 
     result = {
         "tool": "conversation.fast_local",

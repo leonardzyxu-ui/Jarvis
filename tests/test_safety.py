@@ -3231,12 +3231,43 @@ class RuntimeSurfaceTests(unittest.TestCase):
              patch("jarvis.tools.urllib.request.urlopen", return_value=FakeStreamResponse()):
             events = list(stream_fast_local_chat_events("check my second email", tool_specs=tool_specs))
 
-        self.assertEqual([event["event"] for event in events], ["meta", "final_result"])
+        self.assertEqual([event["event"] for event in events], ["meta", "delta", "final_result"])
+        self.assertEqual(events[1]["data"]["text"], "Yes sir, checking your em")
+        self.assertNotIn("\\Email", events[1]["data"]["text"])
         data = events[-1]["data"]
         self.assertEqual(data["status"], "tool_requested")
         self.assertEqual(data["selected_tool"], "outlook.visible_summary")
         self.assertEqual(data["status_text"], "Yes sir, checking your email now.")
         self.assertEqual(data["entities"]["selection"], "index:2")
+        self.assertIsNotNone(data["first_visible_token_seconds"])
+
+    def test_stream_fast_local_chat_with_tool_specs_streams_plain_reply_early(self):
+        class FakeStreamResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def __iter__(self):
+                for chunk in ["Hello", " sir."]:
+                    payload = {"choices": [{"delta": {"content": chunk}}]}
+                    yield f"data: {json.dumps(payload)}\n".encode("utf-8")
+                yield b"data: [DONE]\n"
+
+        tool_specs = [{"tool": "outlook.visible_summary", "description": "Read email.", "entities": ["selection"]}]
+        with patch("jarvis.tools.FAST_MODEL_BACKEND", "groq"), \
+             patch("jarvis.tools.GROQ_API_KEY", "test-groq-key"), \
+             patch("jarvis.tools.urllib.request.urlopen", return_value=FakeStreamResponse()):
+            events = list(stream_fast_local_chat_events("hello Jarvis", tool_specs=tool_specs))
+
+        self.assertEqual([event["event"] for event in events], ["meta", "delta", "delta", "final_result"])
+        self.assertEqual(events[1]["data"]["text"], "Hello")
+        self.assertEqual(events[2]["data"]["text"], " sir.")
+        data = events[-1]["data"]
+        self.assertEqual(data["status"], "completed")
+        self.assertEqual(data["reply"], "Hello sir.")
+        self.assertIsNotNone(data["first_visible_token_seconds"])
 
     def test_fast_local_chat_groq_falls_back_to_ollama(self):
         fallback_result = {

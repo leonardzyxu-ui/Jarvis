@@ -393,10 +393,26 @@ final class JarvisShellModel: ObservableObject {
                     history: history,
                     onStatus: { status in
                         let statusText = status.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !statusText.isEmpty, streamedReply.isEmpty, statusText != lastStatusText else {
+                        guard !statusText.isEmpty, statusText != lastStatusText else {
                             return
                         }
                         lastStatusText = statusText
+                        if let placeholderId, !streamedReply.isEmpty {
+                            streamedReply = statusText
+                            self.replaceMessage(
+                                id: placeholderId,
+                                with: ChatMessage(
+                                    id: placeholderId,
+                                    role: .jarvis,
+                                    text: statusText,
+                                    detail: "Working"
+                                )
+                            )
+                            if progressTask == nil {
+                                progressTask = self.startProgressNudges(for: commandText)
+                            }
+                            return
+                        }
                         _ = self.appendJarvisMessage(text: statusText, detail: "Working")
                         if progressTask == nil {
                             progressTask = self.startProgressNudges(for: commandText)
