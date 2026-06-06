@@ -2810,6 +2810,80 @@ def tool_catalog_status(first_tool_specs: list[dict[str, Any]] | None = None) ->
     }
 
 
+def planned_tool_status(tool_id: str) -> dict[str, Any]:
+    cleaned = re.sub(r"\s+", " ", str(tool_id or "")).strip()
+    registry = tool_registry()
+    tool_by_id = {str(tool.get("id") or ""): tool for tool in registry.get("tools", [])}
+    definitions: dict[str, dict[str, Any]] = {
+        "ui.overlay": {
+            "status": "planned_unavailable",
+            "category": "future_ui",
+            "requires_leo": True,
+            "next_steps": [
+                "Design a small readable overlay that shows status and final text without a bulky panel.",
+                "Implement behind a normal/debug mode switch.",
+                "Verify visually after foreground app/browser QA is allowed.",
+            ],
+        },
+        "memory.daily_summary": {
+            "status": "planned_unavailable",
+            "category": "future_private_memory",
+            "requires_leo": True,
+            "next_steps": [
+                "Define retention, redaction, and sync boundaries before reading daily chat history.",
+                "Build a local summary format that refreshes the next morning.",
+                "Only enable MacBook Air sync after explicit approval.",
+            ],
+        },
+        "teams.assignment": {
+            "status": "planned_unavailable",
+            "category": "future_private_app_workflow",
+            "requires_leo": True,
+            "next_steps": [
+                "Build app/screen navigation tools with permission checks.",
+                "Find newest Teams assignments and download rubrics without submitting anything.",
+                "Require explicit confirmation before sending, submitting, or changing schoolwork.",
+            ],
+        },
+    }
+    definition = definitions.get(cleaned)
+    registry_entry = tool_by_id.get(cleaned)
+    if definition is None or registry_entry is None:
+        return {
+            "tool": cleaned or "unknown",
+            "executed": False,
+            "status": "unknown_tool",
+            "planned_only": True,
+            "read_private_content": False,
+            "reply": f"{cleaned or 'That tool'} is not a known planned Jarvis tool.",
+        }
+    reply = (
+        f"{cleaned} is registered as a planned future Jarvis tool, but it is not enabled yet. "
+        "I did not execute anything or read private content."
+    )
+    return {
+        "tool": cleaned,
+        "executed": False,
+        "status": definition["status"],
+        "planned_only": True,
+        "available": bool(registry_entry.get("available")),
+        "registry": {
+            "label": registry_entry.get("label"),
+            "mode": registry_entry.get("mode"),
+            "risk": registry_entry.get("risk"),
+            "description": registry_entry.get("description"),
+        },
+        "category": definition["category"],
+        "requires_leo": bool(definition["requires_leo"]),
+        "read_private_content": False,
+        "opened_app": False,
+        "captured_screen": False,
+        "changed_state": False,
+        "next_steps": list(definition["next_steps"]),
+        "reply": reply,
+    }
+
+
 def _runtime_file_status(path: Path) -> dict[str, Any]:
     access = _path_access_status(path)
     exists = bool(access.get("accessible")) and not bool(access.get("is_dir"))

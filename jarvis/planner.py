@@ -33,6 +33,7 @@ from .tools import (
     overnight_work_status,
     outlook_read_only_check,
     outlook_read_only_plan,
+    planned_tool_status,
     prompt_injection_scan,
     quick_local_control,
     remote_worker_status,
@@ -732,6 +733,9 @@ class Planner:
                 result = {**result, "next_tool_preview": next_preview}
             summary = "Prepared middle-layer tool plan." if result.get("status") == "planned" else "Tried middle-layer tool planning."
             return self._result(text, "tools.more", summary, assessment, result, False)
+        if selected_tool in {"ui.overlay", "memory.daily_summary", "teams.assignment"}:
+            result = planned_tool_status(selected_tool)
+            return self._result(text, selected_tool, "Prepared planned future tool status.", assessment, result, False)
         if selected_tool == "diagnostics.codex_chats":
             if not execute:
                 return self._preview_result(text, "diagnostics.codex_chats", assessment, True, plan={"intent": intent})
@@ -922,6 +926,13 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "recommended_tool": recommended,
             "executed": False,
             "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended in {"ui.overlay", "memory.daily_summary", "teams.assignment"}:
+        preview = planned_tool_status(recommended)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": preview,
         }
     if recommended == "diagnostics.codex_chats":
         preview = codex_chat_status()

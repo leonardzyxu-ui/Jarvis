@@ -73,6 +73,7 @@ from jarvis.tools import (
     outlook_visible_text_summary,
     outlook_read_only_check,
     outlook_read_only_plan,
+    planned_tool_status,
     quick_local_control,
     remote_worker_status,
     run_codex_chat,
@@ -714,6 +715,27 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result.result["next_tool_preview"]["preview"]["planned_only"])
         self.assertFalse(result.result["next_tool_preview"]["preview"]["called_fast_model"])
         catalog_mock.assert_called_once()
+
+    def test_tools_more_planned_future_tool_recommendation_returns_plan_only_status(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "teams.assignment",
+            "entities": {},
+            "reply": "Yes sir, checking what would be needed for Teams.",
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
+            result = Planner().handle_selected_tool("Go to Teams and finish the newest Music assignment.", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "teams.assignment")
+        self.assertFalse(result.result["next_tool_preview"]["executed"])
+        self.assertTrue(result.result["next_tool_preview"]["preview"]["planned_only"])
+        self.assertEqual(result.result["next_tool_preview"]["preview"]["status"], "planned_unavailable")
+        self.assertFalse(result.result["next_tool_preview"]["preview"]["changed_state"])
+        self.assertFalse(result.result["next_tool_preview"]["preview"]["read_private_content"])
 
     def test_tools_more_codex_activity_recommendation_previews_without_starting_codex(self):
         fake_plan = {
@@ -1474,6 +1496,21 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["comparison"]["missing_from_registry"], [])
         self.assertEqual(result["first_model"]["duplicates"], [])
         self.assertEqual(result["middle_planner"]["duplicates"], [])
+
+    def test_planned_tool_status_reports_unavailable_future_tool_without_side_effects(self):
+        result = planned_tool_status("teams.assignment")
+
+        self.assertEqual(result["tool"], "teams.assignment")
+        self.assertEqual(result["status"], "planned_unavailable")
+        self.assertFalse(result["executed"])
+        self.assertTrue(result["planned_only"])
+        self.assertFalse(result["available"])
+        self.assertFalse(result["read_private_content"])
+        self.assertFalse(result["opened_app"])
+        self.assertFalse(result["captured_screen"])
+        self.assertFalse(result["changed_state"])
+        self.assertTrue(result["requires_leo"])
+        self.assertIn("confirmation", " ".join(result["next_steps"]).lower())
 
     def test_overnight_work_status_reports_paths_without_foreground_activity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
