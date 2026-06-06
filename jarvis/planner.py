@@ -553,6 +553,9 @@ class Planner:
                     },
                 )
             result = more_tools_plan(text, history=history)
+            next_preview = _middle_plan_next_tool_preview(text, result)
+            if next_preview is not None:
+                result = {**result, "next_tool_preview": next_preview}
             summary = "Prepared middle-layer tool plan." if result.get("status") == "planned" else "Tried middle-layer tool planning."
             return self._result(text, "tools.more", summary, assessment, result, False)
         if selected_tool == "codex.job":
@@ -601,6 +604,7 @@ class Planner:
             return self._result(text, "codex.job", summary, assessment, result, bool(result.get("executed")))
         return None
 
+
     def _result(
         self,
         command: str,
@@ -639,6 +643,45 @@ class Planner:
             confirmation=confirmation,
         )
 
+
+def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[str, Any] | None:
+    recommended = str(result.get("recommended_tool") or "").strip()
+    entities = result.get("entities") if isinstance(result.get("entities"), dict) else {}
+    if recommended == "app.open":
+        app_name = _clean_optional_entity(entities.get("app_name")) or _extract_app_open_name(text) or _extract_app_name(text) or ""
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": app_open(app_name, execute=False),
+        }
+    if recommended == "terminal.plan":
+        command = _clean_optional_entity(entities.get("command")) or _extract_terminal_command_text(text)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": terminal_command_plan(command),
+        }
+    if recommended == "terminal.read_only":
+        command = _clean_optional_entity(entities.get("command")) or _extract_terminal_command_text(text)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": terminal_command_plan(command),
+        }
+    if recommended == "browser.open_url":
+        url = _clean_optional_entity(entities.get("url")) or _extract_url(text)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": browser_open_url_plan(url),
+        }
+    if recommended == "outlook.visible_summary":
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": outlook_read_only_plan(),
+        }
+    return None
 
 
 def _extract_url(text: str) -> str:

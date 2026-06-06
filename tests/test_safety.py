@@ -426,14 +426,46 @@ class PlannerTests(unittest.TestCase):
             "entities": {"app_name": "Microsoft Teams"},
             "reply": "Yes sir, checking Teams now.",
         }
+        fake_app_preview = {
+            "tool": "app.open",
+            "status": "planned",
+            "executed": False,
+            "app": "Microsoft Teams",
+            "planned_command": ["/usr/bin/open", "-a", "Microsoft Teams"],
+        }
         history = [{"role": "user", "content": "We were discussing Teams homework."}]
-        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan) as more_mock:
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan) as more_mock, \
+             patch("jarvis.planner.app_open", return_value=fake_app_preview) as open_mock:
             result = Planner().handle_selected_tool("Go to Teams and find my newest Music assignment.", "tools.more", {}, history=history)
 
         self.assertEqual(result.tool, "tools.more")
         self.assertFalse(result.executed)
         self.assertEqual(result.result["recommended_tool"], "app.open")
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "app.open")
+        self.assertFalse(result.result["next_tool_preview"]["executed"])
+        self.assertEqual(result.result["next_tool_preview"]["preview"]["planned_command"], ["/usr/bin/open", "-a", "Microsoft Teams"])
         more_mock.assert_called_once_with("Go to Teams and find my newest Music assignment.", history=history)
+        open_mock.assert_called_once_with("Microsoft Teams", execute=False)
+
+    def test_tools_more_terminal_recommendation_previews_without_running(self):
+        fake_plan = {
+            "tool": "tools.more",
+            "status": "planned",
+            "executed": False,
+            "recommended_tool": "terminal.read_only",
+            "entities": {"command": "git status"},
+            "reply": "Yes sir, checking the repository status.",
+        }
+        with patch("jarvis.planner.more_tools_plan", return_value=fake_plan), \
+             patch("jarvis.planner.run_read_only_shell") as shell_mock:
+            result = Planner().handle_selected_tool("Check the repo status.", "tools.more", {})
+
+        self.assertEqual(result.tool, "tools.more")
+        self.assertFalse(result.executed)
+        self.assertEqual(result.result["next_tool_preview"]["recommended_tool"], "terminal.read_only")
+        self.assertFalse(result.result["next_tool_preview"]["preview"]["executed"])
+        self.assertTrue(result.result["next_tool_preview"]["preview"]["would_execute_if_read_only_tool"])
+        shell_mock.assert_not_called()
 
     def test_tools_more_preview_does_not_call_middle_model(self):
         intent = {"status": "completed", "selected_tool": "tools.more", "confidence": 0.8, "entities": {}}
