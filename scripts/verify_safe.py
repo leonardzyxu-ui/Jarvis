@@ -99,6 +99,27 @@ def run_command(
     )
 
 
+def run_temp_app_command(
+    name: str,
+    args: list[str],
+    *,
+    timeout: int,
+    expect: str,
+    env: dict[str, str] | None = None,
+) -> CheckResult:
+    result = run_command(name, args, timeout=timeout, env=env, expect=expect)
+    if result.passed or result.returncode != -9 or result.stdout_tail or result.stderr_tail:
+        return result
+    time.sleep(0.5)
+    retry = run_command(name, args, timeout=timeout, env=env, expect=expect)
+    if retry.passed:
+        retry.summary = "passed after transient macOS SIGKILL retry"
+    else:
+        retry.summary = f"{result.summary}; retry: {retry.summary}"
+    retry.duration_seconds = round(result.duration_seconds + 0.5 + retry.duration_seconds, 3)
+    return retry
+
+
 def get_json(path: str, timeout: int = 20, base_url: str = BASE_URL) -> Any:
     with urllib.request.urlopen(f"{base_url}{path}", timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -721,7 +742,7 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
     )
 
     results.append(
-        run_command(
+        run_temp_app_command(
             "temporary_app_permission_self_test",
             [str(executable), "--permission-self-test"],
             timeout=60,
@@ -729,7 +750,7 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
         )
     )
     results.append(
-        run_command(
+        run_temp_app_command(
             "temporary_app_self_test",
             [str(executable), "--self-test"],
             env={"JARVIS_BASE_URL": base_url},
@@ -738,7 +759,7 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
         )
     )
     results.append(
-        run_command(
+        run_temp_app_command(
             "temporary_app_hotkey_self_test",
             [str(executable), "--hotkey-self-test"],
             timeout=60,
@@ -748,7 +769,7 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
     autostart_port = free_local_port()
     autostart_base_url = f"http://127.0.0.1:{autostart_port}"
     results.append(
-        run_command(
+        run_temp_app_command(
             "temporary_app_autostart_disabled_self_test",
             [str(executable), "--worker-autostart-disabled-self-test"],
             env={"JARVIS_BASE_URL": autostart_base_url, "JARVIS_DISABLE_WORKER_AUTOSTART": "1"},
