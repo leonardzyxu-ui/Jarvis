@@ -109,14 +109,14 @@ enum JarvisMenuBarSelfTest {
         guard !JarvisShellModel.shouldUseNativeHotKeyStatus("change the Jarvis shortcut") else {
             throw SelfTestError.failed("Hotkey mutation requests must not be treated as a read-only status command.")
         }
-        guard JarvisShellModel.shouldUseNativeTTSStatus("tts status") else {
-            throw SelfTestError.failed("TTS status should use the native Swift TTS snapshot.")
+        guard !JarvisShellModel.shouldUseNativeVoiceStatus("tts status") else {
+            throw SelfTestError.failed("TTS status should route to backend diagnostics.tts, not the native voice snapshot.")
         }
-        guard JarvisShellModel.shouldUseNativeTTSStatus("can you speak") else {
-            throw SelfTestError.failed("Natural TTS readiness questions should use the native Swift TTS snapshot.")
+        guard !JarvisShellModel.shouldUseNativeVoiceStatus("can you speak") else {
+            throw SelfTestError.failed("Natural TTS readiness questions should route to backend diagnostics.tts.")
         }
-        guard !JarvisShellModel.shouldUseNativeTTSStatus("say out loud hello") else {
-            throw SelfTestError.failed("Actual speech commands must not be treated as read-only TTS status.")
+        guard !JarvisShellModel.shouldUseNativeVoiceStatus("voice output status") else {
+            throw SelfTestError.failed("Voice-output readiness should route to backend diagnostics.tts.")
         }
         guard JarvisShellModel.shouldUseNativeVoiceStatus("voice status") else {
             throw SelfTestError.failed("Voice status should use the native Swift voice snapshot.")

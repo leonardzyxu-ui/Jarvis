@@ -351,12 +351,6 @@ final class JarvisShellModel: ObservableObject {
                 return
             }
 
-            if Self.shouldUseNativeTTSStatus(commandText) {
-                let placeholderId = appendJarvisMessage(text: "Checking speech output status.", detail: "Working")
-                runNativeTTSStatus(commandText, placeholderId: placeholderId)
-                return
-            }
-
             if Self.shouldUseNativeVoiceStatus(commandText) {
                 let placeholderId = appendJarvisMessage(text: "Checking voice status.", detail: "Working")
                 await runNativeVoiceStatus(commandText, placeholderId: placeholderId)
@@ -606,55 +600,6 @@ final class JarvisShellModel: ObservableObject {
             )
         )
         state = "Ready"
-    }
-
-    private func runNativeTTSStatus(_ commandText: String, placeholderId: UUID) {
-        state = "Ready"
-        tool = "tts.native_status"
-        let sayPath = Self.sayExecutablePath()
-        let voices = sayPath == nil ? [] : Self.sayVoiceNames(sayPath: sayPath!)
-        let available = sayPath != nil
-        var reply = [
-            "TTS status:",
-            "- macOS say: \(available ? "available at \(sayPath!)" : "not available").",
-            "- Explicit speech commands: \(available ? "available" : "not available") for `speak ...`, `say out loud ...`, and `read ... loud ...`.",
-            "- Automatic spoken replies: off.",
-        ]
-        if !voices.isEmpty {
-            reply.append("- Voices detected: \(voices.count). Examples: \(voices.prefix(5).joined(separator: ", ")).")
-        }
-        reply.append("This did not play audio, record audio, or request microphone/Speech Recognition permission.")
-        resultText = [
-            "Command: \(commandText)",
-            "Tool: tts.native_status",
-            "Executed: true",
-            "Summary: Read native TTS status.",
-            "say path: \(sayPath ?? "missing")",
-            "Voice count: \(voices.count)",
-            "Automatic TTS: false",
-            "Played audio: false",
-        ].joined(separator: "\n")
-        lastCommandDiagnostics = [
-            "command": commandText,
-            "tool": "tts.native_status",
-            "summary": "Read native TTS status.",
-            "executed": true,
-            "say_path": sayPath as Any,
-            "explicit_tts_available": available,
-            "automatic_tts_enabled": false,
-            "played_audio": false,
-            "voice_count": voices.count,
-            "sample_voices": Array(voices.prefix(8)),
-        ]
-        replaceMessage(
-            id: placeholderId,
-            with: ChatMessage(
-                id: placeholderId,
-                role: .jarvis,
-                text: reply.joined(separator: "\n"),
-                detail: "Read native TTS status."
-            )
-        )
     }
 
     private func runNativeVoiceStatus(_ commandText: String, placeholderId: UUID) async {
@@ -1653,44 +1598,6 @@ final class JarvisShellModel: ObservableObject {
         ]
     }
 
-    private static func sayExecutablePath() -> String? {
-        let candidates = [
-            "/usr/bin/say",
-            "/bin/say",
-            "/opt/homebrew/bin/say",
-            "/usr/local/bin/say",
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
-    private static func sayVoiceNames(sayPath: String) -> [String] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: sayPath)
-        process.arguments = ["-v", "?"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return []
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let text = String(data: data, encoding: .utf8) ?? ""
-        var names: [String] = []
-        for line in text.split(separator: "\n") {
-            guard let first = line.split(separator: " ").first else {
-                continue
-            }
-            let name = String(first)
-            if !names.contains(name) {
-                names.append(name)
-            }
-        }
-        return names
-    }
-
     private static func progressReplies(for _: String) -> [(delayNanoseconds: UInt64, text: String)] {
         return [
             (5_000_000_000, "Still working. Wait a sec..."),
@@ -1728,9 +1635,9 @@ final class JarvisShellModel: ObservableObject {
         return statusCues.contains(where: { lower.contains($0) })
     }
 
-    static func shouldUseNativeTTSStatus(_ commandText: String) -> Bool {
+    static func shouldUseNativeVoiceStatus(_ commandText: String) -> Bool {
         let lower = commandText.lowercased()
-        let ttsCues = [
+        let ttsOutputCues = [
             "tts",
             "text-to-speech",
             "text to speech",
@@ -1741,45 +1648,17 @@ final class JarvisShellModel: ObservableObject {
             "can you speak",
             "voice output",
         ]
-        guard ttsCues.contains(where: { lower.contains($0) }) else {
+        guard !ttsOutputCues.contains(where: { lower.contains($0) }) else {
             return false
         }
-        let mutationCues = [
-            "enable",
-            "turn on",
-            "always speak",
-            "auto speak",
-            "automatic speech",
-            "say out loud ",
-        ]
-        guard !mutationCues.contains(where: { lower.contains($0) }) else {
-            return false
-        }
-        let statusCues = [
-            "available",
-            "can",
-            "check",
-            "ready",
-            "show",
-            "status",
-            "what",
-            "which",
-        ]
-        return statusCues.contains(where: { lower.contains($0) })
-    }
-
-    static func shouldUseNativeVoiceStatus(_ commandText: String) -> Bool {
-        let lower = commandText.lowercased()
         let voiceCues = [
             "voice",
             "speech",
             "microphone wake",
             "voice input",
-            "voice output",
             "speech-to-text",
             "speech to text",
             "stt",
-            "tts",
         ]
         guard voiceCues.contains(where: { lower.contains($0) }) else {
             return false
