@@ -4,7 +4,7 @@ import JarvisClient
 
 @MainActor
 final class JarvisShellModel: ObservableObject {
-    @Published var command: String = "status"
+    @Published var command: String = ""
     @Published private(set) var connection: String = "Checking"
     @Published private(set) var state: String = "Idle"
     @Published private(set) var tool: String = "No tool"
