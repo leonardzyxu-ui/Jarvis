@@ -32,6 +32,7 @@ from .tools import (
     fast_model_status,
     final_qa_plan_status,
     find_files,
+    git_remote_status,
     launch_status,
     latest_latency_status,
     memory_status,
@@ -309,6 +310,11 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": [],
     },
     {
+        "tool": "diagnostics.git",
+        "description": "Explain local repo root, branch/upstream state, and GitHub Desktop push blockers without fetching, pushing, merging, rebasing, or changing Git settings.",
+        "entities": [],
+    },
+    {
         "tool": "memory.daily_summary",
         "description": "Summarize today's local Jarvis-to-Codex daily memory events. This does not read raw Jarvis chat history, expose session IDs, call a model, or sync to another machine.",
         "entities": [],
@@ -534,6 +540,8 @@ class Planner:
             return self._result(text, "diagnostics.elevation", "Read Jarvis elevation routing status.", assessment, elevation_status(), True)
         if _looks_like_memory_status(lower):
             return self._result(text, "diagnostics.memory", "Read Jarvis memory design status without reading chat history.", assessment, memory_status(), True)
+        if _looks_like_git_remote_status(lower):
+            return self._result(text, "diagnostics.git", "Read Git remote branch status.", assessment, git_remote_status(), True)
         if _looks_like_source_access_status(lower):
             return self._result(text, "diagnostics.source_access", "Read Jarvis source access status.", assessment, source_access_status(), True)
         if _looks_like_tts_status(lower):
@@ -726,6 +734,8 @@ class Planner:
             return self._preview_result(text, "voice.stop_speaking", assessment, True)
         if _looks_like_source_access_status(lower):
             return self._preview_result(text, "diagnostics.source_access", assessment, True)
+        if _looks_like_git_remote_status(lower):
+            return self._preview_result(text, "diagnostics.git", assessment, True)
         if _looks_like_tts_status(lower):
             return self._preview_result(text, "diagnostics.tts", assessment, True)
         if _looks_like_screen_status(lower):
@@ -1028,6 +1038,10 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "ui.overlay", assessment, True, plan={"intent": intent, "mode": mode})
             return self._result(text, "ui.overlay", "Prepared visible overlay plan.", assessment, ui_overlay_plan(mode), True)
+        if selected_tool == "diagnostics.git":
+            if not execute:
+                return self._preview_result(text, "diagnostics.git", assessment, True, plan={"intent": intent})
+            return self._result(text, "diagnostics.git", "Read Git remote branch status.", assessment, git_remote_status(), True)
         if selected_tool == "memory.daily_summary":
             if not execute:
                 return self._preview_result(text, "memory.daily_summary", assessment, True, plan={"intent": intent})
@@ -2486,6 +2500,32 @@ def _looks_like_memory_status(lower: str) -> bool:
     mutation_cues = ("sync now", "copy now", "upload", "delete", "erase", "export all")
     return (
         any(cue in lower for cue in memory_cues)
+        and any(cue in lower for cue in status_cues)
+        and not any(cue in lower for cue in mutation_cues)
+    )
+
+
+def _looks_like_git_remote_status(lower: str) -> bool:
+    git_cues = (
+        "github desktop",
+        "github push",
+        "git remote",
+        "remote branch",
+        "publish branch",
+        "newer commits on remote",
+        "fetch cannot reconcile",
+        "repo root",
+        "git repo root",
+        "git repository root",
+        "why can't i push",
+        "why cant i push",
+        "why can't github",
+        "why cant github",
+    )
+    status_cues = ("status", "check", "show", "explain", "why", "fix", "diagnose", "problem", "bug", "push", "fetch")
+    mutation_cues = ("push now", "force push", "force-with-lease", "rebase now", "merge now", "pull now", "delete branch")
+    return (
+        any(cue in lower for cue in git_cues)
         and any(cue in lower for cue in status_cues)
         and not any(cue in lower for cue in mutation_cues)
     )

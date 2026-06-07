@@ -544,6 +544,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Checks the Tailscale MacBook Air SSH helper target using bounded read-only system metadata only.",
             },
             {
+                "id": "diagnostics.git",
+                "label": "Git Remote Status",
+                "mode": "read_only",
+                "risk": "local_metadata",
+                "available": bool(_find_executable("git")),
+                "description": "Explains local repo root, branch/upstream state, and GitHub Desktop push blockers without fetching, pushing, merging, rebasing, or changing Git settings.",
+            },
+            {
                 "id": "diagnostics.elevation",
                 "label": "Elevation Status",
                 "mode": "execute",
@@ -5296,6 +5304,134 @@ def daily_memory_summary() -> dict[str, Any]:
     }
 
 
+def git_remote_status() -> dict[str, Any]:
+    """Explain Git branch/remote state without changing refs or network state."""
+    git_path = _find_executable("git")
+    base: dict[str, Any] = {
+        "tool": "diagnostics.git",
+        "executed": bool(git_path),
+        "status": "checked" if git_path else "git_not_found",
+        "read_private_content": False,
+        "changed_git_state": False,
+        "ran_fetch": False,
+        "ran_push": False,
+        "ran_merge_or_rebase": False,
+        "git_path": git_path,
+    }
+    if not git_path:
+        return {
+            **base,
+            "reply": "Git status: git is not available on this Mac, so I could not inspect the repository.",
+        }
+
+    root = _git_read_only_command([git_path, "rev-parse", "--show-toplevel"])
+    if root["returncode"] != 0:
+        return {
+            **base,
+            "status": "not_a_git_repo",
+            "root_error": root["stderr"] or root["stdout"],
+            "reply": "Git status: this folder is not currently inside a Git repository.",
+        }
+
+    repo_root = (root["stdout"] or "").strip()
+    branch = (_git_read_only_command([git_path, "branch", "--show-current"])["stdout"] or "").strip()
+    local_head = (_git_read_only_command([git_path, "rev-parse", "--short", "HEAD"])["stdout"] or "").strip()
+    origin_url = (_git_read_only_command([git_path, "remote", "get-url", "origin"])["stdout"] or "").strip()
+    upstream = ""
+    if branch:
+        upstream = (_git_read_only_command([git_path, "for-each-ref", "--format=%(upstream:short)", f"refs/heads/{branch}"])["stdout"] or "").strip()
+    fallback_tracking_ref = f"origin/{branch}" if branch else ""
+    tracking_ref = upstream or fallback_tracking_ref
+    remote_ref_check = _git_read_only_command([git_path, "rev-parse", "--verify", "--quiet", tracking_ref]) if tracking_ref else {"returncode": 1, "stdout": "", "stderr": ""}
+    remote_ref_exists = remote_ref_check["returncode"] == 0 and bool((remote_ref_check["stdout"] or "").strip())
+    remote_head = ""
+    merge_base = ""
+    ahead_count = 0
+    behind_count = 0
+    relationship = "no_remote_tracking"
+    if remote_ref_exists:
+        remote_head = (_git_read_only_command([git_path, "rev-parse", "--short", tracking_ref])["stdout"] or "").strip()
+        merge_base_result = _git_read_only_command([git_path, "merge-base", "HEAD", tracking_ref])
+        merge_base = (merge_base_result["stdout"] or "").strip()
+        count_result = _git_read_only_command([git_path, "rev-list", "--left-right", "--count", f"HEAD...{tracking_ref}"])
+        counts = (count_result["stdout"] or "").split()
+        if len(counts) >= 2:
+            ahead_count = _safe_int(counts[0]) or 0
+            behind_count = _safe_int(counts[1]) or 0
+        if not merge_base:
+            relationship = "unrelated_history"
+        elif ahead_count and behind_count:
+            relationship = "diverged"
+        elif ahead_count:
+            relationship = "ahead"
+        elif behind_count:
+            relationship = "behind"
+        else:
+            relationship = "up_to_date"
+
+    project_root_resolved = str(PROJECT_ROOT.resolve())
+    git_toplevel_resolved = str(Path(repo_root).resolve()) if repo_root else ""
+    repo_scope = {
+        "project_root": str(PROJECT_ROOT),
+        "git_toplevel": repo_root,
+        "project_root_is_git_toplevel": project_root_resolved == git_toplevel_resolved,
+        "root_git_dir_exists": (PROJECT_ROOT / ".git").exists(),
+        "nested_jarvis_git_dir_exists": (PROJECT_ROOT / "jarvis" / ".git").exists(),
+    }
+    desktop_blocker = (
+        relationship == "unrelated_history"
+        and bool(branch)
+        and tracking_ref == fallback_tracking_ref
+        and not upstream
+    )
+    recommended_fixes = []
+    if desktop_blocker:
+        recommended_fixes = [
+            "Push local work to a new remote branch so the old remote branch is preserved.",
+            "Or, after explicit approval, replace the old remote branch with --force-with-lease.",
+        ]
+    elif relationship == "diverged":
+        recommended_fixes = ["Review and reconcile divergent local and remote commits before pushing."]
+    elif relationship == "behind":
+        recommended_fixes = ["Pull or rebase the remote tracking branch before pushing."]
+    elif relationship == "ahead":
+        recommended_fixes = ["Push the local commits to the configured upstream or set an upstream branch."]
+    elif relationship == "no_remote_tracking":
+        recommended_fixes = ["Publish the branch or set an upstream branch."]
+    else:
+        recommended_fixes = ["No branch reconciliation is needed."]
+
+    reply = (
+        f"Git status: the repo root is {repo_root}. Current branch is {branch or 'detached HEAD'} at {local_head or 'unknown'}."
+    )
+    if remote_ref_exists:
+        reply += f" Remote tracking ref {tracking_ref} is at {remote_head or 'unknown'}; relationship is {relationship}."
+    else:
+        reply += " I do not see a remote tracking ref for this branch."
+    if desktop_blocker:
+        reply += " GitHub Desktop's Fetch button cannot reconcile this because the local branch is unpublished locally but a same-named remote branch exists with unrelated older history."
+    reply += " This diagnostic did not fetch, push, merge, rebase, or change Git settings."
+    return {
+        **base,
+        "repo_scope": repo_scope,
+        "repo_root": repo_root,
+        "branch": branch,
+        "local_head": local_head,
+        "origin_url": origin_url,
+        "upstream": upstream,
+        "tracking_ref": tracking_ref if remote_ref_exists else "",
+        "remote_ref_exists": remote_ref_exists,
+        "remote_head": remote_head,
+        "merge_base": merge_base,
+        "relationship": relationship,
+        "ahead_count": ahead_count,
+        "behind_count": behind_count,
+        "github_desktop_blocker": "same_named_remote_unrelated_history" if desktop_blocker else "",
+        "recommended_fixes": recommended_fixes,
+        "reply": reply,
+    }
+
+
 def source_access_status() -> dict[str, Any]:
     """Explain whether this process can see and update the project source tree."""
     running_bundle = _enclosing_app_bundle(Path(__file__).resolve())
@@ -9647,6 +9783,29 @@ def _command_output(args: list[str]) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         return str(exc)
     return (completed.stdout or completed.stderr).strip()
+
+
+def _git_read_only_command(args: list[str]) -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            args,
+            shell=False,
+            cwd=PROJECT_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        return {"returncode": 124, "stdout": "", "stderr": str(error)}
+    except OSError as error:
+        return {"returncode": 127, "stdout": "", "stderr": str(error)}
+    return {
+        "returncode": completed.returncode,
+        "stdout": (completed.stdout or "").strip(),
+        "stderr": (completed.stderr or "").strip(),
+    }
 
 
 def _safe_int(value: Any) -> int | None:

@@ -179,6 +179,7 @@ def run_self_checks() -> dict[str, Any]:
         "voice.stop_speaking",
         "diagnostics.tool_catalog",
         "diagnostics.permissions",
+        "diagnostics.git",
         "memory.daily_summary",
         "voice.stt_audition",
         "voice.stt_candidates",

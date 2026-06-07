@@ -72,6 +72,7 @@ from jarvis.tools import (
     fast_model_status,
     final_qa_plan_status,
     find_files,
+    git_remote_status,
     latest_latency_status,
     launch_status,
     memory_status,
@@ -388,6 +389,8 @@ class PlannerTests(unittest.TestCase):
             "microphone permission readiness": "diagnostics.permissions",
             "remote worker status": "diagnostics.remote_worker",
             "MacBook Air SSH status": "diagnostics.remote_worker",
+            "GitHub Desktop push problem": "diagnostics.git",
+            "why can't GitHub Desktop push": "diagnostics.git",
             "elevation status": "diagnostics.elevation",
             "memory status": "diagnostics.memory",
             "daily memory summary": "memory.daily_summary",
@@ -3161,6 +3164,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("diagnostics.model_context", tool_ids)
         self.assertIn("diagnostics.tool_catalog", tool_ids)
         self.assertIn("diagnostics.permissions", tool_ids)
+        self.assertIn("diagnostics.git", tool_ids)
         self.assertIn("memory.daily_summary", tool_ids)
         self.assertIn("safety.injection_scan", tool_ids)
         self.assertIn("diagnostics.codex_chats", tool_ids)
@@ -6193,6 +6197,42 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(result["codex_cli_available"])
         self.assertEqual(result["codex_version"], "codex-cli 0.137.0-alpha.4")
         self.assertIn("Codex CLI is available", result["reply"])
+
+    def test_git_remote_status_detects_unrelated_same_named_remote_branch(self):
+        git_path = shutil.which("git")
+        if not git_path:
+            self.skipTest("git not available")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            subprocess.run([git_path, "init"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([git_path, "config", "user.email", "jarvis@example.test"], cwd=root, check=True)
+            subprocess.run([git_path, "config", "user.name", "Jarvis Test"], cwd=root, check=True)
+            subprocess.run([git_path, "remote", "add", "origin", "https://github.com/example/Jarvis.git"], cwd=root, check=True)
+            (root / "local.txt").write_text("local\n", encoding="utf-8")
+            subprocess.run([git_path, "add", "local.txt"], cwd=root, check=True)
+            subprocess.run([git_path, "commit", "-m", "local"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([git_path, "checkout", "-b", "codex/jarvis-reliability-hardening"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([git_path, "checkout", "--orphan", "remote-history"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            (root / "local.txt").unlink(missing_ok=True)
+            (root / "remote.txt").write_text("remote\n", encoding="utf-8")
+            subprocess.run([git_path, "add", "remote.txt"], cwd=root, check=True)
+            subprocess.run([git_path, "commit", "-m", "remote"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            remote_hash = subprocess.check_output([git_path, "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            subprocess.run([git_path, "checkout", "codex/jarvis-reliability-hardening"], cwd=root, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([git_path, "update-ref", "refs/remotes/origin/codex/jarvis-reliability-hardening", remote_hash], cwd=root, check=True)
+
+            with patch("jarvis.tools.PROJECT_ROOT", root), patch("jarvis.tools._find_executable", return_value=git_path):
+                result = git_remote_status()
+
+        self.assertEqual(result["tool"], "diagnostics.git")
+        self.assertEqual(result["relationship"], "unrelated_history")
+        self.assertEqual(result["github_desktop_blocker"], "same_named_remote_unrelated_history")
+        self.assertTrue(result["repo_scope"]["project_root_is_git_toplevel"])
+        self.assertFalse(result["ran_fetch"])
+        self.assertFalse(result["ran_push"])
+        self.assertFalse(result["ran_merge_or_rebase"])
+        self.assertIn("new remote branch", " ".join(result["recommended_fixes"]))
+        self.assertIn("GitHub Desktop", result["reply"])
 
     def test_codex_continue_job_does_not_persist_sensitive_followup(self):
         session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
