@@ -5401,6 +5401,25 @@ def git_remote_status() -> dict[str, Any]:
     else:
         recommended_fixes = ["No branch reconciliation is needed."]
 
+    safe_branch_name = f"{branch}-full-root" if branch else "jarvis-full-root"
+    publish_plan = {
+        "plan_only": True,
+        "no_actions_taken": True,
+        "safe_option": {
+            "id": "publish_new_remote_branch",
+            "description": "Preserve the old same-named remote branch and publish this full-root local history to a new branch.",
+            "requires_explicit_approval": False,
+            "command": ["git", "push", "-u", "origin", f"HEAD:{safe_branch_name}"] if origin_url else [],
+        },
+        "replace_option": {
+            "id": "replace_same_named_remote_branch",
+            "description": "Replace the old same-named remote branch with this local full-root history.",
+            "requires_explicit_approval": True,
+            "command": ["git", "push", "--force-with-lease", "-u", "origin", f"HEAD:{branch}"] if branch and origin_url else [],
+        },
+        "recommended_option": "publish_new_remote_branch" if desktop_blocker else "",
+    }
+
     reply = (
         f"Git status: the repo root is {repo_root}. Current branch is {branch or 'detached HEAD'} at {local_head or 'unknown'}."
     )
@@ -5428,6 +5447,7 @@ def git_remote_status() -> dict[str, Any]:
         "behind_count": behind_count,
         "github_desktop_blocker": "same_named_remote_unrelated_history" if desktop_blocker else "",
         "recommended_fixes": recommended_fixes,
+        "publish_plan": publish_plan,
         "reply": reply,
     }
 

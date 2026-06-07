@@ -6232,6 +6232,12 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertFalse(result["ran_push"])
         self.assertFalse(result["ran_merge_or_rebase"])
         self.assertIn("new remote branch", " ".join(result["recommended_fixes"]))
+        self.assertTrue(result["publish_plan"]["plan_only"])
+        self.assertTrue(result["publish_plan"]["no_actions_taken"])
+        self.assertEqual(result["publish_plan"]["recommended_option"], "publish_new_remote_branch")
+        self.assertIn("HEAD:codex/jarvis-reliability-hardening-full-root", result["publish_plan"]["safe_option"]["command"])
+        self.assertTrue(result["publish_plan"]["replace_option"]["requires_explicit_approval"])
+        self.assertIn("--force-with-lease", result["publish_plan"]["replace_option"]["command"])
         self.assertIn("GitHub Desktop", result["reply"])
 
     def test_codex_continue_job_does_not_persist_sensitive_followup(self):
