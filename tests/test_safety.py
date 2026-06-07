@@ -112,6 +112,7 @@ from jarvis.tools import (
     wake_status,
 )
 from jarvis.wake import WakeSession, detect_wake_command
+from scripts import verify_safe
 from scripts.morning_status import (
     MAX_VERIFICATION_AGE_SECONDS as MORNING_MAX_VERIFICATION_AGE_SECONDS,
     base_url_from_environment,
@@ -128,6 +129,52 @@ from scripts.morning_status import (
     verification_action,
     verification_highlights,
 )
+
+
+class VerifySafeScriptTests(unittest.TestCase):
+    def test_temp_app_command_retries_repeated_empty_sigkill_before_passing(self):
+        calls = []
+        failures_remaining = 5
+
+        def fake_run_command(name, args, *, timeout=120, env=None, expect=None, expected_returncode=0):
+            nonlocal failures_remaining
+            calls.append((name, args, timeout, env, expect, expected_returncode))
+            if failures_remaining:
+                failures_remaining -= 1
+                return verify_safe.CheckResult(
+                    name=name,
+                    passed=False,
+                    summary="missing expected text: Permission rows: 5",
+                    returncode=-9,
+                    stdout_tail="",
+                    stderr_tail="",
+                    duration_seconds=0.001,
+                )
+            return verify_safe.CheckResult(
+                name=name,
+                passed=True,
+                summary="passed",
+                returncode=0,
+                stdout_tail="Permission rows: 5",
+                stderr_tail="",
+                duration_seconds=0.001,
+            )
+
+        sleeps = []
+        with patch("scripts.verify_safe.run_command", side_effect=fake_run_command), patch(
+            "scripts.verify_safe.time.sleep", side_effect=sleeps.append
+        ):
+            result = verify_safe.run_temp_app_command(
+                "temporary_app_permission_self_test",
+                ["Jarvis.app/Contents/MacOS/jarvis-menu-bar", "--permission-self-test"],
+                timeout=60,
+                expect="Permission rows: 5",
+            )
+
+        self.assertTrue(result.passed)
+        self.assertIn("retry 5", result.summary)
+        self.assertEqual(len(calls), 6)
+        self.assertEqual(sleeps, [0.5, 1.5, 3.0, 5.0, 8.0])
 
 
 class SafetyPolicyTests(unittest.TestCase):

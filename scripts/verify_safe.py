@@ -28,6 +28,7 @@ from jarvis.config import MAX_REQUEST_BYTES  # noqa: E402
 PYTHON = sys.executable or "python3"
 BASE_URL = os.environ.get("JARVIS_URL") or os.environ.get("JARVIS_BASE_URL") or "http://127.0.0.1:8765"
 REPORT_DIR = PROJECT_ROOT / "runtime" / "verification"
+TEMP_APP_SIGKILL_RETRY_DELAYS = (0.0, 0.5, 1.5, 3.0, 5.0, 8.0)
 
 
 @dataclass
@@ -109,7 +110,7 @@ def run_temp_app_command(
 ) -> CheckResult:
     attempts: list[CheckResult] = []
     total_duration = 0.0
-    for delay in (0.0, 0.5, 1.5, 3.0):
+    for delay in TEMP_APP_SIGKILL_RETRY_DELAYS:
         if delay:
             time.sleep(delay)
             total_duration += delay
