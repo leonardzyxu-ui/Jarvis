@@ -2748,8 +2748,8 @@ class PlannerTests(unittest.TestCase):
         audit_ids = {item["id"] for item in result["requirement_audit"]}
         self.assertIn("stronger_layered_tool_loop", audit_ids)
         self.assertIn("safe_terminal_groundwork", audit_ids)
-        self.assertIn("morning_report", audit_ids)
-        self.assertIn("morning report", result["checks"][1]["proof_needed"])
+        self.assertIn("master_report", audit_ids)
+        self.assertIn("master report", result["checks"][1]["proof_needed"])
         self.assertNotIn("report draft", result["checks"][1]["proof_needed"].lower())
 
     def test_final_qa_plan_status_reports_completed_with_live_evidence(self):
@@ -2771,7 +2771,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual({check["status"] for check in result["checks"]}, {"completed"})
         self.assertIn("Final QA status", result["reply"])
         audit = {item["id"]: item for item in result["requirement_audit"]}
-        self.assertEqual(audit["morning_report"]["status"], "prepared_live_verified")
+        self.assertEqual(audit["master_report"]["status"], "prepared_live_verified")
         self.assertEqual(audit["rebuilt_bundle"]["status"], "available_live_verified")
 
     def test_live_final_qa_uses_tools_endpoint_not_recursive_preflight(self):
@@ -2922,6 +2922,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["tool"], "diagnostics.overnight")
         self.assertEqual(result["status"], "available")
         self.assertTrue(result["artifacts"]["workboard"]["exists"])
+        self.assertTrue(result["artifacts"]["master_report"]["exists"])
         self.assertTrue(result["artifacts"]["morning_report"]["exists"])
         self.assertTrue(result["artifacts"]["stt_audition"]["exists"])
         self.assertFalse(result["opened_browser"])
@@ -2934,9 +2935,9 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("app_opening_groundwork", audit_ids)
         self.assertIn("safe_terminal_groundwork", audit_ids)
         self.assertIn("voice_recognition_audition_prep", audit_ids)
-        self.assertIn("morning_report", audit_ids)
+        self.assertIn("master_report", audit_ids)
         self.assertIn("Workboard:", result["reply"])
-        self.assertIn("morning report", result["reply"])
+        self.assertIn("master report", result["reply"])
         self.assertNotIn("morning report draft", result["reply"].lower())
 
     def test_latest_latency_status_reads_local_smoke_report(self):
@@ -6647,7 +6648,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     "status": "implemented_terminal_verified",
                     "remaining": "Real microphone wake/STT is not enabled yet.",
                 },
-                {"id": "morning_report", "status": "prepared", "remaining": "Foreground visual QA is deferred."},
+                {"id": "master_report", "status": "prepared", "remaining": "Foreground visual QA is deferred."},
                 {"id": "rebuilt_bundle", "status": "available", "remaining": "Live app relaunch is deferred."},
             ]
         )

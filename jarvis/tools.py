@@ -469,7 +469,7 @@ def tool_registry() -> dict[str, Any]:
                 "mode": "read_only",
                 "risk": "local_metadata",
                 "available": True,
-                "description": "Reports the overnight workboard, morning report, and deferred foreground QA paths without opening apps or browsers.",
+                "description": "Reports the overnight workboard, master report, and deferred foreground QA paths without opening apps or browsers.",
             },
             {
                 "id": "diagnostics.final_qa",
@@ -4362,11 +4362,12 @@ def overnight_work_status() -> dict[str, Any]:
     bundle_path = _current_jarvis_bundle_path()
     artifacts = {
         "workboard": _runtime_file_status(workboard_path),
+        "master_report": _runtime_file_status(report_path),
         "morning_report": _runtime_file_status(report_path),
         "stt_audition": _runtime_file_status(stt_path),
     }
     workboard_exists = bool(artifacts["workboard"]["exists"])
-    report_exists = bool(artifacts["morning_report"]["exists"])
+    report_exists = bool(artifacts["master_report"]["exists"])
     if workboard_exists and report_exists:
         status = "available"
     elif workboard_exists or report_exists:
@@ -4383,7 +4384,7 @@ def overnight_work_status() -> dict[str, Any]:
     )
     reply = (
         "Overnight status: the workboard is "
-        f"{'available' if workboard_exists else 'missing'} and the morning report is "
+        f"{'available' if workboard_exists else 'missing'} and the master report is "
         f"{'available' if report_exists else 'missing'}. "
         "I did not open a browser, launch Jarvis, record audio, read private content, or contact the MacBook Air. "
         f"Workboard: {workboard_path}. Report: {report_path}."
@@ -4426,6 +4427,7 @@ def final_qa_plan_status() -> dict[str, Any]:
     bundle_path = _current_jarvis_bundle_path()
     artifacts = {
         "workboard": _runtime_file_status(workboard_path),
+        "master_report": _runtime_file_status(report_path),
         "morning_report": _runtime_file_status(report_path),
         "stt_audition": _runtime_file_status(stt_path),
     }
@@ -4450,7 +4452,7 @@ def final_qa_plan_status() -> dict[str, Any]:
             "status": "deferred",
             "requires_foreground": True,
             "surface": str(report_path),
-            "proof_needed": "Open the morning report and verify the latest commit, bundle, tests, and remaining-risk sections are readable.",
+            "proof_needed": "Open the master report and verify the latest commit, bundle, tests, and remaining-risk sections are readable.",
         },
         {
             "id": "stt_audition_visual_qa",
@@ -4718,7 +4720,7 @@ def _overnight_requirement_audit(
     bundle_metadata: dict[str, Any] | None,
     live_qa: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    html_ready = all(bool(artifacts.get(key, {}).get("exists")) for key in ("workboard", "morning_report", "stt_audition"))
+    html_ready = all(bool(artifacts.get(key, {}).get("exists")) for key in ("workboard", "master_report", "stt_audition"))
     version = str(bundle_metadata.get("version") or "unknown") if bundle_metadata else "unknown"
     build = str(bundle_metadata.get("build") or "unknown") if bundle_metadata else "unknown"
     live_checks = {check.get("id"): check for check in (live_qa or {}).get("checks", []) if isinstance(check, dict)}
@@ -4760,7 +4762,7 @@ def _overnight_requirement_audit(
             "remaining": "Real microphone wake/STT is not enabled yet.",
         },
         {
-            "id": "morning_report",
+            "id": "master_report",
             "status": "prepared_live_verified" if html_visual_verified else ("prepared" if html_ready else "partial"),
             "evidence": ["runtime/overnight_status/index.html", "runtime/overnight_status/report.html", "loopback HTML checks"],
             "remaining": "Visual HTML QA is complete." if html_visual_verified else "Foreground visual QA is deferred.",
@@ -4880,7 +4882,7 @@ def capabilities_status() -> dict[str, Any]:
         {
             "id": "overnight_workboard",
             "status": "working" if (PROJECT_ROOT / "runtime" / "overnight_status" / "index.html").exists() else "not_built",
-            "summary": "The overnight progress workboard and morning report have a read-only status route so Jarvis can show their paths without opening anything.",
+            "summary": "The overnight progress workboard and master report have a read-only status route so Jarvis can show their paths without opening anything.",
             "test_prompt": "overnight status",
             "needs_leo": False,
         },

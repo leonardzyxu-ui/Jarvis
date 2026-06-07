@@ -59,7 +59,7 @@ REQUIREMENT_AUDIT_IDS = {
     "app_opening_groundwork",
     "safe_terminal_groundwork",
     "voice_recognition_audition_prep",
-    "morning_report",
+    "master_report",
     "rebuilt_bundle",
 }
 REQUIREMENT_STATUS_LABELS = {
