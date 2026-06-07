@@ -388,7 +388,9 @@ final class JarvisShellModel: ObservableObject {
             }
             let response: CommandResponse
             if Self.shouldUseNativeOutlookRead(commandText) {
-                _ = appendJarvisMessage(text: "Yes sir, checking what Outlook is showing now.", detail: "Working")
+                let statusText = "Yes sir, checking what Outlook is showing now."
+                _ = appendJarvisMessage(text: statusText, detail: "Working")
+                _ = try? await client.speakStatus(statusText)
                 response = try await runNativeOutlookRead(commandText)
             } else {
                 var streamedReply = ""
@@ -1474,6 +1476,9 @@ final class JarvisShellModel: ObservableObject {
         ]
         if let result = response.result {
             payload["result"] = result.anyValue
+        }
+        if let speech = response.speech {
+            payload["speech"] = speech.anyValue
         }
         if let assessment = response.assessment {
             payload["assessment"] = [

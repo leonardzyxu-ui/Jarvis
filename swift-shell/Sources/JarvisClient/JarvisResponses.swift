@@ -9,6 +9,15 @@ public struct CommandResponse: Decodable, Sendable {
     public let confirmation: Confirmation?
     public let assessment: SafetyAssessment?
     public let auditEventId: String?
+    public let speech: JSONValue?
+}
+
+public struct SpeechStatusResponse: Decodable, Sendable {
+    public let tool: String?
+    public let status: String?
+    public let executed: Bool?
+    public let textLength: Int?
+    public let speech: JSONValue?
 }
 
 public struct Confirmation: Decodable, Sendable {

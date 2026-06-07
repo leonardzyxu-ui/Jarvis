@@ -305,7 +305,19 @@ class JarvisServer:
             },
         )
         data["audit_event_id"] = event.id
+        _attach_auto_speech(data, reason="final")
         return data
+
+    def speak_status(self, text: str) -> dict[str, Any]:
+        clean_text = str(text or "").strip()[:500]
+        speech = speak_text_async(clean_text, reason="status")
+        return {
+            "tool": "voice.status_speech",
+            "status": str(speech.get("status") or "unknown"),
+            "executed": bool(speech.get("spoken")),
+            "text_length": len(clean_text),
+            "speech": speech,
+        }
 
     def plan(self, command: str) -> dict[str, Any]:
         return self.planner.preview(command).to_dict()
@@ -761,6 +773,21 @@ class RequestHandler(BaseHTTPRequestHandler):
                     diagnostics=diagnostics,
                 )
             )
+            return
+        if route.path == "/api/speech/status":
+            try:
+                payload = self._read_json_payload()
+                text = str(payload.get("text", ""))
+            except RequestBodyTooLarge:
+                self._send_json({"error": "Request body too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                return
+            except UnsupportedContentType:
+                self._send_json({"error": "Content-Type must be application/json"}, status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+                return
+            except (TypeError, ValueError, UnicodeDecodeError) as exc:
+                self._send_json({"error": f"Invalid JSON: {exc}"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._send_json(STATE.speak_status(text))
             return
         if route.path == "/api/command/stream":
             try:

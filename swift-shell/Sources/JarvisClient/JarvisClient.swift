@@ -232,6 +232,22 @@ public struct JarvisClient: Sendable {
         return try await perform(request, as: CommandResponse.self)
     }
 
+    public func speakStatus(_ text: String) async throws -> SpeechStatusResponse {
+        let url = baseURL
+            .appendingPathComponent("api")
+            .appendingPathComponent("speech")
+            .appendingPathComponent("status")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = Self.quickTimeout
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: ["text": String(text.prefix(500))],
+            options: []
+        )
+        return try await perform(request, as: SpeechStatusResponse.self)
+    }
+
     private func get<T: Decodable>(_ path: [String], as type: T.Type) async throws -> T {
         let url = path.reduce(baseURL) { partial, component in
             partial.appendingPathComponent(component)

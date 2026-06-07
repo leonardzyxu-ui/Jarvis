@@ -5484,7 +5484,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
             with patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events), \
                  patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock, \
-                 patch("jarvis.server.speak_text_async", return_value={"spoken": True, "status": "queued", "reason": "status"}) as speak_mock:
+                 patch("jarvis.server.speak_text_async", side_effect=lambda text, *, reason: {"spoken": True, "status": "queued", "reason": reason}) as speak_mock:
                 events = list(server.stream_command("please check my email"))
 
         self.assertEqual([event["event"] for event in events], ["status", "final"])
@@ -5493,8 +5493,36 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(events[0]["data"]["speech"]["spoken"])
         self.assertEqual(events[-1]["data"]["tool"], "outlook.visible_summary")
         self.assertEqual(events[-1]["data"]["result"]["status"], "checked")
+        self.assertEqual(events[-1]["data"]["speech"]["reason"], "final")
         self.assertEqual(mail_mock.call_args.kwargs["selection"], "index:2")
         speak_mock.assert_any_call("Yes sir, checking your second email now.", reason="status")
+        speak_mock.assert_any_call("Checked email without reading a real mailbox in this test.", reason="final")
+
+    def test_native_outlook_visible_text_endpoint_speaks_final_reply(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = JarvisServer()
+            server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
+            with patch("jarvis.server.speak_text_async", return_value={"spoken": True, "status": "queued", "reason": "final"}) as speak_mock:
+                response = server.native_outlook_visible_text(
+                    command="read the visible Outlook screen",
+                    text="Inbox\nVisible sender\nVisible subject\nVisible body text",
+                    diagnostics={"source": "native_vision_ocr", "ocr_engine": "apple_vision", "line_count": 4},
+                )
+
+        self.assertEqual(response["tool"], "outlook.visible_summary")
+        self.assertEqual(response["speech"]["reason"], "final")
+        speak_mock.assert_called_once()
+        self.assertIn("visible Outlook window", speak_mock.call_args.args[0])
+
+    def test_status_speech_endpoint_uses_status_reason(self):
+        server = JarvisServer()
+        with patch("jarvis.server.speak_text_async", return_value={"spoken": True, "status": "queued", "reason": "status"}) as speak_mock:
+            response = server.speak_status("Yes sir, checking your email now.")
+
+        self.assertEqual(response["tool"], "voice.status_speech")
+        self.assertTrue(response["executed"])
+        self.assertEqual(response["speech"]["reason"], "status")
+        speak_mock.assert_called_once_with("Yes sir, checking your email now.", reason="status")
 
     def test_stream_command_passes_history_to_fast_chat_without_router_delay(self):
         fake_events = [
