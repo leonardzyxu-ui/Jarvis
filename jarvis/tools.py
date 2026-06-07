@@ -3865,6 +3865,12 @@ def _model_context_preview_text(text: str, *, max_chars: int = 700) -> str:
     preview = redact_sensitive_text(str(text or ""))
     preview = preview.replace(REMOTE_WORKER_SSH_TARGET, "[REDACTED_REMOTE_TARGET]")
     preview = preview.replace(REMOTE_WORKER_HOST, "[REDACTED_REMOTE_HOST]")
+    preview = re.sub(
+        r"(?i)\b(?:secret|safety|approval)\s+code\s*(?:is|:)?\s*\d{4,8}\b",
+        "[REDACTED_CODE]",
+        preview,
+    )
+    preview = re.sub(r"\b\d{6}\b", "[REDACTED_CODE]", preview)
     preview = re.sub(r"\s+", " ", preview).strip()
     if len(preview) > max_chars:
         return preview[: max(0, max_chars - 12)].rstrip() + " [truncated]"
@@ -3879,6 +3885,7 @@ def model_context_status(
 ) -> dict[str, Any]:
     """Show what Jarvis would feed its model layers without calling them."""
     prompt = re.sub(r"\s+", " ", str(sample_prompt or "hello Jarvis")).strip()[:240] or "hello Jarvis"
+    redacted_prompt = _model_context_preview_text(prompt, max_chars=240) or "hello Jarvis"
     history_items = list(history or [])[-6:]
     fast_messages = _fast_chat_messages(prompt, history=history_items, tool_specs=tool_specs)
     fast_preview = [
@@ -3923,24 +3930,132 @@ def model_context_status(
         "user_visible_status_example": "Yes sir, checking your email now.",
         "machine_call_example": "\\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"unread_first\"}})",
     }
+    model_input_trace = [
+        {
+            "layer": "first_model",
+            "called_in_this_diagnostic": False,
+            "trigger": "Every ordinary Jarvis chat request starts here.",
+            "receives": {
+                "system_prompt": "Jarvis persona, Leo profile context, local date/time, spoken-output rules, dictation tolerance, history-use rule, and tool-call contract.",
+                "conversation_history_items": len(history_items),
+                "current_user_message_preview": redacted_prompt,
+                "tool_catalog_ids": tool_ids,
+                "message_count": len(fast_messages),
+            },
+            "must_do": [
+                "Answer directly when no real tool is needed.",
+                "Use conversation history for follow-ups.",
+                "When a real tool is needed, put natural visible words before exactly one hidden machine call.",
+                "Keep visible words natural because they may be spoken aloud.",
+            ],
+            "must_not_do": [
+                "Do not mention internal routing in normal visible text.",
+                "Do not claim app, email, file, schedule, weather, or system facts unless a tool result provides them.",
+                "Do not expose hidden tool-call syntax to the user-facing transcript or TTS.",
+            ],
+            "expected_outputs": ["direct_visible_answer", "visible_status_plus_hidden_tool_call"],
+        },
+        {
+            "layer": "stream_parser",
+            "called_in_this_diagnostic": False,
+            "trigger": "Only if the first model emits a hidden tool call.",
+            "receives": {
+                "raw_first_model_text": "Visible words plus a possible hidden machine call.",
+                "hidden_call_syntax": stream_tool_flow["hidden_call_syntax"],
+            },
+            "does": [
+                "Extracts selected_tool and entities.",
+                "Keeps the visible status text.",
+                "Removes the hidden call before display and speech.",
+                "Routes every selected tool through Planner.handle_selected_tool and policy gates.",
+            ],
+            "user_visible_effect": "Leo sees and hears only the natural visible text, such as 'Yes sir, checking your email now.'",
+        },
+        {
+            "layer": "middle_planner",
+            "called_in_this_diagnostic": False,
+            "trigger": "Only when the first model asks for broader planning through tools.more or a preview path needs the middle layer.",
+            "receives": {
+                "planner_prompt_preview": _model_context_preview_text(middle_prompt, max_chars=900),
+                "conversation_history_items": len(history_items),
+                "tool_count": len(_middle_tool_catalog_ids()),
+                "tool_catalog_ids": _middle_tool_catalog_ids(),
+            },
+            "must_return": "JSON only, with recommended_tool, confidence, entities, user_status, reason, and safety.",
+            "cannot_execute": True,
+            "safe_followthrough_limit": stream_tool_flow["safe_followthrough_limit"],
+        },
+        {
+            "layer": "tool_execution_policy",
+            "called_in_this_diagnostic": False,
+            "trigger": "After a tool ID is selected by the first model, middle planner, or deterministic planner.",
+            "receives": {
+                "selected_tool": "tool.id",
+                "entities": {},
+                "original_user_request_preview": redacted_prompt,
+            },
+            "does": [
+                "Runs command safety classification first.",
+                "Returns confirmation objects for protected actions.",
+                "Executes only routes that are implemented and policy-allowed.",
+                "Keeps planned private reads and app-control routes disabled until they are explicitly implemented and tested.",
+            ],
+        },
+        {
+            "layer": "codex",
+            "called_in_this_diagnostic": False,
+            "trigger": "Only for explicit or selected deep code/project/review/build delegation.",
+            "receives": {
+                "model": DEFAULT_CODEX_MODEL,
+                "reasoning_effort": DEFAULT_CODEX_REASONING_EFFORT,
+                "prompt_preview": _model_context_preview_text(codex_prompt, max_chars=900),
+                "jarvis_generated_marker": "This is a Jarvis-generated prompt.",
+            },
+            "does_not_start_from_this_diagnostic": True,
+        },
+        {
+            "layer": "tts",
+            "called_in_this_diagnostic": False,
+            "trigger": "Only after Jarvis has visible status text or final visible answer text.",
+            "receives": {
+                "provider": _normalize_tts_provider(TTS_PROVIDER),
+                "status_speech_enabled": TTS_SPEAK_STATUS,
+                "automatic_final_speech_enabled": TTS_AUTOMATIC_ENABLED,
+                "sample_sanitized_input": sample_tts_reply,
+            },
+            "sanitizes": [
+                "URLs become 'a link'.",
+                "Email addresses become 'an email address'.",
+                "Markdown-heavy bullets, labels, and punctuation are simplified for speech.",
+                "Hidden tool calls never enter TTS.",
+            ],
+        },
+    ]
     reply = (
-        f"Model context preview for '{prompt}': fast chat would receive {len(fast_messages)} messages, "
+        f"Model context preview for '{redacted_prompt}': fast chat would receive {len(fast_messages)} messages, "
         f"the middle planner would receive one JSON-planning prompt with {len(_middle_tool_catalog_ids())} tools, "
         "Codex would receive a Jarvis-generated prompt only for deep delegated work, TTS would receive sanitized final visible text, "
-        "and streamed tool calls would be parsed as hidden machine calls before any selected tool is routed through policy. "
+        "and the model input trace now shows each layer's inputs, output contract, speech handling, and execution gate. "
         "No model was called and no audio was played."
     )
     return {
         "tool": "diagnostics.model_context",
         "executed": True,
         "status": "previewed",
-        "sample_prompt": prompt,
+        "sample_prompt": redacted_prompt,
         "read_private_content": False,
         "called_fast_model": False,
         "called_middle_model": False,
         "called_codex": False,
         "played_audio": False,
         "redacted": True,
+        "model_input_trace": model_input_trace,
+        "redaction_policy": {
+            "prompt_previews_are_redacted": True,
+            "remote_worker_target_redacted": True,
+            "sensitive_text_redacted": True,
+            "hidden_tool_calls_removed_before_display_and_tts": True,
+        },
         "fast_chat": {
             "backend": FAST_MODEL_BACKEND,
             "model": FAST_MODEL_NAME,

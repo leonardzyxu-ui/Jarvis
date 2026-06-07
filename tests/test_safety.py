@@ -2618,6 +2618,21 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result["called_codex"])
         self.assertFalse(result["played_audio"])
         self.assertTrue(result["redacted"])
+        self.assertEqual(
+            [item["layer"] for item in result["model_input_trace"]],
+            ["first_model", "stream_parser", "middle_planner", "tool_execution_policy", "codex", "tts"],
+        )
+        self.assertFalse(any(item["called_in_this_diagnostic"] for item in result["model_input_trace"]))
+        self.assertEqual(
+            result["model_input_trace"][0]["receives"]["current_user_message_preview"],
+            "hello Jarvis",
+        )
+        self.assertIn("visible_status_plus_hidden_tool_call", result["model_input_trace"][0]["expected_outputs"])
+        self.assertTrue(result["model_input_trace"][1]["user_visible_effect"].startswith("Leo sees"))
+        self.assertTrue(result["model_input_trace"][2]["cannot_execute"])
+        self.assertTrue(result["model_input_trace"][4]["does_not_start_from_this_diagnostic"])
+        self.assertIn("Hidden tool calls never enter TTS.", result["model_input_trace"][5]["sanitizes"])
+        self.assertTrue(result["redaction_policy"]["hidden_tool_calls_removed_before_display_and_tts"])
         self.assertEqual(result["fast_chat"]["tool_catalog_ids"], ["outlook.visible_summary", "app.open"])
         self.assertEqual(result["fast_chat"]["message_count"], 4)
         self.assertIn("hello Jarvis", result["fast_chat"]["messages"][-1]["preview"])
@@ -2634,6 +2649,14 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("This is a Jarvis-generated prompt.", result["codex"]["jarvis_generated_marker"])
         self.assertEqual(result["tts"]["sample_input"], "Hello sir. What would you like me to do?")
         self.assertNotIn("254118", str(result))
+
+    def test_model_context_status_redacts_numeric_code_shape(self):
+        result = model_context_status("hello Jarvis 123456")
+
+        self.assertEqual(result["sample_prompt"], "hello Jarvis [REDACTED_CODE]")
+        self.assertNotIn("123456", json.dumps(result))
+        self.assertIn("[REDACTED_CODE]", result["model_input_trace"][0]["receives"]["current_user_message_preview"])
+        self.assertTrue(result["redaction_policy"]["sensitive_text_redacted"])
 
     def test_tool_catalog_status_compares_model_tools_and_registry(self):
         tool_specs = [
