@@ -103,6 +103,8 @@ PIPER_WORKER_STARTED_AT: float | None = None
 PIPER_WORKER_LAST_EVENT: dict[str, Any] | None = None
 PIPER_WORKER_ACTIVE_ID: str | None = None
 PIPER_WORKER_SPEECH_EVENTS: dict[str, dict[str, Any]] = {}
+PIPER_WORKER_EVENT_LOG: list[dict[str, Any]] = []
+PIPER_WORKER_EVENT_LOG_LIMIT = 30
 CODEX_JOBS: dict[str, dict[str, Any]] = {}
 CODEX_JOBS_LOCK = threading.Lock()
 CODEX_JOBS_LOADED = False
@@ -1309,6 +1311,11 @@ def _record_piper_worker_event(event: dict[str, Any]) -> None:
     speech_id = str(event.get("id") or "")
     with PIPER_WORKER_LOCK:
         PIPER_WORKER_LAST_EVENT = event
+        event_record = dict(event)
+        event_record["recorded_at"] = time.time()
+        PIPER_WORKER_EVENT_LOG.append(event_record)
+        if len(PIPER_WORKER_EVENT_LOG) > PIPER_WORKER_EVENT_LOG_LIMIT:
+            del PIPER_WORKER_EVENT_LOG[: len(PIPER_WORKER_EVENT_LOG) - PIPER_WORKER_EVENT_LOG_LIMIT]
         if event_name == "ready":
             PIPER_WORKER_READY = True
             try:
@@ -1436,6 +1443,7 @@ def _piper_worker_status() -> dict[str, Any]:
             "uptime_seconds": uptime,
             "active_id": PIPER_WORKER_ACTIVE_ID,
             "last_event": PIPER_WORKER_LAST_EVENT,
+            "recent_events": list(PIPER_WORKER_EVENT_LOG[-PIPER_WORKER_EVENT_LOG_LIMIT:]),
         }
 
 

@@ -4201,6 +4201,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             jarvis_tools.PIPER_WORKER_READY = False
             jarvis_tools.PIPER_WORKER_ACTIVE_ID = None
             jarvis_tools.PIPER_WORKER_SPEECH_EVENTS.clear()
+            jarvis_tools.PIPER_WORKER_EVENT_LOG.clear()
 
         self.assertTrue(first["spoken"])
         self.assertEqual(first["status"], "queued")
@@ -4252,6 +4253,29 @@ class RuntimeSurfaceTests(unittest.TestCase):
             jarvis_tools.PIPER_WORKER_READY = False
             jarvis_tools.PIPER_WORKER_ACTIVE_ID = None
             jarvis_tools.PIPER_WORKER_SPEECH_EVENTS.clear()
+            jarvis_tools.PIPER_WORKER_EVENT_LOG.clear()
+
+    def test_piper_worker_status_keeps_bounded_recent_event_timeline(self):
+        jarvis_tools.PIPER_WORKER_EVENT_LOG.clear()
+        jarvis_tools.PIPER_WORKER_LAST_EVENT = None
+        try:
+            for index in range(35):
+                jarvis_tools._record_piper_worker_event(
+                    {"event": "done", "id": f"speech-{index}", "chunks_played": index}
+                )
+
+            status = jarvis_tools._piper_worker_status()
+        finally:
+            jarvis_tools.PIPER_WORKER_EVENT_LOG.clear()
+            jarvis_tools.PIPER_WORKER_LAST_EVENT = None
+            jarvis_tools.PIPER_WORKER_ACTIVE_ID = None
+            jarvis_tools.PIPER_WORKER_SPEECH_EVENTS.clear()
+
+        self.assertEqual(len(status["recent_events"]), 30)
+        self.assertEqual(status["recent_events"][0]["id"], "speech-5")
+        self.assertEqual(status["recent_events"][-1]["id"], "speech-34")
+        self.assertEqual(status["last_event"]["id"], "speech-34")
+        self.assertIn("recorded_at", status["recent_events"][-1])
 
     def test_warm_piper_worker_stop_waits_for_player_exit(self):
         class FakePlayer:
