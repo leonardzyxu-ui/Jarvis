@@ -125,6 +125,7 @@ APP_SEARCH_DIRS = [
     Path("/System/Applications/Utilities"),
     Path.home() / "Applications",
 ]
+JARVIS_BUILD_ARCHIVE_DIR = Path.home() / "Library" / "Application Support" / "Jarvis" / "Builds"
 APP_NAME_ALIASES = {
     "calendar": "Calendar",
     "chrome": "Google Chrome",
@@ -550,6 +551,14 @@ def tool_registry() -> dict[str, Any]:
                 "risk": "local_metadata",
                 "available": bool(_find_executable("git")),
                 "description": "Explains local repo root, branch/upstream state, and GitHub Desktop push blockers without fetching, pushing, merging, rebasing, or changing Git settings.",
+            },
+            {
+                "id": "diagnostics.app_identity",
+                "label": "App Identity Status",
+                "mode": "read_only",
+                "risk": "local_app_metadata",
+                "available": True,
+                "description": "Reports duplicate app bundle identifiers for a named app, including old Jarvis builds, without launching apps or changing files.",
             },
             {
                 "id": "diagnostics.elevation",
@@ -2088,6 +2097,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "screen.ocr", "kind": "planned_private_read", "description": "Future permission-gated screen OCR/find-text route; do not capture or read the screen until enabled."},
         {"id": "diagnostics.model_context", "kind": "read_only", "description": "Preview model prompts/message shapes without calling any model."},
         {"id": "diagnostics.tool_catalog", "kind": "read_only", "description": "Compare model-callable tool specs against the public registry."},
+        {"id": "diagnostics.app_identity", "kind": "read_only", "description": "Report duplicate app bundle identifiers and current app bundle metadata without launching apps or changing files."},
         {"id": "tools.deep_catalog", "kind": "read_only", "description": "Inspect the deeper grouped tool catalog for layered planning; catalog lookup only, no execution."},
         {"id": "tools.handoff_plan", "kind": "read_only_plan", "description": "Explain how a selected tool would route through policy before any execution."},
         {"id": "diagnostics.permissions", "kind": "read_only", "description": "Report privacy-permission readiness without prompting or changing settings."},
@@ -2302,6 +2312,117 @@ def app_list(search_dirs: list[Path] | None = None, *, limit: int = 80) -> dict[
         "extra_count": len(extra_apps),
         "reply": reply,
     }
+
+
+def app_identity_status(app_name: str = "Jarvis", search_dirs: list[Path] | None = None, *, limit: int = 120) -> dict[str, Any]:
+    name = _resolve_app_name(app_name or "Jarvis")
+    directories = search_dirs or [*APP_SEARCH_DIRS, PROJECT_ROOT / "output", JARVIS_BUILD_ARCHIVE_DIR]
+    bundles: list[dict[str, Any]] = []
+    seen_paths: set[str] = set()
+    for directory in directories:
+        recursive = directory == JARVIS_BUILD_ARCHIVE_DIR or directory.name == "Builds"
+        for candidate in _iter_app_identity_bundles(directory, recursive=recursive):
+            path_text = str(candidate)
+            if path_text in seen_paths:
+                continue
+            seen_paths.add(path_text)
+            metadata = _read_app_bundle_metadata(candidate)
+            if not _app_identity_matches(name, metadata):
+                continue
+            bundles.append(metadata)
+            if len(bundles) >= limit:
+                break
+        if len(bundles) >= limit:
+            break
+
+    by_bundle_id: dict[str, list[dict[str, Any]]] = {}
+    for item in bundles:
+        bundle_id = str(item.get("bundle_id") or "")
+        by_bundle_id.setdefault(bundle_id or "(missing)", []).append(item)
+    duplicate_bundle_ids = [
+        {
+            "bundle_id": bundle_id,
+            "count": len(items),
+            "paths": [str(item.get("path") or "") for item in items[:20]],
+        }
+        for bundle_id, items in sorted(by_bundle_id.items())
+        if len(items) > 1
+    ]
+    current_bundle = str((PROJECT_ROOT / "output" / "Jarvis.app").resolve())
+    current_matches = [item for item in bundles if str(Path(str(item.get("path") or "")).resolve()) == current_bundle]
+    duplicate_count = sum(item["count"] for item in duplicate_bundle_ids)
+    status = "duplicates_found" if duplicate_bundle_ids else "unique_or_not_found"
+    reply = (
+        f"App identity: found {len(bundles)} {name} app bundle"
+        f"{'s' if len(bundles) != 1 else ''}; {duplicate_count} bundle entries share duplicate identifiers. "
+        "I did not open apps, inspect windows, read UI content, or change files."
+    )
+    return {
+        "tool": "diagnostics.app_identity",
+        "executed": True,
+        "status": status,
+        "app": name,
+        "search_dirs": [str(directory) for directory in directories],
+        "bundle_count": len(bundles),
+        "bundles": bundles[:limit],
+        "duplicate_bundle_ids": duplicate_bundle_ids,
+        "duplicate_entry_count": duplicate_count,
+        "current_output_bundle": current_bundle,
+        "current_output_bundle_found": bool(current_matches),
+        "read_private_content": False,
+        "opened_app": False,
+        "launched_app": False,
+        "focused_app": False,
+        "captured_screen": False,
+        "changed_files": False,
+        "reply": reply,
+    }
+
+
+def _iter_app_identity_bundles(directory: Path, *, recursive: bool) -> list[Path]:
+    try:
+        if not directory.exists() or not directory.is_dir():
+            return []
+        if recursive:
+            return sorted(directory.rglob("*.app"))[:120]
+        return sorted(directory.glob("*.app"))
+    except OSError:
+        return []
+
+
+def _read_app_bundle_metadata(bundle_path: Path) -> dict[str, Any]:
+    info_plist = bundle_path / "Contents" / "Info.plist"
+    plist: dict[str, Any] = {}
+    plist_error = ""
+    try:
+        with info_plist.open("rb") as handle:
+            plist = plistlib.load(handle)
+    except FileNotFoundError:
+        plist_error = "Info.plist not found"
+    except (OSError, plistlib.InvalidFileException) as error:
+        plist_error = str(error)
+    return {
+        "path": str(bundle_path),
+        "name": bundle_path.stem,
+        "display_name": str(plist.get("CFBundleDisplayName") or plist.get("CFBundleName") or bundle_path.stem),
+        "bundle_id": str(plist.get("CFBundleIdentifier") or ""),
+        "executable": str(plist.get("CFBundleExecutable") or ""),
+        "version": str(plist.get("CFBundleShortVersionString") or ""),
+        "build": str(plist.get("CFBundleVersion") or ""),
+        "plist_error": plist_error,
+    }
+
+
+def _app_identity_matches(app_name: str, metadata: dict[str, Any]) -> bool:
+    target = _resolve_app_name(app_name or "Jarvis").casefold()
+    names = {
+        str(metadata.get("name") or "").casefold(),
+        str(metadata.get("display_name") or "").casefold(),
+    }
+    bundle_id = str(metadata.get("bundle_id") or "").casefold()
+    if target == "jarvis" and bundle_id == "local.leo.jarvis":
+        return True
+    return target in names
 
 
 def _app_executable_names(app_name: str, matches: list[str]) -> list[str]:

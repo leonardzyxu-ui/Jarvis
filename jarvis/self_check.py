@@ -90,6 +90,7 @@ def run_self_checks() -> dict[str, Any]:
     add("planner_deep_tool_catalog_routes", planner.handle("deep tool catalog").tool == "tools.deep_catalog")
     add("planner_tool_handoff_plan_routes", planner.handle("handoff plan for app.open").tool == "tools.handoff_plan")
     add("planner_permissions_routes", planner.handle("permissions status").tool == "diagnostics.permissions")
+    add("planner_app_identity_routes", planner.handle("Jarvis app identity status").tool == "diagnostics.app_identity")
     add("planner_daily_memory_summary_routes", planner.handle("daily memory summary").tool == "memory.daily_summary")
     add("planner_final_qa_routes", planner.handle("final QA plan").tool == "diagnostics.final_qa")
     add("planner_ui_overlay_routes", planner.handle_selected_tool("plan Jarvis overlay", "ui.overlay", {"mode": "normal"}).tool == "ui.overlay")
@@ -182,6 +183,7 @@ def run_self_checks() -> dict[str, Any]:
         "diagnostics.tool_catalog",
         "diagnostics.permissions",
         "diagnostics.git",
+        "diagnostics.app_identity",
         "memory.daily_summary",
         "voice.stt_audition",
         "voice.stt_candidates",

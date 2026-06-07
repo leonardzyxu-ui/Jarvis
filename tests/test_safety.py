@@ -56,6 +56,7 @@ from jarvis.server import (
 from jarvis.tools import (
     app_availability,
     app_frontmost,
+    app_identity_status,
     app_list,
     app_running,
     app_quit_plan,
@@ -394,6 +395,8 @@ class PlannerTests(unittest.TestCase):
             "MacBook Air SSH status": "diagnostics.remote_worker",
             "GitHub Desktop push problem": "diagnostics.git",
             "why can't GitHub Desktop push": "diagnostics.git",
+            "Jarvis app identity status": "diagnostics.app_identity",
+            "why is Mac Control confused by Jarvis": "diagnostics.app_identity",
             "elevation status": "diagnostics.elevation",
             "memory status": "diagnostics.memory",
             "daily memory summary": "memory.daily_summary",
@@ -3150,6 +3153,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("app.running", tool_ids)
         self.assertIn("app.frontmost", tool_ids)
         self.assertIn("app.quit", tool_ids)
+        self.assertIn("diagnostics.app_identity", tool_ids)
         self.assertIn("screen.ocr", tool_ids)
         self.assertIn("ui.automation", tool_ids)
         self.assertIn("conversation.fast_local", tool_ids)
@@ -4608,6 +4612,50 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertFalse(result["read_ui_text"])
         self.assertIn("did not read window titles", result["reply"])
         run_mock.assert_called_once()
+
+    def test_app_identity_status_reports_duplicate_bundle_ids_without_changing_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "output" / "Jarvis.app" / "Contents"
+            old = root / "Builds" / "Jarvis-122.app" / "Contents"
+            nested = root / "Builds" / "Jarvis-108" / "Jarvis.app" / "Contents"
+            other = root / "Other.app" / "Contents"
+            for contents, display, bundle_id, build in (
+                (current, "Jarvis", "local.leo.jarvis", "199"),
+                (old, "Jarvis", "local.leo.jarvis", "122"),
+                (nested, "Jarvis", "local.leo.jarvis", "108"),
+                (other, "Other", "local.other", "1"),
+            ):
+                contents.mkdir(parents=True)
+                with (contents / "Info.plist").open("wb") as handle:
+                    plistlib.dump(
+                        {
+                            "CFBundleDisplayName": display,
+                            "CFBundleName": display,
+                            "CFBundleIdentifier": bundle_id,
+                            "CFBundleExecutable": display,
+                            "CFBundleVersion": build,
+                        },
+                        handle,
+                    )
+
+            with patch("jarvis.tools.PROJECT_ROOT", root):
+                result = app_identity_status("Jarvis", search_dirs=[root / "output", root / "Builds"])
+
+        self.assertEqual(result["tool"], "diagnostics.app_identity")
+        self.assertEqual(result["status"], "duplicates_found")
+        self.assertEqual(result["bundle_count"], 3)
+        self.assertTrue(result["current_output_bundle_found"])
+        self.assertFalse(result["opened_app"])
+        self.assertFalse(result["launched_app"])
+        self.assertFalse(result["focused_app"])
+        self.assertFalse(result["captured_screen"])
+        self.assertFalse(result["read_private_content"])
+        self.assertFalse(result["changed_files"])
+        duplicate = result["duplicate_bundle_ids"][0]
+        self.assertEqual(duplicate["bundle_id"], "local.leo.jarvis")
+        self.assertEqual(duplicate["count"], 3)
+        self.assertIn("did not open apps", result["reply"])
 
     def test_app_quit_plan_requires_confirmation_without_quitting(self):
         fake_status = {

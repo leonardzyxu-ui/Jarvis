@@ -11,6 +11,7 @@ from .wake import detect_wake_command
 from .tools import (
     app_availability,
     app_frontmost,
+    app_identity_status,
     app_list,
     app_open,
     app_quit_plan,
@@ -324,6 +325,14 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": [],
     },
     {
+        "tool": "diagnostics.app_identity",
+        "description": "Report duplicate macOS app bundle identifiers for Jarvis or another named app without launching apps or changing files.",
+        "entities": ["app_name"],
+        "examples": [
+            'Yes sir, checking the app identity now. \\tool({"tool":"diagnostics.app_identity","entities":{"app_name":"Jarvis"}})',
+        ],
+    },
+    {
         "tool": "memory.daily_summary",
         "description": "Summarize today's local Jarvis-to-Codex daily memory events. This does not read raw Jarvis chat history, expose session IDs, call a model, or sync to another machine.",
         "entities": [],
@@ -553,6 +562,8 @@ class Planner:
             return self._result(text, "diagnostics.memory", "Read Jarvis memory design status without reading chat history.", assessment, memory_status(), True)
         if _looks_like_git_remote_status(lower):
             return self._result(text, "diagnostics.git", "Read Git remote branch status.", assessment, git_remote_status(), True)
+        if _looks_like_app_identity_status(lower):
+            return self._result(text, "diagnostics.app_identity", "Read app identity status.", assessment, app_identity_status(_extract_app_identity_name(text)), True)
         if _looks_like_source_access_status(lower):
             return self._result(text, "diagnostics.source_access", "Read Jarvis source access status.", assessment, source_access_status(), True)
         if _looks_like_tts_status(lower):
@@ -753,6 +764,8 @@ class Planner:
             return self._preview_result(text, "diagnostics.source_access", assessment, True)
         if _looks_like_git_remote_status(lower):
             return self._preview_result(text, "diagnostics.git", assessment, True)
+        if _looks_like_app_identity_status(lower):
+            return self._preview_result(text, "diagnostics.app_identity", assessment, True)
         if _looks_like_tts_status(lower):
             return self._preview_result(text, "diagnostics.tts", assessment, True)
         if _looks_like_screen_status(lower):
@@ -1063,6 +1076,11 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "diagnostics.git", assessment, True, plan={"intent": intent})
             return self._result(text, "diagnostics.git", "Read Git remote branch status.", assessment, git_remote_status(), True)
+        if selected_tool == "diagnostics.app_identity":
+            app_name = _clean_optional_entity(entities.get("app_name")) or _extract_app_identity_name(text)
+            if not execute:
+                return self._preview_result(text, "diagnostics.app_identity", assessment, True, plan={"intent": intent, "app_name": app_name})
+            return self._result(text, "diagnostics.app_identity", "Read app identity status.", assessment, app_identity_status(app_name), True)
         if selected_tool == "memory.daily_summary":
             if not execute:
                 return self._preview_result(text, "memory.daily_summary", assessment, True, plan={"intent": intent})
@@ -1412,6 +1430,14 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
         }
     if recommended == "diagnostics.tool_catalog":
         preview = tool_catalog_status(NATURAL_LANGUAGE_TOOL_SPECS)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended == "diagnostics.app_identity":
+        app_name = _clean_optional_entity(entities.get("app_name")) or _extract_app_identity_name(text)
+        preview = app_identity_status(app_name)
         return {
             "recommended_tool": recommended,
             "executed": False,
@@ -2583,6 +2609,43 @@ def _looks_like_git_remote_status(lower: str) -> bool:
         and any(cue in lower for cue in status_cues)
         and not any(cue in lower for cue in mutation_cues)
     )
+
+
+def _looks_like_app_identity_status(lower: str) -> bool:
+    identity_cues = (
+        "app identity",
+        "bundle identity",
+        "bundle id",
+        "bundle identifier",
+        "duplicate bundle",
+        "duplicate app",
+        "duplicate jarvis",
+        "old jarvis builds",
+        "many jarvis builds",
+        "mac control confused",
+        "computer use confused",
+        "why is mac control",
+        "why is computer use",
+    )
+    status_cues = ("status", "check", "show", "explain", "why", "diagnose", "problem", "confused", "duplicates")
+    mutation_cues = ("delete", "remove", "clean up", "rename", "move", "fix now")
+    return (
+        any(cue in lower for cue in identity_cues)
+        and any(cue in lower for cue in status_cues)
+        and not any(cue in lower for cue in mutation_cues)
+    )
+
+
+def _extract_app_identity_name(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", text.strip())
+    match = re.search(r"(?i)\b(?:for|of)\s+(?:app\s+)?([A-Za-z][A-Za-z0-9 ._-]{0,80})(?:[?.,!;:]|$)", cleaned)
+    if match:
+        app_name = match.group(1).strip(" ._-")
+        if app_name and app_name.lower() not in {"apps", "applications", "bundle", "bundles", "identity", "status"}:
+            return app_name[:120]
+    if re.search(r"(?i)\bjarvis\b", cleaned):
+        return "Jarvis"
+    return "Jarvis"
 
 
 def _looks_like_source_access_status(lower: str) -> bool:
