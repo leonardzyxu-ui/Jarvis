@@ -5285,13 +5285,36 @@ def final_qa_plan_status() -> dict[str, Any]:
 
 
 def _live_final_qa_evidence(*, bundle_path: Path) -> dict[str, Any]:
-    screenshot_paths = {
-        "workboard_visual_qa": PROJECT_ROOT / "output" / "playwright" / "jarvis-overnight-workboard-20260607.png",
-        "morning_report_visual_qa": PROJECT_ROOT / "output" / "playwright" / "jarvis-morning-report-20260607.png",
-        "stt_audition_visual_qa": PROJECT_ROOT / "output" / "playwright" / "jarvis-stt-audition-20260607.png",
+    playwright_dir = PROJECT_ROOT / "output" / "playwright"
+    screenshot_specs = {
+        "workboard_visual_qa": {
+            "patterns": (
+                "jarvis-workboard-*-mobile.png",
+                "jarvis-overnight-workboard-final-*.png",
+                "jarvis-overnight-workboard-*.png",
+            ),
+            "fallback": "jarvis-workboard-latest-mobile.png",
+        },
+        "morning_report_visual_qa": {
+            "patterns": (
+                "jarvis-report-*-mobile.png",
+                "jarvis-morning-report-final-*.png",
+                "jarvis-morning-report-*.png",
+            ),
+            "fallback": "jarvis-report-latest-mobile.png",
+        },
+        "stt_audition_visual_qa": {
+            "patterns": (
+                "jarvis-stt-audition-*-mobile.png",
+                "jarvis-stt-audition-*.png",
+            ),
+            "fallback": "jarvis-stt-audition-latest-mobile.png",
+        },
     }
     checks: list[dict[str, Any]] = []
-    for check_id, path in screenshot_paths.items():
+    for check_id, spec in screenshot_specs.items():
+        patterns = tuple(str(pattern) for pattern in spec["patterns"])
+        path = _latest_playwright_artifact(playwright_dir, patterns) or playwright_dir / str(spec["fallback"])
         status = _runtime_file_status(path)
         completed = bool(status.get("exists")) and int(status.get("bytes") or 0) > 0
         checks.append(
@@ -5300,7 +5323,7 @@ def _live_final_qa_evidence(*, bundle_path: Path) -> dict[str, Any]:
                 "status": "completed" if completed else "pending",
                 "evidence": str(path),
                 "completed_at": status.get("modified_at") if completed else None,
-                "details": status,
+                "details": {**status, "candidate_patterns": list(patterns)},
             }
         )
 
@@ -5371,6 +5394,15 @@ def _live_final_qa_evidence(*, bundle_path: Path) -> dict[str, Any]:
         "complete": all(check["status"] == "completed" for check in checks),
         "checks": checks,
     }
+
+
+def _latest_playwright_artifact(directory: Path, patterns: tuple[str, ...]) -> Path | None:
+    candidates: list[Path] = []
+    for pattern in patterns:
+        candidates.extend(path for path in directory.glob(pattern) if path.is_file())
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
 
 
 def _loopback_json(path: str, *, timeout_seconds: float) -> dict[str, Any]:

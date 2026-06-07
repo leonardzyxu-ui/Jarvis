@@ -3108,6 +3108,66 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(audit["master_report"]["status"], "prepared_live_verified")
         self.assertEqual(audit["rebuilt_bundle"]["status"], "available_live_verified")
 
+    def test_live_final_qa_prefers_latest_playwright_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            screenshots = root / "output" / "playwright"
+            screenshots.mkdir(parents=True)
+            old_workboard = screenshots / "jarvis-overnight-workboard-20260607.png"
+            new_workboard = screenshots / "jarvis-workboard-0412-mobile.png"
+            old_report = screenshots / "jarvis-morning-report-20260607.png"
+            new_report = screenshots / "jarvis-report-0412-mobile.png"
+            old_stt = screenshots / "jarvis-stt-audition-20260607.png"
+            new_stt = screenshots / "jarvis-stt-audition-20260608-mobile.png"
+            for index, path in enumerate([old_workboard, old_report, old_stt, new_workboard, new_report, new_stt], start=1):
+                path.write_bytes(b"png")
+                os.utime(path, (1_780_000_000 + index, 1_780_000_000 + index))
+
+            bundle = root / "output" / "Jarvis.app"
+            worker_root = bundle / "Contents" / "Resources" / "JarvisWorker"
+            worker_source = worker_root / "jarvis" / "tools.py"
+            worker_source.parent.mkdir(parents=True)
+            worker_source.write_text("# bundled worker marker\n", encoding="utf-8")
+            required_tool_ids = jarvis_tools._live_preflight_required_tool_ids()
+
+            def fake_loopback(path: str, *, timeout_seconds: float) -> dict:
+                if path == "/api/health":
+                    return {
+                        "ok": True,
+                        "data": {
+                            "status": {
+                                "runtime": {
+                                    "source": str(worker_source.resolve()),
+                                    "pid": 4321,
+                                }
+                            }
+                        },
+                    }
+                if path == "/api/tools":
+                    return {
+                        "ok": True,
+                        "data": {
+                            "tools": [{"id": tool_id} for tool_id in sorted(required_tool_ids)]
+                        },
+                    }
+                return {"ok": False, "error": f"unexpected path {path}"}
+
+            with patch("jarvis.tools.PROJECT_ROOT", root), \
+                 patch("jarvis.tools._loopback_json", side_effect=fake_loopback), \
+                 patch("jarvis.tools._pgrep_exact", return_value={"running": True, "pids": [1234]}), \
+                 patch(
+                     "jarvis.tools._latest_safe_verification_evidence",
+                     return_value={"ok": True, "summary": "89/89 passed", "completed_at": "2026-06-07T08:09:00"},
+                 ), \
+                 patch("jarvis.tools._now_iso", return_value="2026-06-07T08:10:00"):
+                result = jarvis_tools._live_final_qa_evidence(bundle_path=bundle)
+
+        checks = {check["id"]: check for check in result["checks"]}
+        self.assertEqual(checks["workboard_visual_qa"]["evidence"], str(new_workboard))
+        self.assertEqual(checks["morning_report_visual_qa"]["evidence"], str(new_report))
+        self.assertEqual(checks["stt_audition_visual_qa"]["evidence"], str(new_stt))
+        self.assertTrue(result["complete"])
+
     def test_live_final_qa_uses_tools_endpoint_not_recursive_preflight(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
