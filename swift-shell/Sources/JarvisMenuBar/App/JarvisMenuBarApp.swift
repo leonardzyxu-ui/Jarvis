@@ -38,8 +38,25 @@ struct JarvisMenuBarApp {
         let app = NSApplication.shared
         let delegate = JarvisAppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.regular)
+        app.setActivationPolicy(Self.activationPolicy())
         app.run()
+    }
+
+    static func activationPolicy(environment: [String: String] = ProcessInfo.processInfo.environment) -> NSApplication.ActivationPolicy {
+        environmentFlag("JARVIS_SHOW_DOCK_ICON", environment: environment) == true ? .regular : .accessory
+    }
+
+    static func environmentFlag(_ name: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool? {
+        guard let rawValue = environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+            return nil
+        }
+        if ["1", "true", "yes", "on"].contains(rawValue) {
+            return true
+        }
+        if ["0", "false", "no", "off"].contains(rawValue) {
+            return false
+        }
+        return nil
     }
 
     private static func runSelfTest() {
@@ -230,8 +247,14 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static var menuBarItemEnabled: Bool {
-        let value = ProcessInfo.processInfo.environment["JARVIS_SHOW_MENU_BAR_ITEM"]?.lowercased()
-        return ["1", "true", "yes", "on"].contains(value)
+        menuBarItemEnabled(environment: ProcessInfo.processInfo.environment)
+    }
+
+    static func menuBarItemEnabled(environment: [String: String]) -> Bool {
+        if let override = JarvisMenuBarApp.environmentFlag("JARVIS_SHOW_MENU_BAR_ITEM", environment: environment) {
+            return override
+        }
+        return JarvisMenuBarApp.activationPolicy(environment: environment) == .accessory
     }
 
     private static func statusItemImage() -> NSImage? {

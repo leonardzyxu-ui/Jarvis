@@ -109,6 +109,18 @@ enum JarvisMenuBarSelfTest {
         guard !JarvisShellModel.shouldUseNativeHotKeyStatus("change the Jarvis shortcut") else {
             throw SelfTestError.failed("Hotkey mutation requests must not be treated as a read-only status command.")
         }
+        guard JarvisMenuBarApp.activationPolicy(environment: [:]) == .accessory else {
+            throw SelfTestError.failed("Jarvis should hide the Dock icon by default.")
+        }
+        guard JarvisMenuBarApp.activationPolicy(environment: ["JARVIS_SHOW_DOCK_ICON": "yes"]) == .regular else {
+            throw SelfTestError.failed("Debug Dock-icon override should restore regular activation policy.")
+        }
+        guard JarvisAppDelegate.menuBarItemEnabled(environment: [:]) else {
+            throw SelfTestError.failed("Menu-bar item should be enabled by default when the Dock icon is hidden.")
+        }
+        guard !JarvisAppDelegate.menuBarItemEnabled(environment: ["JARVIS_SHOW_MENU_BAR_ITEM": "off"]) else {
+            throw SelfTestError.failed("Menu-bar item override should allow disabling the status item.")
+        }
         guard !JarvisShellModel.shouldUseNativeVoiceStatus("tts status") else {
             throw SelfTestError.failed("TTS status should route to backend diagnostics.tts, not the native voice snapshot.")
         }

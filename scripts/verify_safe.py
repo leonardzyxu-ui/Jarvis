@@ -731,11 +731,11 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
             plist = plistlib.load(handle)
         has_usage = bool(plist.get("NSMicrophoneUsageDescription"))
         has_speech_usage = bool(plist.get("NSSpeechRecognitionUsageDescription"))
-        is_regular_app = plist.get("LSUIElement") is not True
+        is_menu_bar_agent = plist.get("LSUIElement") is True
         display_name = plist.get("CFBundleDisplayName")
-        passed = has_usage and has_speech_usage and is_regular_app and display_name == "Jarvis Verify & Test's <Local>"
+        passed = has_usage and has_speech_usage and is_menu_bar_agent and display_name == "Jarvis Verify & Test's <Local>"
         summary = (
-            "microphone/speech usage descriptions, regular Dock app mode, and escaped display name present"
+            "microphone/speech usage descriptions, menu-bar agent mode, and escaped display name present"
             if passed
             else f"missing plist readiness keys or escaped display name, display={display_name!r}"
         )
