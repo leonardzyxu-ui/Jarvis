@@ -3594,6 +3594,20 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('"App perms: \\(readyCount)/\\(permissions.count) ready"', service_source)
         self.assertNotIn('"\\(readyCount)/\\(permissions.count) permissions ready"', service_source)
 
+    def test_build_launch_script_reports_failed_health_attempts(self):
+        script_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "scripts"
+            / "build_and_launch_app.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Jarvis health did not become ready", script_source)
+        self.assertIn("Jarvis health check failed on launch attempt", script_source)
+        self.assertIn("diagnose_launch_state", script_source)
+        self.assertIn("stop_existing", script_source)
+        self.assertIn("Jarvis launch failed after 2 attempts", script_source)
+
     def test_tool_registry_lists_policy_and_tool_routes(self):
         registry = tool_registry()
         tool_ids = {tool["id"] for tool in registry["tools"]}

@@ -10,6 +10,7 @@ APP_EXECUTABLE="$APP_PATH/Contents/MacOS/jarvis-menu-bar"
 WORKER_SCRIPT="$APP_PATH/Contents/Resources/JarvisWorker/scripts/run_dashboard.py"
 PIPER_SCRIPT="$APP_PATH/Contents/Resources/JarvisWorker/jarvis/piper_warm_worker.py"
 BASE_URL="${JARVIS_BASE_URL:-${JARVIS_URL:-http://127.0.0.1:8765}}"
+HEALTH_FILE="${TMPDIR:-/tmp}/jarvis-build-launch-health.json"
 
 collect_existing_pids() {
   ps -axo pid=,command= | while read -r pid command; do
@@ -52,14 +53,34 @@ stop_existing() {
 
 wait_for_health() {
   for _ in {1..30}; do
-    if curl -fsS "$BASE_URL/api/health" >/tmp/jarvis-build-launch-health.json 2>/dev/null; then
-      cat /tmp/jarvis-build-launch-health.json
+    if curl -fsS "$BASE_URL/api/health" >"$HEALTH_FILE" 2>/dev/null; then
+      cat "$HEALTH_FILE"
       return 0
     fi
     sleep 1
   done
-  cat /tmp/jarvis-build-launch-health.json 2>/dev/null || true
+  printf 'Jarvis health did not become ready at %s after 30 seconds.\n' "$BASE_URL" >&2
+  if [[ -s "$HEALTH_FILE" ]]; then
+    printf 'Last health response:\n' >&2
+    cat "$HEALTH_FILE" >&2
+    printf '\n' >&2
+  fi
   return 1
+}
+
+diagnose_launch_state() {
+  printf 'Launch diagnostics:\n'
+  printf '  app: %s\n' "$APP_PATH"
+  printf '  executable: %s\n' "$APP_EXECUTABLE"
+  printf '  health: %s/api/health\n' "$BASE_URL"
+  local found=0
+  while IFS= read -r pid; do
+    found=1
+    printf '  existing pid: %s\n' "$pid"
+  done < <(collect_existing_pids)
+  if [[ "$found" -eq 0 ]]; then
+    printf '  existing pid: none\n'
+  fi
 }
 
 stop_existing
@@ -76,8 +97,12 @@ for attempt in 1 2; do
   if wait_for_health; then
     exit 0
   fi
+  printf 'Jarvis health check failed on launch attempt %s.\n' "$attempt" >&2
+  diagnose_launch_state >&2
   if [[ "$attempt" -lt 2 ]]; then
+    stop_existing
     sleep 1
   fi
 done
+printf 'Jarvis launch failed after 2 attempts.\n' >&2
 exit 1
