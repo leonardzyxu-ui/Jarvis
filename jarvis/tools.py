@@ -1824,6 +1824,14 @@ def tts_status() -> dict[str, Any]:
                 " Warm worker is "
                 f"{'ready' if piper_worker['ready'] else 'not ready'}."
             )
+            recent_events = piper_worker.get("recent_events") if isinstance(piper_worker.get("recent_events"), list) else []
+            recent_event_names = [
+                str(event.get("event") or "")
+                for event in recent_events[-5:]
+                if isinstance(event, dict) and event.get("event")
+            ]
+            if recent_event_names:
+                reply += f" Recent Piper events: {', '.join(recent_event_names)}."
     elif piper["missing"]:
         reply += f" ({', '.join(piper['missing'])})."
     else:

@@ -2161,6 +2161,48 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("Piper Ryan is ready", result["reply"])
         self.assertIn("length scale is 0.85", result["reply"])
 
+    def test_tts_status_mentions_recent_piper_events_when_available(self):
+        readiness = {
+            "ready": True,
+            "provider": "piper",
+            "label": "Piper Ryan high American male",
+            "piper_bin": "/tmp/piper",
+            "piper_python": "/tmp/python",
+            "model": "/tmp/ryan.onnx",
+            "config": "/tmp/ryan.onnx.json",
+            "espeak_data": "/tmp/espeak-ng-data",
+            "afplay": "/usr/bin/afplay",
+            "missing": [],
+            "timeout_seconds": 8,
+            "length_scale": 0.85,
+        }
+        worker = {
+            "enabled": True,
+            "running": True,
+            "ready": True,
+            "pid": 1234,
+            "load_seconds": 0.7,
+            "uptime_seconds": 10.0,
+            "active_id": None,
+            "last_event": {"event": "done"},
+            "recent_events": [
+                {"event": "ready"},
+                {"event": "accepted"},
+                {"event": "first_audio"},
+                {"event": "done"},
+            ],
+        }
+
+        with patch("jarvis.tools.TTS_PROVIDER", "piper"), \
+             patch("jarvis.tools._piper_readiness", return_value=readiness), \
+             patch("jarvis.tools._piper_worker_status", return_value=worker), \
+             patch("jarvis.tools._find_executable", return_value="/usr/bin/say"), \
+             patch("jarvis.tools._command_output", return_value="Samantha en_US # sample voice\n"):
+            result = tts_status()
+
+        self.assertIn("Recent Piper events: ready, accepted, first_audio, done.", result["reply"])
+        self.assertEqual(result["piper_warm_worker"]["recent_events"][-1]["event"], "done")
+
     def test_screen_status_does_not_capture_screen(self):
         with patch("jarvis.tools._find_executable", return_value="/usr/sbin/screencapture"):
             result = screenshot_capability()
