@@ -64,5 +64,13 @@ wait_for_health() {
 
 stop_existing
 REPLACE_APP="${REPLACE_APP:-1}" "$SCRIPT_DIR/build_app_bundle.sh"
-/usr/bin/open -n "$APP_PATH"
-wait_for_health
+for attempt in 1 2; do
+  /usr/bin/open -n "$APP_PATH"
+  if wait_for_health; then
+    exit 0
+  fi
+  if [[ "$attempt" -lt 2 ]]; then
+    sleep 1
+  fi
+done
+exit 1
