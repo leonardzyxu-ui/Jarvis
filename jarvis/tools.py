@@ -720,6 +720,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Lists known local macOS apps and whether they appear to be running, without opening, focusing, or inspecting app content.",
             },
             {
+                "id": "app.frontmost",
+                "label": "Frontmost App",
+                "mode": "read_only",
+                "risk": "local_app_metadata",
+                "available": bool(_find_executable("osascript")),
+                "description": "Reports the current frontmost macOS app process without reading window titles, screenshots, or UI content.",
+            },
+            {
                 "id": "app.open",
                 "label": "Open App",
                 "mode": "execute",
@@ -2069,6 +2077,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "app.list", "kind": "read_only", "description": "List known/discovered local apps before choosing what to open."},
         {"id": "app.status", "kind": "read_only", "description": "Check whether a named local app is available and appears to be running."},
         {"id": "app.running", "kind": "read_only", "description": "List known local apps and whether each appears to be running."},
+        {"id": "app.frontmost", "kind": "read_only", "description": "Report the frontmost macOS app process without reading window titles, screenshots, or UI content."},
         {"id": "app.availability", "kind": "read_only", "description": "Check whether a local app exists."},
         {"id": "terminal.plan", "kind": "plan_only", "description": "Classify and explain a terminal command without running it."},
         {"id": "terminal.read_only", "kind": "safe_execute_if_allowlisted", "description": "Run only read-only allowlisted terminal commands."},
@@ -2439,6 +2448,84 @@ def app_running(search_dirs: list[Path] | None = None, *, limit: int = 80) -> di
         "available_known_count": int(app_snapshot.get("available_known_count") or 0),
         "reply": reply,
     }
+
+
+def app_frontmost() -> dict[str, Any]:
+    """Return the current frontmost app process without inspecting window content."""
+    started_at = time.monotonic()
+    script = """
+tell application "System Events"
+  set frontProc to first application process whose frontmost is true
+  set appName to name of frontProc
+  set appBundle to ""
+  set appPath to ""
+  try
+    set appBundle to bundle identifier of frontProc
+  end try
+  try
+    set appPath to POSIX path of (file of frontProc)
+  end try
+  return appName & linefeed & appBundle & linefeed & appPath
+end tell
+"""
+    result = _run_osascript(script, timeout=2.0)
+    base = {
+        "tool": "app.frontmost",
+        "executed": bool(result.get("executed")),
+        "status": "checked" if result.get("ok") else "unavailable",
+        "read_private_content": False,
+        "opened_app": False,
+        "launched_app": False,
+        "focused_app": False,
+        "captured_screen": False,
+        "read_window_title": False,
+        "read_ui_text": False,
+        "osascript": {
+            "ok": bool(result.get("ok")),
+            "returncode": result.get("returncode"),
+            "stderr": _text_tail(str(result.get("stderr") or ""), 300),
+        },
+        **_duration_fields(started_at),
+    }
+    if not result.get("ok"):
+        return {
+            **base,
+            "app": None,
+            "bundle_id": "",
+            "path": "",
+            "reply": "Frontmost app status is unavailable; I did not read the screen or inspect app content.",
+        }
+    lines = str(result.get("stdout") or "").splitlines()
+    process_name = lines[0].strip() if len(lines) >= 1 else ""
+    bundle_id = lines[1].strip() if len(lines) >= 2 else ""
+    app_path = lines[2].strip() if len(lines) >= 3 else ""
+    app_name = _frontmost_display_name(process_name, bundle_id, app_path)
+    reply = (
+        f"Frontmost app: {app_name or 'unknown'}. "
+        "I did not read window titles, screenshots, or UI content."
+    )
+    return {
+        **base,
+        "status": "checked",
+        "app": app_name,
+        "process_name": process_name,
+        "bundle_id": bundle_id,
+        "path": app_path,
+        "reply": reply,
+    }
+
+
+def _frontmost_display_name(process_name: str, bundle_id: str, app_path: str) -> str:
+    process = re.sub(r"\s+", " ", str(process_name or "")).strip()
+    bundle = str(bundle_id or "").strip()
+    path = str(app_path or "").strip()
+    if bundle == "local.leo.jarvis" or process == "jarvis-menu-bar" or path.endswith("/Jarvis.app/"):
+        return "Jarvis"
+    if path.endswith(".app/") or path.endswith(".app"):
+        name = Path(path.rstrip("/")).stem.strip()
+        if name:
+            return name
+    return process
 
 
 def app_open(app_name: str, *, execute: bool = True) -> dict[str, Any]:

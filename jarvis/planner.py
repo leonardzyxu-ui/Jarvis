@@ -10,6 +10,7 @@ from .safety import DANGEROUS_SHELL_TOKENS, READ_ONLY_SHELL_COMMANDS, VERSION_ON
 from .wake import detect_wake_command
 from .tools import (
     app_availability,
+    app_frontmost,
     app_list,
     app_open,
     app_quit_plan,
@@ -255,6 +256,14 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": [],
         "examples": [
             'Yes sir, checking which apps are running now. \\tool({"tool":"app.running","entities":{}})',
+        ],
+    },
+    {
+        "tool": "app.frontmost",
+        "description": "Report which macOS app is currently frontmost, without reading window titles, screenshots, or UI text.",
+        "entities": [],
+        "examples": [
+            'Yes sir, checking the current app now. \\tool({"tool":"app.frontmost","entities":{}})',
         ],
     },
     {
@@ -508,6 +517,8 @@ class Planner:
         injection_text = _extract_injection_scan_text(text)
         if injection_text is not None:
             return self._result(text, "safety.injection_scan", "Scanned untrusted text for prompt-injection patterns.", assessment, prompt_injection_scan(injection_text), True)
+        if _looks_like_frontmost_app_request(lower):
+            return self._result(text, "app.frontmost", "Checked the current frontmost app.", assessment, app_frontmost(), True)
         if _looks_like_shell_command(text):
             result = run_read_only_shell(text)
             return self._result(text, "shell.read_only", "Read-only shell command processed.", assessment, result, bool(result.get("executed")))
@@ -981,6 +992,10 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "app.running", assessment, True, plan={"intent": intent})
             return self._result(text, "app.running", "Checked which known apps are running.", assessment, app_running(), True)
+        if selected_tool == "app.frontmost":
+            if not execute:
+                return self._preview_result(text, "app.frontmost", assessment, True, plan={"intent": intent})
+            return self._result(text, "app.frontmost", "Checked the current frontmost app.", assessment, app_frontmost(), True)
         if selected_tool == "terminal.plan":
             command = _clean_optional_entity(entities.get("command")) or _extract_terminal_command_text(text)
             plan = terminal_command_plan(command)
@@ -1279,6 +1294,13 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
         }
     if recommended == "app.running":
         preview = app_running(limit=40)
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {**preview, "executed": False, "planned_only": True},
+        }
+    if recommended == "app.frontmost":
+        preview = app_frontmost()
         return {
             "recommended_tool": recommended,
             "executed": False,
@@ -1945,6 +1967,32 @@ def _looks_like_running_apps_request(lower: str) -> bool:
         and any(cue in lower for cue in list_cues)
         and not any(cue in lower for cue in mutation_cues)
     )
+
+
+def _looks_like_frontmost_app_request(lower: str) -> bool:
+    mutation_cues = ("open ", "launch ", "start ", "quit ", "close ", "kill ", "force quit ")
+    if any(cue in lower for cue in mutation_cues):
+        return False
+    plural_running_cues = ("active apps", "running apps", "open apps", "apps open", "which apps")
+    if any(cue in lower for cue in plural_running_cues):
+        return False
+    frontmost_cues = (
+        "frontmost app",
+        "front most app",
+        "foreground app",
+        "focused app",
+        "current app",
+        "active app",
+        "which app am i using",
+        "what app am i using",
+        "which app am i in",
+        "what app am i in",
+        "what app is in front",
+        "which app is in front",
+        "what app is focused",
+        "which app is focused",
+    )
+    return any(cue in lower for cue in frontmost_cues)
 
 
 def _extract_wake_transcript(text: str) -> str | None:

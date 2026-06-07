@@ -55,6 +55,7 @@ from jarvis.server import (
 )
 from jarvis.tools import (
     app_availability,
+    app_frontmost,
     app_list,
     app_running,
     app_quit_plan,
@@ -343,6 +344,8 @@ class PlannerTests(unittest.TestCase):
             "app status Outlook": "app.status",
             "what apps are running": "app.running",
             "show running apps": "app.running",
+            "what app am I using": "app.frontmost",
+            "which app is focused": "app.frontmost",
             "quit app Safari": "app.quit",
             "close Safari": "app.quit",
             "screenshot capability": "screenshot.capability",
@@ -3145,6 +3148,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("app.open", tool_ids)
         self.assertIn("app.status", tool_ids)
         self.assertIn("app.running", tool_ids)
+        self.assertIn("app.frontmost", tool_ids)
         self.assertIn("app.quit", tool_ids)
         self.assertIn("screen.ocr", tool_ids)
         self.assertIn("ui.automation", tool_ids)
@@ -4576,6 +4580,34 @@ class RuntimeSurfaceTests(unittest.TestCase):
             self.assertEqual(call.args[0][0], "/usr/bin/pgrep")
             self.assertEqual(call.args[0][1], "-x")
             self.assertFalse(call.kwargs["shell"])
+
+    def test_app_frontmost_reports_metadata_without_reading_content(self):
+        with patch(
+            "jarvis.tools._run_osascript",
+            return_value={
+                "ok": True,
+                "executed": True,
+                "stdout": "jarvis-menu-bar\nlocal.leo.jarvis\n/Applications/Jarvis.app/",
+                "stderr": "",
+                "returncode": 0,
+            },
+        ) as run_mock:
+            result = app_frontmost()
+
+        self.assertEqual(result["tool"], "app.frontmost")
+        self.assertEqual(result["status"], "checked")
+        self.assertEqual(result["app"], "Jarvis")
+        self.assertEqual(result["process_name"], "jarvis-menu-bar")
+        self.assertEqual(result["bundle_id"], "local.leo.jarvis")
+        self.assertFalse(result["opened_app"])
+        self.assertFalse(result["launched_app"])
+        self.assertFalse(result["focused_app"])
+        self.assertFalse(result["captured_screen"])
+        self.assertFalse(result["read_private_content"])
+        self.assertFalse(result["read_window_title"])
+        self.assertFalse(result["read_ui_text"])
+        self.assertIn("did not read window titles", result["reply"])
+        run_mock.assert_called_once()
 
     def test_app_quit_plan_requires_confirmation_without_quitting(self):
         fake_status = {
@@ -6549,7 +6581,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(preflight["summary"]["recommended_total"], len(recommended_ids))
         self.assertEqual(preflight["summary"]["required_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "required" and check["passed"]))
         policy_gate = next(check for check in preflight["checks"] if check["id"] == "policy_gates_loaded")
-        self.assertIn("38/38", policy_gate["detail"])
+        self.assertIn("39/39", policy_gate["detail"])
         self.assertEqual(preflight["summary"]["recommended_passed"], sum(1 for check in preflight["checks"] if check["severity"] == "recommended" and check["passed"]))
         self.assertEqual(check_ids, required_ids.union(recommended_ids))
 
