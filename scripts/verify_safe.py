@@ -107,17 +107,27 @@ def run_temp_app_command(
     expect: str,
     env: dict[str, str] | None = None,
 ) -> CheckResult:
-    result = run_command(name, args, timeout=timeout, env=env, expect=expect)
-    if result.passed or result.returncode != -9 or result.stdout_tail or result.stderr_tail:
-        return result
-    time.sleep(0.5)
-    retry = run_command(name, args, timeout=timeout, env=env, expect=expect)
-    if retry.passed:
-        retry.summary = "passed after transient macOS SIGKILL retry"
-    else:
-        retry.summary = f"{result.summary}; retry: {retry.summary}"
-    retry.duration_seconds = round(result.duration_seconds + 0.5 + retry.duration_seconds, 3)
-    return retry
+    attempts: list[CheckResult] = []
+    total_duration = 0.0
+    for delay in (0.0, 0.5, 1.5, 3.0):
+        if delay:
+            time.sleep(delay)
+            total_duration += delay
+        result = run_command(name, args, timeout=timeout, env=env, expect=expect)
+        attempts.append(result)
+        total_duration += result.duration_seconds
+        if result.passed:
+            if len(attempts) > 1:
+                result.summary = f"passed after transient macOS SIGKILL retry {len(attempts) - 1}"
+                result.duration_seconds = round(total_duration, 3)
+            return result
+        if result.returncode != -9 or result.stdout_tail or result.stderr_tail:
+            return result
+
+    final = attempts[-1]
+    final.summary = "; ".join(f"attempt {index}: {attempt.summary}" for index, attempt in enumerate(attempts, start=1))
+    final.duration_seconds = round(total_duration, 3)
+    return final
 
 
 def get_json(path: str, timeout: int = 20, base_url: str = BASE_URL) -> Any:
