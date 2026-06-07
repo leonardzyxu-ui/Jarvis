@@ -3567,6 +3567,19 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('return "Jarvis \\(bundleVersion)"', model_source)
         self.assertIn("Text(model.appVersionText)", view_source)
 
+    def test_swift_permission_footer_names_app_scope(self):
+        service_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisPermissionService.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"App perms: \\(readyCount)/\\(permissions.count) ready"', service_source)
+        self.assertNotIn('"\\(readyCount)/\\(permissions.count) permissions ready"', service_source)
+
     def test_tool_registry_lists_policy_and_tool_routes(self):
         registry = tool_registry()
         tool_ids = {tool["id"] for tool in registry["tools"]}

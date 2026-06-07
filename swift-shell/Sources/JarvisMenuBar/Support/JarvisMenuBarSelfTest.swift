@@ -197,7 +197,7 @@ enum JarvisMenuBarSelfTest {
             throw SelfTestError.failed("Permission snapshot has incomplete rows: \(incompleteRows.map(\.id).joined(separator: ", "))")
         }
         let summary = JarvisPermissionService.summary(snapshot)
-        guard summary.contains("/\(expectedIds.count) permissions ready") else {
+        guard summary.contains("/\(expectedIds.count) ready") else {
             throw SelfTestError.failed("Permission summary did not include all readiness rows: \(summary)")
         }
 

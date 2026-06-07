@@ -21,7 +21,7 @@ enum JarvisPermissionService {
 
     static func summary(_ permissions: [PermissionReadiness]) -> String {
         let readyCount = permissions.filter(\.isReady).count
-        return "\(readyCount)/\(permissions.count) permissions ready"
+        return "App perms: \(readyCount)/\(permissions.count) ready"
     }
 
     private static func microphoneStatus() -> PermissionReadiness {
