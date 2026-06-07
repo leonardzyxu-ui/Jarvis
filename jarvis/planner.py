@@ -558,7 +558,14 @@ class Planner:
         if _looks_like_fast_model_status(lower):
             return self._result(text, "diagnostics.fast_model", "Read local fast-model status.", assessment, fast_model_status(), True)
         if _looks_like_device_status(lower):
-            return self._result(text, "diagnostics.device", "Read local device status.", assessment, device_status(), True)
+            return self._result(
+                text,
+                "diagnostics.device",
+                "Read local device status.",
+                assessment,
+                _with_route_source(device_status(), "deterministic_shortcut"),
+                True,
+            )
         if _looks_like_deep_tool_catalog_status(lower):
             return self._result(text, "tools.deep_catalog", "Read layered deep tool catalog.", assessment, deep_tool_catalog_status(NATURAL_LANGUAGE_TOOL_SPECS), True)
         if _looks_like_tool_handoff_plan(lower):
@@ -896,7 +903,14 @@ class Planner:
         if selected_tool == "diagnostics.device":
             if not execute:
                 return self._preview_result(text, "diagnostics.device", assessment, True, plan={"intent": intent})
-            return self._result(text, "diagnostics.device", "Read local device status.", assessment, device_status(), True)
+            return self._result(
+                text,
+                "diagnostics.device",
+                "Read local device status.",
+                assessment,
+                _with_route_source(device_status(), "model_tool_call", intent),
+                True,
+            )
         if selected_tool == "diagnostics.overnight":
             if not execute:
                 return self._preview_result(text, "diagnostics.overnight", assessment, True, plan={"intent": intent})
@@ -1320,6 +1334,23 @@ class Planner:
             executed=False,
             confirmation=confirmation,
         )
+
+
+def _with_route_source(
+    result: dict[str, Any],
+    source: str,
+    intent: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    routed = dict(result)
+    routing: dict[str, Any] = {
+        "source": source,
+        "note": "Tool output is structured local data; the route source is shown for Copy Chat JSON debugging.",
+    }
+    if intent is not None:
+        routing["model_reason"] = str(intent.get("reason") or "")
+        routing["confidence"] = intent.get("confidence")
+    routed["routing"] = routing
+    return routed
 
 
 def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[str, Any] | None:

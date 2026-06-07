@@ -2088,6 +2088,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.tool, "diagnostics.device")
         self.assertTrue(result.executed)
         self.assertEqual(result.result["reply"], "Device status: test Mac.")
+        self.assertEqual(result.result["routing"]["source"], "deterministic_shortcut")
         status_mock.assert_called_once_with()
         self.assertEqual(Planner().handle("Jarvis status").tool, "system.status")
 
@@ -2106,6 +2107,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.tool, "diagnostics.device")
         self.assertTrue(result.executed)
         self.assertEqual(result.result["reply"], "Device status: selected by model.")
+        self.assertEqual(result.result["routing"]["source"], "model_tool_call")
         status_mock.assert_called_once_with()
 
     def test_device_status_reads_local_metadata_without_private_content(self):
@@ -4560,6 +4562,80 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertEqual(calls, [("Final email summary.", "final", False)])
 
+    def test_deferred_final_forces_speech_when_status_never_finishes(self):
+        class StuckStatusProcess:
+            def poll(self):
+                return None
+
+        status_process = StuckStatusProcess()
+        calls = []
+        with jarvis_tools.SPEECH_LOCK:
+            jarvis_tools.SPEECH_PROCESS = status_process
+            jarvis_tools.SPEECH_PROCESS_REASON = "status"
+            jarvis_tools.SPEECH_GENERATION = 300
+        try:
+            with patch(
+                "jarvis.tools.speak_text_async",
+                side_effect=lambda text, *, reason, force=False: calls.append((text, reason, force)),
+            ):
+                jarvis_tools._deferred_status_followup_worker(
+                    "Final email summary.",
+                    "final",
+                    False,
+                    status_process,
+                    300,
+                    0,
+                )
+        finally:
+            with jarvis_tools.SPEECH_LOCK:
+                jarvis_tools.SPEECH_PROCESS = None
+                jarvis_tools.SPEECH_PROCESS_REASON = None
+
+        self.assertEqual(calls, [("Final email summary.", "final", True)])
+
+    def test_forced_final_speech_interrupts_status_instead_of_requeueing(self):
+        class FakeStatusProcess:
+            def __init__(self):
+                self.running = True
+                self.terminated = False
+
+            def poll(self):
+                return None if self.running else 0
+
+            def terminate(self):
+                self.terminated = True
+                self.running = False
+
+            def wait(self, timeout=None):
+                self.running = False
+                return 0
+
+        status_process = FakeStatusProcess()
+        with jarvis_tools.SPEECH_LOCK:
+            jarvis_tools.SPEECH_PROCESS = status_process
+            jarvis_tools.SPEECH_PROCESS_REASON = "status"
+            jarvis_tools.SPEECH_GENERATION = 400
+        try:
+            with patch("jarvis.tools.TTS_PROVIDER", "macos"), \
+                 patch(
+                     "jarvis.tools._start_macos_speech_async",
+                     return_value={
+                         "spoken": True,
+                         "status": "started",
+                         "reason": "final",
+                         "provider": "macos",
+                     },
+                 ) as start_mock:
+                result = jarvis_tools.speak_text_async("Final email summary.", reason="final", force=True)
+        finally:
+            with jarvis_tools.SPEECH_LOCK:
+                jarvis_tools.SPEECH_PROCESS = None
+                jarvis_tools.SPEECH_PROCESS_REASON = None
+
+        self.assertTrue(status_process.terminated)
+        self.assertEqual(result["status"], "started")
+        start_mock.assert_called_once()
+
     def test_stop_speaking_interrupts_active_process_without_starting_audio(self):
         class FakeProcess:
             def __init__(self):
@@ -4868,14 +4944,25 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("0.85", command)
 
     def test_warm_piper_worker_keeps_normal_speech_in_one_chunk(self):
-        text = (
-            "Yes sir, checking your email now. "
-            "少先队 gave a link to a form about a 慈善义卖 that you may need to fill in."
-        )
+        text = "Yes sir, checking your email now."
 
         chunks = piper_warm_worker._chunk_text(text)
 
         self.assertEqual(chunks, [text])
+
+    def test_warm_piper_worker_splits_medium_reply_for_faster_first_audio(self):
+        text = (
+            "Device status: macOS 26.5.1 on Mac16,1; Apple M4; 16.0 GB memory; "
+            "193.2 GB free of 460.4 GB; 100% discharging, 7:32 remaining. "
+            "Jarvis worker source is bundled app resources."
+        )
+
+        chunks = piper_warm_worker._chunk_text(text)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertLessEqual(len(chunks[0]), 90)
+        self.assertIn("Device status: macOS", chunks[0])
+        self.assertNotEqual(chunks[0], "Device status:")
 
     def test_warm_piper_worker_chunks_only_unusually_long_speech(self):
         text = " ".join(
@@ -4886,7 +4973,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         chunks = piper_warm_worker._chunk_text(text)
 
         self.assertGreater(len(chunks), 1)
-        self.assertLessEqual(len(chunks[0]), 260)
+        self.assertLessEqual(len(chunks[0]), 90)
 
     def test_quick_local_control_plans_brightness_without_side_effect(self):
         result = quick_local_control("brightness up", execute=False)

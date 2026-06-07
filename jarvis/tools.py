@@ -98,7 +98,7 @@ SPEECH_PROCESS: Any | None = None
 SPEECH_PROCESS_REASON: str | None = None
 SPEECH_GENERATION = 0
 SPEECH_LOCK = threading.Lock()
-STATUS_TO_FINAL_QUEUE_TIMEOUT_SECONDS = 4.0
+STATUS_TO_FINAL_QUEUE_TIMEOUT_SECONDS = 1.4
 PIPER_WORKER_PROCESS: subprocess.Popen[str] | None = None
 PIPER_WORKER_LOCK = threading.RLock()
 PIPER_WORKER_READY = False
@@ -1564,7 +1564,7 @@ def _queue_final_after_status_locked(
     started_at: float,
 ) -> dict[str, Any] | None:
     process = SPEECH_PROCESS
-    if reason != "final" or SPEECH_PROCESS_REASON != "status" or process is None:
+    if force or reason != "final" or SPEECH_PROCESS_REASON != "status" or process is None:
         return None
     if process.poll() is not None:
         return None
@@ -1596,6 +1596,7 @@ def _deferred_status_followup_worker(
 ) -> None:
     global SPEECH_PROCESS, SPEECH_PROCESS_REASON
     deadline = time.monotonic() + max(0.0, timeout_seconds)
+    timed_out = False
     while True:
         with SPEECH_LOCK:
             if SPEECH_GENERATION != target_generation:
@@ -1609,9 +1610,10 @@ def _deferred_status_followup_worker(
                     SPEECH_PROCESS_REASON = None
                 break
         if time.monotonic() >= deadline:
+            timed_out = True
             break
         time.sleep(0.03)
-    speak_text_async(spoken, reason=reason, force=force)
+    speak_text_async(spoken, reason=reason, force=force or timed_out)
 
 
 def _start_macos_speech_async(
