@@ -3425,12 +3425,56 @@ class PlannerTests(unittest.TestCase):
             )
             stt_page.write_text("<!doctype html><title>Jarvis STT Audition</title>", encoding="utf-8")
             with patch("jarvis.tools.PROJECT_ROOT", root), \
-                 patch("jarvis.tools._live_final_qa_evidence", return_value={"complete": True, "checks": []}):
+                 patch("jarvis.tools._live_final_qa_evidence", return_value={"complete": True, "checks": []}), \
+                 patch("jarvis.tools._bundle_metadata", return_value={"version": "0.1.225", "build": "225"}), \
+                 patch("jarvis.tools._git_head_short", return_value={"ok": True, "available": True, "head": "e895d44"}):
                 result = overnight_work_status()
 
         self.assertFalse(result["full_visual_qa_deferred"])
         self.assertEqual(result["deferred_reason"], "")
         self.assertEqual(result["next_foreground_checks"], [])
+        self.assertEqual(result["report_integrity"]["status"], "current")
+        self.assertTrue(result["report_integrity"]["commit_matches_head"])
+        self.assertTrue(result["report_integrity"]["bundle_matches_live"])
+        self.assertIn("Report integrity is current.", result["reply"])
+
+    def test_overnight_work_status_warns_when_report_does_not_match_current_build(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workboard = root / "runtime" / "overnight_status" / "index.html"
+            report = root / "runtime" / "overnight_status" / "report.html"
+            stt_page = root / "runtime" / "stt_audition" / "index.html"
+            workboard.parent.mkdir(parents=True)
+            stt_page.parent.mkdir(parents=True)
+            workboard.write_text("<!doctype html><title>Jarvis Overnight Status</title>", encoding="utf-8")
+            report.write_text(
+                """
+                <!doctype html>
+                <title>Jarvis Master Report</title>
+                <h1>Jarvis Overnight Launch Report</h1>
+                <span class="pill">Live bundle: Jarvis 0.1.225 build 225</span>
+                <span class="pill">Source commit: old1234</span>
+                <span class="pill">Verification: 89/89 passed</span>
+                <section><h2>Shipped Since The Last Proven Build</h2><ul><li>Old report.</li></ul></section>
+                <section><h2>Proof So Far</h2><ul><li>Old proof.</li></ul></section>
+                <section><h2>What You Should Be Able To Do Tomorrow</h2><ul><li>Read the report.</li></ul></section>
+                <section><h2>Still Risky Or Unfinished</h2><ul><li>Wake word remains future work.</li></ul></section>
+                <section><h2>Supporting Files</h2><ul><li>runtime/overnight_status/report.html</li></ul></section>
+                """,
+                encoding="utf-8",
+            )
+            stt_page.write_text("<!doctype html><title>Jarvis STT Audition</title>", encoding="utf-8")
+            with patch("jarvis.tools.PROJECT_ROOT", root), \
+                 patch("jarvis.tools._live_final_qa_evidence", return_value={"complete": True, "checks": []}), \
+                 patch("jarvis.tools._bundle_metadata", return_value={"version": "0.1.227", "build": "227"}), \
+                 patch("jarvis.tools._git_head_short", return_value={"ok": True, "available": True, "head": "new5678"}):
+                result = overnight_work_status()
+
+        self.assertEqual(result["report_integrity"]["status"], "stale")
+        self.assertFalse(result["report_integrity"]["commit_matches_head"])
+        self.assertFalse(result["report_integrity"]["bundle_matches_live"])
+        self.assertEqual(result["report_integrity"]["mismatches"], ["source_commit", "live_bundle"])
+        self.assertIn("Report integrity warning", result["reply"])
 
     def test_latest_latency_status_reads_local_smoke_report(self):
         with tempfile.TemporaryDirectory() as temp_dir:

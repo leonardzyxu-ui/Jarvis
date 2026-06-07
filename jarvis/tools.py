@@ -5075,6 +5075,67 @@ def _launch_pill_value(pills: list[str], label: str) -> str:
     return ""
 
 
+def _report_bundle_from_pill(value: str) -> dict[str, str]:
+    match = re.search(r"\b(?P<version>\d+\.\d+\.\d+)\s+build\s+(?P<build>\d+)\b", value)
+    if not match:
+        return {"version": "", "build": ""}
+    return {"version": match.group("version"), "build": match.group("build")}
+
+
+def _git_head_short() -> dict[str, Any]:
+    git_path = _find_executable("git")
+    if not git_path:
+        return {"ok": False, "available": False, "head": "", "error": "git_not_found"}
+    result = _git_read_only_command([git_path, "rev-parse", "--short", "HEAD"])
+    head = (result.get("stdout") or "").strip()
+    return {
+        "ok": result.get("returncode") == 0 and bool(head),
+        "available": True,
+        "head": head,
+        "returncode": result.get("returncode"),
+        "stderr": result.get("stderr", ""),
+    }
+
+
+def _report_integrity(
+    report_snapshot: dict[str, Any],
+    bundle_metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    launch_pills = [str(pill) for pill in (report_snapshot.get("launch_pills") or [])]
+    report_commit = _launch_pill_value(launch_pills, "Source commit")
+    report_bundle_text = _launch_pill_value(launch_pills, "Live bundle")
+    report_bundle = _report_bundle_from_pill(report_bundle_text)
+    live_bundle = {
+        "version": str((bundle_metadata or {}).get("version") or ""),
+        "build": str((bundle_metadata or {}).get("build") or ""),
+    }
+    git_head = _git_head_short()
+    commit_known = bool(report_commit and git_head.get("ok"))
+    bundle_known = bool(report_bundle["version"] and report_bundle["build"] and live_bundle["version"] and live_bundle["build"])
+    commit_matches = bool(commit_known and report_commit == str(git_head.get("head") or ""))
+    bundle_matches = bool(bundle_known and report_bundle == live_bundle)
+    if commit_known and bundle_known:
+        status = "current" if commit_matches and bundle_matches else "stale"
+    else:
+        status = "unknown"
+    mismatches: list[str] = []
+    if commit_known and not commit_matches:
+        mismatches.append("source_commit")
+    if bundle_known and not bundle_matches:
+        mismatches.append("live_bundle")
+    return {
+        "status": status,
+        "current": status == "current",
+        "report_commit": report_commit,
+        "git_head": git_head,
+        "commit_matches_head": commit_matches,
+        "report_bundle": report_bundle,
+        "live_bundle": live_bundle,
+        "bundle_matches_live": bundle_matches,
+        "mismatches": mismatches,
+    }
+
+
 def overnight_work_status() -> dict[str, Any]:
     """Report overnight work surfaces without opening foreground UI."""
     workboard_path = PROJECT_ROOT / "runtime" / "overnight_status" / "index.html"
@@ -5098,6 +5159,7 @@ def overnight_work_status() -> dict[str, Any]:
     metadata = _bundle_metadata(bundle_path)
     live_qa = _live_final_qa_evidence(bundle_path=bundle_path)
     report_snapshot = _master_report_snapshot(report_path)
+    report_integrity = _report_integrity(report_snapshot, metadata)
     requirement_audit = _overnight_requirement_audit(
         artifacts=artifacts,
         bundle_exists=bundle_path.exists(),
@@ -5135,6 +5197,10 @@ def overnight_work_status() -> dict[str, Any]:
             "I did not open a browser, launch Jarvis, record audio, read private content, or contact the MacBook Air. "
             "The master report and workboard paths are included in the diagnostic details."
         )
+        if report_integrity["status"] == "current":
+            reply += " Report integrity is current."
+        elif report_integrity["status"] == "stale":
+            reply += " Report integrity warning: the report does not match the current source or live bundle."
     else:
         reply = (
             "Overnight status: the workboard is "
@@ -5161,6 +5227,7 @@ def overnight_work_status() -> dict[str, Any]:
         "bundle_path": str(bundle_path),
         "bundle_exists": bundle_path.exists(),
         "bundle_metadata": metadata,
+        "report_integrity": report_integrity,
         "live_qa": live_qa,
         "requirement_audit": requirement_audit,
         "full_visual_qa_deferred": not live_qa_complete,
