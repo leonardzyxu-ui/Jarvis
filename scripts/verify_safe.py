@@ -658,7 +658,7 @@ def python_files_for_compile() -> list[str]:
 
 def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
     bundle_root = Path(tempfile.mkdtemp(prefix="jarvis-verify-bundle-"))
-    verifier_bundle_id = f"local.leo.jarvis.verify.run{os.getpid()}.{int(time.time() * 1000)}"
+    verifier_bundle_id = f"local.leo.jarvis.verify.run{os.getpid()}.t{int(time.time() * 1000)}"
     build = run_command(
         "temporary_app_bundle_build",
         [str(PROJECT_ROOT / "swift-shell" / "scripts" / "build_app_bundle.sh")],
