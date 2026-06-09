@@ -37,6 +37,7 @@ SHIPPED_ITEMS = [
     "Native Copy Chat JSON wake events now include detector score, threshold, matched phrase, window, mode, and normalized transcript.",
     "Jarvis can now analyze pasted Copy Chat JSON wake logs with voice.wake_debug.",
     "Copy Chat JSON now includes the filtered history payload preview Jarvis would send with the current command.",
+    "A conversation-context smoke script now checks whether Jarvis can answer a follow-up using prior chat history.",
     "Normal Dock-app behavior is preserved, with a menu-bar item enabled for quick controls.",
     "Menu-bar Shut Up toggle mutes Jarvis, interrupts current speech, and switches to Keep Blabbering for unmute.",
     "Menu-bar Start Hey Jarvis / Stop Hey Jarvis controls make the wake listener reachable without opening the panel.",
@@ -57,7 +58,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Python safety suite: 404/404 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, and fuzzy-wake work.",
+    "Python safety suite: 406/406 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, and fuzzy-wake work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Live safe verifier passed 96/96 after the speech-mute, wake-audition, model-context, wake-debug, repeated-wake, voice-loop echo, and report-route endpoints were added.",
@@ -71,6 +72,7 @@ PROOF_ITEMS = [
     "Model-context tests now require the diagnostic to show that first and middle models treat Leo's latest message as possibly dictated speech.",
     "Live verifier now probes diagnostics.model_context and requires the speech-dictation input policy without calling models.",
     "Swift source-contract tests now require Copy Chat JSON to expose the filtered conversation-history payload preview.",
+    "Conversation-context smoke tests now verify the script mutes speech, restores the previous mute state, and detects whether a follow-up used prior history.",
     "A muted live streaming app-status probe displayed Yes sir, checking Safari now before the final answer.",
     "A muted live wake probe understood Hey Jervis please check status as check status, and wake scoring reported fuzzy_window score 0.916667 instead of a fake exact match.",
     "Python and Swift wake tests now keep hey jervis working while rejecting the short near-miss hey jars.",
@@ -116,6 +118,7 @@ SUPPORTING_FILES = [
     ("runtime/wake_audition/samples/", "Locally saved wake samples"),
     ("runtime/verification/", "Safe verifier reports"),
     ("runtime/model_benchmarks/", "Fast latency smoke reports"),
+    ("runtime/conversation_context/", "Conversation-context smoke reports"),
     ("output/playwright/", "Visual QA screenshots"),
 ]
 
@@ -141,6 +144,7 @@ def build_context(base_url: str) -> dict[str, Any]:
     fast_model = nested(health, "status", "fast_model")
     verification = latest_verification()
     latency = latest_latency_smoke()
+    context_smoke = latest_context_smoke()
     now = datetime.now(BEIJING)
     version = str(app.get("version") or "unknown")
     build = str(app.get("build") or "unknown")
@@ -161,19 +165,24 @@ def build_context(base_url: str) -> dict[str, Any]:
         "git_sync": git_sync,
         "verification": verification,
         "latency": latency,
+        "context_smoke": context_smoke,
         "worker_source_kind": app.get("worker_source_kind") or "unknown",
         "launch_mode": app.get("launch_mode") or "unknown",
         "runtime_pid": runtime.get("pid") or "unknown",
         "fast_model": fast_model,
         "shipped": SHIPPED_ITEMS,
-        "proof": proof_items_with_verification(verification, latency),
+        "proof": proof_items_with_verification(verification, latency, context_smoke),
         "try": TRY_ITEMS,
         "risks": RISK_ITEMS,
         "supporting": SUPPORTING_FILES,
     }
 
 
-def proof_items_with_verification(verification: dict[str, Any], latency: dict[str, Any] | None = None) -> list[str]:
+def proof_items_with_verification(
+    verification: dict[str, Any],
+    latency: dict[str, Any] | None = None,
+    context_smoke: dict[str, Any] | None = None,
+) -> list[str]:
     items = list(PROOF_ITEMS)
     if verification.get("path"):
         items.append(
@@ -186,6 +195,12 @@ def proof_items_with_verification(verification: dict[str, Any], latency: dict[st
             f"max total {latency['max_total_seconds']:.3f}s, "
             f"min after-first {latency['min_after_first_chars_per_second']:.1f} chars/s "
             f"({latency['path']})."
+        )
+    if context_smoke and context_smoke.get("path"):
+        items.append(
+            "Latest conversation-context smoke: "
+            f"{context_smoke['label']}, total {context_smoke['total_seconds']:.3f}s "
+            f"({context_smoke['path']})."
         )
     return items
 
@@ -257,6 +272,26 @@ def latest_latency_smoke() -> dict[str, Any]:
         "max_first_visible_seconds": max_first,
         "max_total_seconds": max_total,
         "min_after_first_chars_per_second": min_cps,
+    }
+
+
+def latest_context_smoke() -> dict[str, Any]:
+    reports = sorted((PROJECT_ROOT / "runtime" / "conversation_context").glob("conversation-context-*.json"))
+    if not reports:
+        return {"ok": False, "path": "", "label": "none", "total_seconds": 0.0}
+    latest = reports[-1]
+    try:
+        data = json.loads(latest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"ok": False, "path": str(latest), "label": "unreadable", "total_seconds": 0.0}
+    result = data.get("result") if isinstance(data.get("result"), dict) else {}
+    ok = result.get("status") == "passed" and result.get("used_history") is True
+    relative = str(latest.relative_to(PROJECT_ROOT))
+    return {
+        "ok": ok,
+        "path": relative,
+        "label": "passed" if ok else "needs attention",
+        "total_seconds": float(result.get("total_seconds") or 0.0),
     }
 
 
@@ -347,6 +382,7 @@ def render_workboard(context: dict[str, Any]) -> str:
         ("done", "Trace ignored wake events", "Copy Chat JSON records ignored repeated wake phrases and wake-greeting echoes."),
         ("done", "Expose wake detector scores", "Copy Chat JSON now includes score, threshold, phrase, window, and mode for wake events."),
         ("done", "Expose history payload preview", "Copy Chat JSON shows the filtered history Jarvis would send with the current command."),
+        ("done", "Add context smoke", "A muted smoke script checks that Jarvis can use prior chat history for follow-ups."),
         ("done", "Ship wake audition lab", "Local page records samples, scores transcripts, and saves samples under runtime."),
         ("done", "Add menu-bar silence control", "Shut Up interrupts and mutes; Keep Blabbering unmutes."),
         ("done", "Add menu-bar wake controls", "Start/Stop Hey Jarvis and Open Wake Test are reachable without the panel."),
@@ -461,7 +497,7 @@ def spotlight_section(context: dict[str, Any]) -> str:
         ),
         (
             "Best Proof",
-            f"{context['verification']['label']} verifier, 404/404 Python tests, Swift self-tests, and live muted speech probes.{latency_text}",
+            f"{context['verification']['label']} verifier, 406/406 Python tests, Swift self-tests, and live muted speech probes.{latency_text}",
         ),
         (
             "Honest Limit",

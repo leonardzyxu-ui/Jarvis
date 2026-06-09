@@ -117,7 +117,7 @@ from jarvis.tools import (
     wake_status,
 )
 from jarvis.wake import WakeSession, detect_wake_command, score_wake_transcript
-from scripts import render_overnight_status, verify_safe
+from scripts import render_overnight_status, smoke_conversation_context, verify_safe
 from scripts.morning_status import (
     MAX_VERIFICATION_AGE_SECONDS as MORNING_MAX_VERIFICATION_AGE_SECONDS,
     base_url_from_environment,
@@ -154,6 +154,34 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(code, 2)
         run_checks.assert_not_called()
         self.assertIn("Unknown argument: --what", stderr.getvalue())
+
+    def test_conversation_context_smoke_detects_history_use(self):
+        self.assertTrue(smoke_conversation_context.context_reply_uses_history("Correct, x is 3."))
+        self.assertTrue(smoke_conversation_context.context_reply_uses_history("Yes sir, 3 works."))
+        self.assertTrue(smoke_conversation_context.context_reply_uses_history("That is correct, sir."))
+        self.assertFalse(smoke_conversation_context.context_reply_uses_history("Which problem do you mean?"))
+        self.assertFalse(smoke_conversation_context.context_reply_uses_history("I do not know the previous problem."))
+
+    def test_conversation_context_smoke_mutes_and_restores_speech(self):
+        mute_calls = []
+        final = {
+            "tool": "conversation.fast_local",
+            "result": {
+                "backend": "groq",
+                "model": "test-model",
+                "reply": "Correct, x is 3.",
+            },
+        }
+
+        with patch("scripts.smoke_conversation_context.speech_mute_status", return_value=True), \
+             patch("scripts.smoke_conversation_context.set_speech_mute", side_effect=lambda _base, muted: mute_calls.append(muted)), \
+             patch("scripts.smoke_conversation_context.stream_command", return_value=(final, ["Correct, x is 3."], None)):
+            report = smoke_conversation_context.run_context_smoke(base_url="http://127.0.0.1:8765", timeout=1)
+
+        self.assertEqual(report["result"]["status"], "passed")
+        self.assertTrue(report["result"]["used_history"])
+        self.assertEqual(mute_calls, [True, True])
+        self.assertEqual(report["result"]["speech_mute_restored_to"], True)
 
     def test_render_overnight_status_outputs_report_and_workboard_contract(self):
         context = {
