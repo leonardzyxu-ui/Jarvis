@@ -2583,12 +2583,15 @@ class PlannerTests(unittest.TestCase):
         script = (PROJECT_ROOT / "jarvis" / "static" / "wake-audition.js").read_text(encoding="utf-8")
         css = (PROJECT_ROOT / "jarvis" / "static" / "wake-audition.css").read_text(encoding="utf-8")
 
-        for element_id in ("detected-summary", "noise-summary", "next-step-summary"):
+        for element_id in ("detected-summary", "noise-summary", "next-step-summary", "copy-status"):
             self.assertIn(f'id="{element_id}"', html)
             self.assertIn(element_id.replace("-", ""), script.replace("-", ""))
         self.assertIn("renderDecisionSummary", script)
         self.assertIn("recommendationForRuns", script)
+        self.assertIn("current:", script)
+        self.assertIn("suggested_next_step", script)
         self.assertIn(".decision-grid", css)
+        self.assertIn(".panel-status-row", css)
 
     def test_wake_score_rejects_unrelated_speech(self):
         result = score_wake_transcript("please check my email later")

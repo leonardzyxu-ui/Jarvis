@@ -196,6 +196,14 @@ input[type="range"] {
   margin-bottom: 12px;
 }
 
+.panel-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 textarea {
   width: 100%;
   min-height: 150px;
@@ -325,6 +333,15 @@ tbody tr:last-child td {
   }
 
   .status-row {
+    justify-content: flex-start;
+  }
+
+  .panel-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panel-status-row {
     justify-content: flex-start;
   }
 

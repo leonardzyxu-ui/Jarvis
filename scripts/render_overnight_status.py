@@ -34,6 +34,7 @@ SHIPPED_ITEMS = [
     "The Jarvis panel now shows speech mute state and uses Wake Lab for the new audition route.",
     "The Jarvis panel now has a Perms quick action for microphone, speech, screen, accessibility, and notification readiness.",
     "The wake lab now summarizes runs into detected count, best noisy pass, and a suggested next step.",
+    "Wake-lab Copy JSON now includes the current transcript, current score, and recommendation even before a run is saved.",
     "Final answers with normal reply text now auto-speak by default instead of leaving only the working line audible.",
     "Streaming status updates can no longer overwrite an answer that has already started appearing on screen.",
     "Speech diagnostics now include a short sanitized text preview, so Copy Chat JSON can show what TTS was asked to say.",

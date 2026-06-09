@@ -9,6 +9,7 @@
     lastBlob: null,
     lastBlobUrl: "",
     lastMimeType: "",
+    lastScore: null,
     runs: loadRuns(),
     runIndex: 0,
   };
@@ -43,6 +44,7 @@
     nextStepSummary: document.getElementById("next-step-summary"),
     runTable: document.getElementById("run-table"),
     runCount: document.getElementById("run-count"),
+    copyStatus: document.getElementById("copy-status"),
   };
 
   init();
@@ -279,6 +281,7 @@
 
   function applyScore(data) {
     const score = typeof data.score === "number" ? data.score : 0;
+    state.lastScore = data || null;
     els.scoreValue.textContent = score.toFixed(3);
     els.phraseValue.textContent = data.phrase || "none";
     els.commandValue.textContent = data.command || "none";
@@ -409,10 +412,20 @@
       artifact: "Jarvis Wake Audition",
       exported_at: new Date().toISOString(),
       threshold: numericThreshold(),
+      current: {
+        transcript: els.manualTranscript.value.trim(),
+        score: state.lastScore,
+        result_label: els.wakeResult.textContent,
+      },
+      summary: {
+        detected_runs: els.detectedSummary.textContent,
+        best_noisy_pass: els.noiseSummary.textContent,
+        suggested_next_step: els.nextStepSummary.textContent,
+      },
       runs: state.runs,
     };
     await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-    els.runCount.textContent = state.runs.length + " copied";
+    setPill(els.copyStatus, "Copied", "ok");
   }
 
   function addRun(run) {
@@ -451,6 +464,9 @@
       els.runTable.appendChild(row);
     });
     els.runCount.textContent = state.runs.length + " saved";
+    if (els.copyStatus.textContent !== "Copied") {
+      setPill(els.copyStatus, "Not copied", "");
+    }
     renderDecisionSummary();
   }
 
