@@ -194,6 +194,61 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertEqual(detail, "report and workboard GET/HEAD HTML routes available")
 
+    def test_verify_safe_checks_muted_final_speech_alignment(self):
+        posts = []
+        reply = (
+            "Jarvis 0.1.247 build 247 is online from bundled app resources. "
+            "Launch mode: regular Dock app. Fast model: groq llama-3.3-70b-versatile."
+        )
+        preview = (
+            "Jarvis 0.1.247 build 247 is online from bundled app resources. "
+            "Launch mode, regular Dock app. Fast model, groq"
+        )
+
+        def fake_post_json(path, payload, **_kwargs):
+            posts.append((path, payload))
+            if path == "/api/speech/mute":
+                return {
+                    "tool": "voice.speech_mute",
+                    "muted": bool(payload["muted"]),
+                    "status": "muted" if payload["muted"] else "unmuted",
+                }
+            if path == "/api/speech/status":
+                return {"executed": False, "speech": {"status": "muted"}}
+            if path == "/api/command":
+                return {
+                    "tool": "system.status",
+                    "result": {"reply": reply},
+                    "speech": {
+                        "status": "muted",
+                        "reason": "final",
+                        "text_preview": preview,
+                    },
+                }
+            raise AssertionError(f"unexpected POST {path}")
+
+        with patch("scripts.verify_safe.post_json", side_effect=fake_post_json), \
+             patch("scripts.verify_safe.get_json", return_value={"muted": True}):
+            detail = verify_safe.check_endpoint_speech_mute("http://127.0.0.1:8765")
+
+        self.assertEqual(detail, "speech mute blocked audio and preserved final reply text")
+        self.assertIn(("/api/command", {"command": "status"}), posts)
+        self.assertEqual(posts[-1], ("/api/speech/mute", {"muted": False}))
+
+    def test_verify_safe_rejects_tiny_final_speech_preview(self):
+        self.assertTrue(
+            verify_safe.speech_preview_matches_reply(
+                "Hello, sir. What can I help with today?",
+                "Hello sir What can I help with today",
+            )
+        )
+        self.assertFalse(
+            verify_safe.speech_preview_matches_reply(
+                "Hello, sir. What can I help with today?",
+                "Hello",
+            )
+        )
+
     def test_temp_app_command_retries_repeated_empty_sigkill_before_passing(self):
         calls = []
         failures_remaining = 5

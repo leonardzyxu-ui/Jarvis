@@ -171,6 +171,23 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def speech_preview_matches_reply(reply: Any, preview: Any) -> bool:
+    """Return true when the TTS preview is a substantial spoken-prefix of the visible reply."""
+    reply_text = normalize_speech_check_text(reply)
+    preview_text = normalize_speech_check_text(preview)
+    if not reply_text or not preview_text:
+        return False
+    minimum_preview_chars = min(len(reply_text), 60)
+    if len(preview_text) < minimum_preview_chars:
+        return False
+    return reply_text.startswith(preview_text) or preview_text.startswith(reply_text)
+
+
+def normalize_speech_check_text(value: Any) -> str:
+    text = " ".join(str(value or "").lower().split())
+    return "".join(character for character in text if character.isalnum() or character.isspace()).strip()
+
+
 def wait_for_health(timeout: int = 15, base_url: str = BASE_URL) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -1137,9 +1154,19 @@ def check_endpoint_speech_mute(base_url: str) -> str:
         speech = post_json("/api/speech/status", {"text": "Verifier should stay quiet."}, base_url=base_url)
         speech_status = (speech.get("speech") or {}).get("status")
         require(speech.get("executed") is False and speech_status == "muted", f"speech status was {speech}")
+        final = post_json("/api/command", {"command": "status"}, base_url=base_url)
+        final_speech = final.get("speech") or {}
+        final_reply = (final.get("result") or {}).get("reply")
+        require(final.get("tool") == "system.status", f"final speech command tool was {final.get('tool')}")
+        require(final_speech.get("status") == "muted", f"final speech status was {final_speech}")
+        require(final_speech.get("reason") == "final", f"final speech reason was {final_speech}")
+        require(
+            speech_preview_matches_reply(final_reply, final_speech.get("text_preview")),
+            "final speech preview was not a substantial prefix of the final visible reply",
+        )
     finally:
         post_json("/api/speech/mute", {"muted": False}, base_url=base_url)
-    return "speech mute toggled and blocked status speech"
+    return "speech mute blocked audio and preserved final reply text"
 
 
 def check_endpoint_prompt_injection_scan(base_url: str) -> str:
