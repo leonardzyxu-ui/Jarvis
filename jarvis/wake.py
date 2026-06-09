@@ -9,7 +9,7 @@ from typing import Any
 
 
 WAKE_PHRASES = ("hey jarvis", "okay jarvis", "ok jarvis")
-DEFAULT_WAKE_THRESHOLD = 0.82
+DEFAULT_WAKE_THRESHOLD = 0.86
 
 
 @dataclass(frozen=True)

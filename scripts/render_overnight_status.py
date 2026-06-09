@@ -24,6 +24,7 @@ SHIPPED_ITEMS = [
     "Experimental native Hey Jarvis listener in the macOS app, using Speech and AVAudioEngine.",
     "Wake-audition lab at /wake-audition/ for recording samples, scoring transcripts, running noise trials, and copying JSON.",
     "Wake scoring now accepts close transcripts such as hey jervis while still rejecting unrelated speech.",
+    "Wake scoring now uses a stricter 0.86 fuzzy threshold so short near-misses such as hey jars are rejected.",
     "Typed wake simulation now uses the same fuzzy wake tolerance, so Hey Jervis please check status is understood as check status.",
     "One-breath commands like Hey Jarvis check my email now go straight to command capture instead of also speaking the wake-only Yes sir? prompt.",
     "If the listener is already awake and hears Hey Jarvis again without a command, it keeps listening instead of submitting hey jarvis as the command.",
@@ -50,7 +51,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Python safety suite: 392/392 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, and fuzzy-wake work.",
+    "Python safety suite: 393/393 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, and fuzzy-wake work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Live safe verifier passed 93/93 after the speech-mute, wake-audition, voice-loop echo, and report-route endpoints were added.",
@@ -63,6 +64,7 @@ PROOF_ITEMS = [
     "Muted live app-status and app-running probes returned app.status/app.running with routing.source=model_tool_call and did not launch or focus apps.",
     "A muted live streaming app-status probe displayed Yes sir, checking Safari now before the final answer.",
     "A muted live wake probe understood Hey Jervis please check status as check status, and wake scoring reported fuzzy_window score 0.916667 instead of a fake exact match.",
+    "Python and Swift wake tests now keep hey jervis working while rejecting the short near-miss hey jars.",
     "Native one-breath wake commands now skip the separate wake-only Yes sir? prompt, reducing overlapping speech between the wake greeting and the working line.",
     "Native awaiting-command handling now ignores repeated wake-only phrases instead of routing them as user commands.",
     "Native awaiting-command handling now ignores the wake greeting echo, reducing accidental yes sir command captures from Jarvis's own speaker.",
@@ -271,6 +273,7 @@ def render_report(context: dict[str, Any]) -> str:
 def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
         ("done", "Ship Hey Jarvis native listener", "Experimental app toggle and Speech framework pipeline are in place."),
+        ("done", "Tighten fuzzy wake threshold", "Hey jervis still works, while short near-misses such as hey jars are rejected."),
         ("done", "Avoid wake-command double speech", "Direct Hey Jarvis commands now skip the wake-only prompt and go straight to capture."),
         ("done", "Ignore repeated wake-only phrases", "When already awake, Hey Jarvis alone keeps listening instead of becoming the command."),
         ("done", "Ignore wake-greeting echo", "The command listener ignores Jarvis's own Yes sir? prompt if the microphone hears it."),
@@ -386,7 +389,7 @@ def spotlight_section(context: dict[str, Any]) -> str:
         ),
         (
             "Best Proof",
-            f"{context['verification']['label']} verifier, 392/392 Python tests, Swift self-tests, and live muted speech probes.",
+            f"{context['verification']['label']} verifier, 393/393 Python tests, Swift self-tests, and live muted speech probes.",
         ),
         (
             "Honest Limit",

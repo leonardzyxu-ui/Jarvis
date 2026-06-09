@@ -8153,6 +8153,16 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(captured["event"], "command_captured")
         self.assertEqual(captured["command"], "check status")
 
+    def test_wake_detection_rejects_short_near_miss(self):
+        direct = detect_wake_command("hey jars please check status")
+        self.assertFalse(direct.woke)
+
+        score = score_wake_transcript("hey jars please check status")
+        self.assertFalse(score.detected)
+        self.assertEqual(score.window, "hey jars")
+        self.assertLess(score.score, score.threshold)
+        self.assertGreaterEqual(score.threshold, 0.86)
+
     def test_wake_session_ignores_late_followup(self):
         session = WakeSession(timeout_seconds=3)
         session.observe("Hey Jarvis", now=10)

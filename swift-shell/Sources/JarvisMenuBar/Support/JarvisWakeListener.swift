@@ -14,6 +14,8 @@ struct JarvisWakeListenerSnapshot: Equatable {
 
 @MainActor
 final class JarvisWakeListener {
+    private static let wakeSimilarityThreshold = 0.86
+
     var onStateChange: ((JarvisWakeListenerSnapshot) -> Void)?
     var onWakeDetected: ((String) -> Void)?
     var onCommandCaptured: ((String, String) -> Void)?
@@ -339,7 +341,7 @@ final class JarvisWakeListener {
         }
         for index in 0..<(words.count - 1) {
             let window = words[index] + " " + words[index + 1]
-            if phraseSimilarity(window, "hey jarvis") >= 0.82 {
+            if phraseSimilarity(window, "hey jarvis") >= wakeSimilarityThreshold {
                 let command = words.dropFirst(index + 2).joined(separator: " ")
                 return Detection(detected: true, command: cleanCommand(command))
             }

@@ -139,6 +139,7 @@ enum JarvisMenuBarSelfTest {
         let wakeCases: [(transcript: String, detected: Bool, command: String)] = [
             ("Hey Jarvis check email", true, "check email"),
             ("hey jervis please check email", true, "check email"),
+            ("hey jars please check email", false, ""),
             ("please check email later", false, ""),
         ]
         for wakeCase in wakeCases {

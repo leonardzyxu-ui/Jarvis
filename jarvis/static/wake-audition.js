@@ -550,7 +550,7 @@
   }
 
   function numericThreshold() {
-    return Number.parseFloat(els.threshold.value || "0.82");
+    return Number.parseFloat(els.threshold.value || "0.86");
   }
 
   function numericNoiseDb() {

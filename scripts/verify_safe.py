@@ -1101,7 +1101,7 @@ def check_endpoint_wake_audition(base_url: str) -> str:
 
     score = post_json(
         "/api/wake-audition/score",
-        {"transcript": "hey jervis check status", "threshold": 0.82, "noise_db": -18},
+        {"transcript": "hey jervis check status", "threshold": 0.86, "noise_db": -18},
         base_url=base_url,
     )
     require(score.get("tool") == "voice.wake_audition", f"score tool was {score.get('tool')}")
