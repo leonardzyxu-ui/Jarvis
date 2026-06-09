@@ -163,6 +163,8 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertIn("Jarvis Overnight Launch Report", report)
         self.assertIn("Jarvis Overnight Workboard", workboard)
+        self.assertIn("Auto-refresh: 30s", report)
+        self.assertIn("Auto-refresh: 12s", workboard)
         self.assertIn("Jarvis 0.1.test build 999", report)
         self.assertIn("Source commit: abc1234", report)
         self.assertIn("GitHub: origin/codex/test (up to date)", report)

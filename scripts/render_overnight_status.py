@@ -254,7 +254,7 @@ def render_report(context: dict[str, Any]) -> str:
   <header>
     <h1>Jarvis Overnight Launch Report</h1>
     <p class="tagline">The voice loop moved from promise to first real test surface. This is the single page Leo needs tomorrow morning.</p>
-    {pill_row(context)}
+    {pill_row(context, refresh_seconds=30)}
   </header>
   <main>
     {promise_section(context)}
@@ -309,7 +309,7 @@ def render_workboard(context: dict[str, Any]) -> str:
 <body>
   <header>
     <h1>Jarvis Overnight Workboard</h1>
-    {pill_row(context)}
+    {pill_row(context, refresh_seconds=12)}
   </header>
   <main>
     <section>
@@ -339,9 +339,9 @@ def task_item(status: str, title: str, detail: str) -> str:
     )
 
 
-def pill_row(context: dict[str, Any]) -> str:
+def pill_row(context: dict[str, Any], *, refresh_seconds: int) -> str:
     pills = [
-        "Auto-refresh: 30s",
+        f"Auto-refresh: {refresh_seconds}s",
         f"Last updated: {context['updated']}",
         f"Live bundle: {context['bundle']}",
         f"Source commit: {context['commit']}",
