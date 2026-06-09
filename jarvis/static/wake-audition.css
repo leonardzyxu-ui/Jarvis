@@ -249,6 +249,46 @@ audio {
   margin-top: 12px;
 }
 
+.corpus-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.corpus-button {
+  min-height: 82px;
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  text-align: left;
+  background: #fbfcfd;
+}
+
+.corpus-button.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(13, 118, 110, 0.12);
+}
+
+.corpus-button strong,
+.corpus-button span,
+.corpus-button em {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.corpus-button span {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.corpus-button em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
 .trial-status {
   min-height: 42px;
   margin: 12px 0 0;
@@ -347,5 +387,15 @@ tbody tr:last-child td {
 
   .control-band {
     align-items: stretch;
+  }
+
+  .corpus-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .corpus-list {
+    grid-template-columns: 1fr;
   }
 }

@@ -10,9 +10,21 @@
     lastBlobUrl: "",
     lastMimeType: "",
     lastScore: null,
+    selectedCorpusTranscript: "",
     runs: loadRuns(),
     runIndex: 0,
   };
+
+  const THRESHOLD_CORPUS = [
+    { label: "Exact", transcript: "hey jarvis status", expected: "detect" },
+    { label: "Fuzzy", transcript: "hey jervis status", expected: "detect" },
+    { label: "Okay fuzzy", transcript: "okay jervis status", expected: "detect" },
+    { label: "Wake only", transcript: "okay jarvis", expected: "listen" },
+    { label: "Near miss", transcript: "hey jars status", expected: "reject" },
+    { label: "Boundary", transcript: "hey charvis status", expected: "reject" },
+    { label: "Wrong phrase", transcript: "okay service status", expected: "reject" },
+    { label: "No wake", transcript: "please check status", expected: "reject" },
+  ];
 
   const els = {
     apiStatus: document.getElementById("api-status"),
@@ -26,6 +38,8 @@
     stopRecording: document.getElementById("stop-recording"),
     saveSample: document.getElementById("save-sample"),
     copyExport: document.getElementById("copy-export"),
+    corpusStatus: document.getElementById("corpus-status"),
+    corpusList: document.getElementById("corpus-list"),
     manualTranscript: document.getElementById("manual-transcript"),
     wakeResult: document.getElementById("wake-result"),
     scoreValue: document.getElementById("score-value"),
@@ -53,6 +67,7 @@
     setPill(els.recognizerStatus, SpeechRecognition ? "Ready" : "No Web Speech", SpeechRecognition ? "ok" : "fail");
     updateThreshold();
     updateNoise();
+    renderCorpus();
     renderRuns();
     bindEvents();
     await loadStatus();
@@ -74,6 +89,33 @@
     els.playNoise.addEventListener("click", playNoiseMix);
     els.loopbackTrial.addEventListener("click", runLoopbackTrial);
     els.downloadSample.addEventListener("click", downloadLastSample);
+  }
+
+  function renderCorpus() {
+    els.corpusList.innerHTML = "";
+    THRESHOLD_CORPUS.forEach((item) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "corpus-button";
+      button.dataset.transcript = item.transcript;
+      button.innerHTML = [
+        "<strong>" + escapeHtml(item.label) + "</strong>",
+        "<span>" + escapeHtml(item.transcript) + "</span>",
+        "<em>" + escapeHtml(item.expected) + "</em>",
+      ].join("");
+      button.addEventListener("click", () => fillCorpusTranscript(item, button));
+      els.corpusList.appendChild(button);
+    });
+  }
+
+  async function fillCorpusTranscript(item, button) {
+    state.selectedCorpusTranscript = item.transcript;
+    els.manualTranscript.value = item.transcript;
+    for (const candidate of els.corpusList.querySelectorAll(".corpus-button")) {
+      candidate.classList.toggle("active", candidate === button);
+    }
+    setPill(els.corpusStatus, item.expected, item.expected === "reject" ? "warn" : "ok");
+    await scoreCurrentTranscript();
   }
 
   async function loadStatus() {
@@ -583,6 +625,15 @@
       return ".ogg";
     }
     return ".webm";
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
   }
 
   function loadRuns() {
