@@ -315,7 +315,33 @@ final class JarvisWakeListener {
 
     private struct Detection {
         let detected: Bool
+        let phrase: String?
         let command: String
+        let score: Double
+        let threshold: Double
+        let window: String
+        let normalized: String
+        let startWordIndex: Int?
+        let mode: String
+
+        var diagnostics: [String: String] {
+            var fields: [String: String] = [
+                "detected": detected ? "true" : "false",
+                "command": command,
+                "score": String(format: "%.6f", score),
+                "threshold": String(format: "%.2f", threshold),
+                "window": window,
+                "normalized": normalized,
+                "mode": mode,
+            ]
+            if let phrase {
+                fields["phrase"] = phrase
+            }
+            if let startWordIndex {
+                fields["start_word_index"] = String(startWordIndex)
+            }
+            return fields
+        }
     }
 
     static func testDetectWake(_ transcript: String) -> (detected: Bool, command: String) {
@@ -323,30 +349,111 @@ final class JarvisWakeListener {
         return (detection.detected, detection.command)
     }
 
+    static func testWakeScore(_ transcript: String) -> [String: String] {
+        detectWake(transcript).diagnostics
+    }
+
     private static func detectWake(_ transcript: String) -> Detection {
         let normalizedText = normalized(transcript)
         let phrases = ["hey jarvis", "okay jarvis", "ok jarvis"]
         for phrase in phrases {
             if normalizedText == phrase {
-                return Detection(detected: true, command: "")
+                return Detection(
+                    detected: true,
+                    phrase: phrase,
+                    command: "",
+                    score: 1,
+                    threshold: wakeSimilarityThreshold,
+                    window: phrase,
+                    normalized: normalizedText,
+                    startWordIndex: 0,
+                    mode: "exact_prefix"
+                )
             }
             let prefix = phrase + " "
             if normalizedText.hasPrefix(prefix) {
-                return Detection(detected: true, command: cleanCommand(String(normalizedText.dropFirst(prefix.count))))
+                return Detection(
+                    detected: true,
+                    phrase: phrase,
+                    command: cleanCommand(String(normalizedText.dropFirst(prefix.count))),
+                    score: 1,
+                    threshold: wakeSimilarityThreshold,
+                    window: phrase,
+                    normalized: normalizedText,
+                    startWordIndex: 0,
+                    mode: "exact_prefix"
+                )
             }
         }
+        guard let best = bestFuzzyWakeMatch(normalizedText) else {
+            return Detection(
+                detected: false,
+                phrase: nil,
+                command: "",
+                score: 0,
+                threshold: wakeSimilarityThreshold,
+                window: "",
+                normalized: normalizedText,
+                startWordIndex: nil,
+                mode: "fuzzy_window"
+            )
+        }
+        guard best.score >= wakeSimilarityThreshold else {
+            return Detection(
+                detected: false,
+                phrase: nil,
+                command: "",
+                score: best.score,
+                threshold: wakeSimilarityThreshold,
+                window: best.window,
+                normalized: normalizedText,
+                startWordIndex: best.startWordIndex,
+                mode: "fuzzy_window"
+            )
+        }
+        return Detection(
+            detected: true,
+            phrase: best.phrase,
+            command: cleanCommand(best.command),
+            score: best.score,
+            threshold: wakeSimilarityThreshold,
+            window: best.window,
+            normalized: normalizedText,
+            startWordIndex: best.startWordIndex,
+            mode: "fuzzy_window"
+        )
+    }
+
+    private static func bestFuzzyWakeMatch(_ normalizedText: String) -> (
+        phrase: String,
+        score: Double,
+        window: String,
+        startWordIndex: Int,
+        command: String
+    )? {
         let words = normalizedText.split(separator: " ").map(String.init)
-        guard words.count >= 2 else {
-            return Detection(detected: false, command: "")
-        }
-        for index in 0..<(words.count - 1) {
-            let window = words[index] + " " + words[index + 1]
-            if phraseSimilarity(window, "hey jarvis") >= wakeSimilarityThreshold {
-                let command = words.dropFirst(index + 2).joined(separator: " ")
-                return Detection(detected: true, command: cleanCommand(command))
+        let phrases = ["hey jarvis", "okay jarvis", "ok jarvis"]
+        var best: (phrase: String, score: Double, window: String, startWordIndex: Int, command: String)?
+        for phrase in phrases {
+            let phraseWords = phrase.split(separator: " ").map(String.init)
+            guard !phraseWords.isEmpty, words.count >= phraseWords.count else {
+                continue
+            }
+            for index in 0...(words.count - phraseWords.count) {
+                let windowWords = Array(words[index..<(index + phraseWords.count)])
+                let score = phraseSimilarityWords(windowWords, phraseWords)
+                if best == nil || score > (best?.score ?? 0) {
+                    best = (
+                        phrase: phrase,
+                        score: score,
+                        window: windowWords.joined(separator: " "),
+                        startWordIndex: index,
+                        command: words.dropFirst(index + phraseWords.count).joined(separator: " ")
+                    )
+                }
             }
         }
-        return Detection(detected: false, command: "")
+        return best
     }
 
     private static func normalized(_ value: String) -> String {
@@ -370,6 +477,10 @@ final class JarvisWakeListener {
     private static func phraseSimilarity(_ left: String, _ right: String) -> Double {
         let leftWords = left.split(separator: " ").map(String.init)
         let rightWords = right.split(separator: " ").map(String.init)
+        return phraseSimilarityWords(leftWords, rightWords)
+    }
+
+    private static func phraseSimilarityWords(_ leftWords: [String], _ rightWords: [String]) -> Double {
         guard leftWords.count == rightWords.count, !leftWords.isEmpty else {
             return 0
         }

@@ -4173,7 +4173,11 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("onCommandCaptured", listener_source)
         self.assertIn("onCommandIgnored", listener_source)
         self.assertIn("testDetectWake", listener_source)
+        self.assertIn("testWakeScore", listener_source)
         self.assertIn('"hey jervis please check email"', self_test_source)
+        self.assertIn('"okay jervis please check status"', self_test_source)
+        self.assertIn("bestFuzzyWakeMatch", listener_source)
+        self.assertIn("phraseSimilarityWords", listener_source)
         self.assertIn(
             'if !detection.command.isEmpty {\n            status = "Wake detected"\n            captureCommand',
             listener_source,
@@ -4199,6 +4203,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('recordWakeEvent("command_captured"', model_source)
         self.assertIn('event = "command_ignored_repeated_wake"', model_source)
         self.assertIn('event = "command_ignored_echo"', model_source)
+        self.assertIn('"detector_detected": "detected"', model_source)
+        self.assertIn("detector_score", model_source)
+        self.assertIn("detector_threshold", model_source)
         self.assertIn('"recent_events": wakeEventLog', model_source)
         self.assertIn("WakeToggleButton", view_source)
         self.assertIn("model.wakeModeText", view_source)

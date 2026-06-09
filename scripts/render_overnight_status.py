@@ -33,6 +33,7 @@ SHIPPED_ITEMS = [
     "Typed wake simulation now ignores the wake greeting echo too, so the wake lab matches the native listener before the real follow-up command arrives.",
     "Copy Chat JSON now includes recent wake events so Leo can paste back what Jarvis heard and captured.",
     "Copy Chat JSON now records ignored repeated wake phrases and ignored speaker-echo events from the native listener.",
+    "Native Copy Chat JSON wake events now include detector score, threshold, matched phrase, window, mode, and normalized transcript.",
     "Normal Dock-app behavior is preserved, with a menu-bar item enabled for quick controls.",
     "Menu-bar Shut Up toggle mutes Jarvis, interrupts current speech, and switches to Keep Blabbering for unmute.",
     "Menu-bar Start Hey Jarvis / Stop Hey Jarvis controls make the wake listener reachable without opening the panel.",
@@ -73,6 +74,7 @@ PROOF_ITEMS = [
     "Python wake-session tests now cover the same wake greeting echo path before a real follow-up command.",
     "Live verifier now probes voice loop: Hey Jarvis | Yes sir? | status and requires status to be captured after the ignored echo.",
     "Swift source contract now requires ignored repeated-wake and wake-greeting-echo events to be present in Copy Chat JSON.",
+    "Swift self-tests now require fuzzy matching for okay jervis as well as hey jervis, with detector diagnostics exposed for pasted JSON.",
 ]
 
 TRY_ITEMS = [
@@ -284,6 +286,7 @@ def render_workboard(context: dict[str, Any]) -> str:
         ("done", "Align typed echo simulation", "The wake lab ignores the same wake greeting echo before a real follow-up command."),
         ("done", "Add wake debug trace to chat export", "Copy Chat JSON includes the recent wake events and captured command text."),
         ("done", "Trace ignored wake events", "Copy Chat JSON records ignored repeated wake phrases and wake-greeting echoes."),
+        ("done", "Expose wake detector scores", "Copy Chat JSON now includes score, threshold, phrase, window, and mode for wake events."),
         ("done", "Ship wake audition lab", "Local page records samples, scores transcripts, and saves samples under runtime."),
         ("done", "Add menu-bar silence control", "Shut Up interrupts and mutes; Keep Blabbering unmutes."),
         ("done", "Add menu-bar wake controls", "Start/Stop Hey Jarvis and Open Wake Test are reachable without the panel."),

@@ -303,6 +303,23 @@ final class JarvisShellModel: ObservableObject {
         }
         if !transcript.isEmpty {
             item["transcript"] = Self.redactChatExportText(transcript)
+            let diagnostics = JarvisWakeListener.testWakeScore(transcript)
+            let detectorFields = [
+                "detector_detected": "detected",
+                "detector_phrase": "phrase",
+                "detector_command": "command",
+                "detector_score": "score",
+                "detector_threshold": "threshold",
+                "detector_window": "window",
+                "detector_normalized": "normalized",
+                "detector_mode": "mode",
+                "detector_start_word_index": "start_word_index",
+            ]
+            for (outputKey, diagnosticKey) in detectorFields {
+                if let value = diagnostics[diagnosticKey] {
+                    item[outputKey] = Self.redactChatExportText(value)
+                }
+            }
         }
         if !command.isEmpty {
             item["command"] = Self.redactChatExportText(command)
