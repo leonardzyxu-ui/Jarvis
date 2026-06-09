@@ -45,6 +45,7 @@ final class JarvisShellModel: ObservableObject {
     private var monitoredCodexJobs: Set<String> = []
     private var codexActivityTask: Task<Void, Never>?
     private var activeTimerTasks: [String: Task<Void, Never>] = [:]
+    private var wakeEventLog: [[String: String]] = []
     private static let smokeTestPrompts = [
         "hello Jarvis",
         "tell me a short joke",
@@ -163,13 +164,16 @@ final class JarvisShellModel: ObservableObject {
 
     func toggleWakeListener() {
         if isWakeListening {
+            recordWakeEvent("listener_stop_requested", detail: wakeDetailText)
             wakeListener.stop()
         } else {
+            recordWakeEvent("listener_start_requested", detail: wakeDetailText)
             wakeListener.start()
         }
     }
 
     func stopWakeListener() {
+        recordWakeEvent("listener_stop_requested", detail: wakeDetailText)
         wakeListener.stop()
     }
 
@@ -240,6 +244,7 @@ final class JarvisShellModel: ObservableObject {
             state = "Listening"
             turnPhaseText = "Awake"
             wakeTranscriptText = transcript
+            recordWakeEvent("wake_detected", detail: "Wake callback fired.", transcript: transcript)
             messages.append(ChatMessage(role: .jarvis, text: "Yes sir?", detail: "Wake detected."))
             Task {
                 if !self.isSpeechMuted {
@@ -253,11 +258,35 @@ final class JarvisShellModel: ObservableObject {
             }
             wakeTranscriptText = transcript
             wakeDetailText = "Captured: \(command)"
+            recordWakeEvent("command_captured", detail: "Wake command captured.", transcript: transcript, command: command)
             guard !isBusy else {
+                recordWakeEvent("command_held_busy", detail: "Jarvis was busy when the wake command arrived.", transcript: transcript, command: command)
                 messages.append(ChatMessage(role: .jarvis, text: "I heard \(command), but I am still finishing the current task.", detail: "Wake command held."))
                 return
             }
             submit(command)
+        }
+    }
+
+    private func recordWakeEvent(_ event: String, detail: String = "", transcript: String = "", command: String = "") {
+        var item: [String: String] = [
+            "at": ISO8601DateFormatter().string(from: Date()),
+            "event": event,
+            "wake_mode": wakeModeText,
+            "state": state,
+        ]
+        if !detail.isEmpty {
+            item["detail"] = Self.redactChatExportText(detail)
+        }
+        if !transcript.isEmpty {
+            item["transcript"] = Self.redactChatExportText(transcript)
+        }
+        if !command.isEmpty {
+            item["command"] = Self.redactChatExportText(command)
+        }
+        wakeEventLog.append(item)
+        if wakeEventLog.count > 20 {
+            wakeEventLog.removeFirst(wakeEventLog.count - 20)
         }
     }
 
@@ -313,6 +342,7 @@ final class JarvisShellModel: ObservableObject {
                 "detail": wakeDetailText,
                 "transcript": Self.redactChatExportText(wakeTranscriptText),
                 "listening": isWakeListening,
+                "recent_events": wakeEventLog,
             ],
             "speech": [
                 "muted": isSpeechMuted,

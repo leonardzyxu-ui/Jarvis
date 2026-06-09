@@ -25,6 +25,7 @@ SHIPPED_ITEMS = [
     "Wake-audition lab at /wake-audition/ for recording samples, scoring transcripts, running noise trials, and copying JSON.",
     "Wake scoring now accepts close transcripts such as hey jervis while still rejecting unrelated speech.",
     "One-breath commands like Hey Jarvis check my email now trigger the immediate Yes sir wake acknowledgement before capture.",
+    "Copy Chat JSON now includes recent wake events so Leo can paste back what Jarvis heard and captured.",
     "Normal Dock-app behavior is preserved, with a menu-bar item enabled for quick controls.",
     "Menu-bar Shut Up toggle mutes Jarvis, interrupts current speech, and switches to Keep Blabbering for unmute.",
     "Menu-bar Start Hey Jarvis / Stop Hey Jarvis controls make the wake listener reachable without opening the panel.",
@@ -51,6 +52,7 @@ TRY_ITEMS = [
     "Ask for wake status or overnight status; Jarvis should speak the final answer, not only the Yes sir working line.",
     "Open the wake lab and record several Hey Jarvis samples in quiet and noisy conditions.",
     "Use the wake lab Copy JSON button if recognition feels wrong, then paste the JSON back to Codex.",
+    "Use Copy Chat JSON after a failed wake attempt; it now includes wake detected and command captured events.",
 ]
 
 RISK_ITEMS = [
@@ -220,6 +222,7 @@ def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
         ("done", "Ship Hey Jarvis native listener", "Experimental app toggle and Speech framework pipeline are in place."),
         ("done", "Acknowledge one-breath wake commands", "Direct Hey Jarvis commands now trigger the wake acknowledgement before capture."),
+        ("done", "Add wake debug trace to chat export", "Copy Chat JSON includes the recent wake events and captured command text."),
         ("done", "Ship wake audition lab", "Local page records samples, scores transcripts, and saves samples under runtime."),
         ("done", "Add menu-bar silence control", "Shut Up interrupts and mutes; Keep Blabbering unmutes."),
         ("done", "Add menu-bar wake controls", "Start/Stop Hey Jarvis and Open Wake Test are reachable without the panel."),
