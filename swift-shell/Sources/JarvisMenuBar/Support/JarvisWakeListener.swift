@@ -238,7 +238,10 @@ final class JarvisWakeListener {
     private func handleCommandCandidate(_ transcript: String) {
         var command = Self.normalized(transcript)
         let wake = Self.detectWake(transcript)
-        if wake.detected, !wake.command.isEmpty {
+        if wake.detected {
+            guard !wake.command.isEmpty else {
+                return
+            }
             command = wake.command
         }
         guard command.count >= 2 else {

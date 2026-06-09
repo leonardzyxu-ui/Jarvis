@@ -4129,6 +4129,10 @@ class RuntimeSurfaceTests(unittest.TestCase):
             'if !detection.command.isEmpty {\n            status = "Wake detected"\n            onWakeDetected?(transcript)\n            captureCommand',
             listener_source,
         )
+        self.assertIn(
+            'if wake.detected {\n            guard !wake.command.isEmpty else {\n                return\n            }\n            command = wake.command',
+            listener_source,
+        )
         self.assertIn("wakeListener.start()", model_source)
         self.assertIn("wakeListener.stop()", model_source)
         self.assertIn('text: "Yes sir?"', model_source)
