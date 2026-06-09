@@ -6870,6 +6870,44 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(events[-1]["data"]["result"]["reply"], "Correct, x is 3.")
         self.assertEqual(stream_mock.call_args.kwargs["history"], history)
 
+    def test_streamed_fast_chat_final_speech_matches_final_reply(self):
+        fake_events = [
+            {"event": "delta", "data": {"text": "Hello, "}},
+            {"event": "delta", "data": {"text": "sir. What can I help with?"}},
+            {
+                "event": "final_result",
+                "data": {
+                    "tool": "conversation.fast_local",
+                    "backend": "groq",
+                    "model": "test-fast",
+                    "status": "completed",
+                    "executed": True,
+                    "fallback_used": False,
+                    "reply": "Hello, sir. What can I help with?",
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = JarvisServer()
+            server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
+            with patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events), \
+                 patch(
+                     "jarvis.server.speak_text_async",
+                     side_effect=lambda text, *, reason: {
+                         "spoken": True,
+                         "status": "queued",
+                         "reason": reason,
+                         "text_preview": text,
+                     },
+                 ):
+                events = list(server.stream_command("hello Jarvis"))
+
+        self.assertEqual([event["event"] for event in events], ["delta", "delta", "final"])
+        final = events[-1]["data"]
+        self.assertEqual(final["result"]["reply"], "Hello, sir. What can I help with?")
+        self.assertEqual(final["speech"]["reason"], "final")
+        self.assertEqual(final["speech"]["text_preview"], final["result"]["reply"])
+
     def test_stream_command_passes_history_to_selected_tools_more(self):
         fake_events = [
             {

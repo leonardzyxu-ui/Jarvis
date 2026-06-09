@@ -46,6 +46,7 @@ PROOF_ITEMS = [
     "Live Jarvis health showed the rebuilt app running from bundled app resources.",
     "Live UI inspection showed the Jarvis panel with Email, Status, Report, Wake Lab, Hey Jarvis, Perms, Screen, and Codex actions visible.",
     "A muted live TTS probe returned the exact sanitized text_preview that Jarvis was asked to speak.",
+    "A muted live hello stream matched visible text, final reply, and TTS text_preview.",
 ]
 
 TRY_ITEMS = [
