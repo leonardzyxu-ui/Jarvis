@@ -3157,6 +3157,7 @@ def voice_loop_simulation(
     command = detection.command
     command_source = "wake_utterance"
     ignored_echo_indices: list[int] = []
+    ignored_repeated_wake_indices: list[int] = []
     if utterances:
         for index, utterance in enumerate(utterances):
             candidate = detect_wake_command(utterance)
@@ -3169,6 +3170,9 @@ def voice_loop_simulation(
             for index, utterance in enumerate(utterances[wake_index + 1 :], start=wake_index + 1):
                 followup_detection = detect_wake_command(utterance)
                 if followup_detection.woke:
+                    if followup_detection.needs_followup:
+                        ignored_repeated_wake_indices.append(index)
+                        continue
                     followup_command = followup_detection.command
                 else:
                     followup_command = utterance
@@ -3196,6 +3200,8 @@ def voice_loop_simulation(
     ]
     for index in ignored_echo_indices:
         stages.append({"id": "command_capture", "status": "ignored_echo", "utterance_index": index})
+    for index in ignored_repeated_wake_indices:
+        stages.append({"id": "command_capture", "status": "ignored_repeated_wake", "utterance_index": index})
     spoken_sequence: list[str] = []
     visible_sequence: list[str] = []
     if not detection.woke:
@@ -3239,6 +3245,7 @@ def voice_loop_simulation(
         "utterances": utterances[:8],
         "wake_utterance_index": wake_index if wake_index >= 0 else None,
         "ignored_echo_utterance_indices": ignored_echo_indices,
+        "ignored_repeated_wake_utterance_indices": ignored_repeated_wake_indices,
         "detection": detection.to_dict(),
         "command": command,
         "command_source": command_source if command else None,

@@ -29,6 +29,7 @@ SHIPPED_ITEMS = [
     "Typed wake simulation now uses the same fuzzy wake tolerance, so Hey Jervis please check status is understood as check status.",
     "One-breath commands like Hey Jarvis check my email now go straight to command capture instead of also speaking the wake-only Yes sir? prompt.",
     "If the listener is already awake and hears Hey Jarvis again without a command, it keeps listening instead of submitting hey jarvis as the command.",
+    "The typed voice-loop simulator now records repeated wake-only phrases as ignored before the real follow-up command.",
     "After Jarvis says the wake-only Yes sir? prompt, the command listener ignores that speaker echo instead of submitting yes sir as Leo's command.",
     "Typed wake simulation now ignores the wake greeting echo too, so the wake lab matches the native listener before the real follow-up command arrives.",
     "Copy Chat JSON now includes recent wake events so Leo can paste back what Jarvis heard and captured.",
@@ -53,10 +54,10 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Python safety suite: 393/393 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, and fuzzy-wake work.",
+    "Python safety suite: 396/396 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, and fuzzy-wake work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
-    "Live safe verifier passed 93/93 after the speech-mute, wake-audition, voice-loop echo, and report-route endpoints were added.",
+    "Live safe verifier passed 94/94 after the speech-mute, wake-audition, repeated-wake, voice-loop echo, and report-route endpoints were added.",
     "Live verifier now checks that muted final speech preserves a substantial prefix of the final visible reply.",
     "Live Jarvis health showed the rebuilt app running from bundled app resources.",
     "Live UI inspection showed the Jarvis panel with Email, Status, Report, Wake Lab, Hey Jarvis, Perms, Screen, and Codex actions visible.",
@@ -72,6 +73,7 @@ PROOF_ITEMS = [
     "Native awaiting-command handling now ignores repeated wake-only phrases instead of routing them as user commands.",
     "Native awaiting-command handling now ignores the wake greeting echo, reducing accidental yes sir command captures from Jarvis's own speaker.",
     "Python wake-session tests now cover the same wake greeting echo path before a real follow-up command.",
+    "Python wake-session and voice-loop tests now cover repeated wake-only phrases before a real follow-up command.",
     "Live verifier now probes voice loop: Hey Jarvis | Yes sir? | status and requires status to be captured after the ignored echo.",
     "Swift source contract now requires ignored repeated-wake and wake-greeting-echo events to be present in Copy Chat JSON.",
     "Swift self-tests now require fuzzy matching for okay jervis as well as hey jervis, with detector diagnostics exposed for pasted JSON.",
@@ -396,7 +398,7 @@ def spotlight_section(context: dict[str, Any]) -> str:
         ),
         (
             "Best Proof",
-            f"{context['verification']['label']} verifier, 393/393 Python tests, Swift self-tests, and live muted speech probes.",
+            f"{context['verification']['label']} verifier, 396/396 Python tests, Swift self-tests, and live muted speech probes.",
         ),
         (
             "Honest Limit",

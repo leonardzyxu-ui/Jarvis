@@ -57,6 +57,14 @@ class WakeSession:
 
         detection = detect_wake_command(transcript)
         if detection.woke and detection.needs_followup:
+            if self.listening:
+                self.last_wake_at = observed_at
+                return {
+                    "event": "ignored_repeated_wake",
+                    "listening": True,
+                    "command": "",
+                    "detection": detection.to_dict(),
+                }
             self.listening = True
             self.last_wake_at = observed_at
             return {

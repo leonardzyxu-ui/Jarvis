@@ -269,6 +269,35 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(posts[0], ("/api/speech/mute", {"muted": True}))
         self.assertEqual(posts[-1], ("/api/speech/mute", {"muted": False}))
 
+    def test_verify_safe_checks_voice_loop_repeated_wake(self):
+        posts = []
+
+        def fake_post_json(path, payload, **_kwargs):
+            posts.append((path, payload))
+            if path == "/api/speech/mute":
+                return {"tool": "voice.speech_mute", "muted": bool(payload["muted"])}
+            if path == "/api/command":
+                self.assertEqual(payload["command"], "voice loop: Hey Jarvis | Hey Jarvis | status")
+                return {
+                    "tool": "voice.loop_simulation",
+                    "result": {
+                        "status": "command_previewed",
+                        "command": "status",
+                        "command_source": "followup_utterance",
+                        "ignored_repeated_wake_utterance_indices": [1],
+                        "route_preview": {"tool": "system.status", "executed": False},
+                    },
+                }
+            raise AssertionError(f"unexpected POST {path}")
+
+        with patch("scripts.verify_safe.post_json", side_effect=fake_post_json), \
+             patch("scripts.verify_safe.get_json", return_value={"muted": False}):
+            detail = verify_safe.check_endpoint_voice_loop_repeated_wake("http://127.0.0.1:8765")
+
+        self.assertEqual(detail, "voice loop ignored repeated wake phrase and captured follow-up command")
+        self.assertEqual(posts[0], ("/api/speech/mute", {"muted": True}))
+        self.assertEqual(posts[-1], ("/api/speech/mute", {"muted": False}))
+
     def test_verify_safe_rejects_tiny_final_speech_preview(self):
         self.assertTrue(
             verify_safe.speech_preview_matches_reply(
@@ -3105,6 +3134,22 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.result["ignored_echo_utterance_indices"], [1])
         self.assertIn(
             {"id": "command_capture", "status": "ignored_echo", "utterance_index": 1},
+            result.result["stages"],
+        )
+        self.assertEqual(result.result["route_preview"]["tool"], "system.status")
+        self.assertFalse(result.result["route_preview"]["executed"])
+
+    def test_voice_loop_simulation_ignores_repeated_wake_only_followup(self):
+        result = Planner().handle("voice loop: Hey Jarvis | Hey Jarvis | status")
+
+        self.assertEqual(result.tool, "voice.loop_simulation")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["status"], "command_previewed")
+        self.assertEqual(result.result["command"], "status")
+        self.assertEqual(result.result["command_source"], "followup_utterance")
+        self.assertEqual(result.result["ignored_repeated_wake_utterance_indices"], [1])
+        self.assertIn(
+            {"id": "command_capture", "status": "ignored_repeated_wake", "utterance_index": 1},
             result.result["stages"],
         )
         self.assertEqual(result.result["route_preview"]["tool"], "system.status")
@@ -8193,6 +8238,19 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(echo["event"], "ignored_echo")
         self.assertTrue(echo["listening"])
         self.assertEqual(echo["command"], "")
+        self.assertEqual(followup["event"], "command_captured")
+        self.assertEqual(followup["command"], "check status")
+
+    def test_wake_session_ignores_repeated_wake_only_before_followup(self):
+        session = WakeSession(timeout_seconds=3)
+        wake = session.observe("Hey Jarvis", now=10)
+        repeated = session.observe("Hey Jarvis", now=10.4)
+        followup = session.observe("check status", now=11)
+
+        self.assertEqual(wake["event"], "wake_detected")
+        self.assertEqual(repeated["event"], "ignored_repeated_wake")
+        self.assertTrue(repeated["listening"])
+        self.assertEqual(repeated["command"], "")
         self.assertEqual(followup["event"], "command_captured")
         self.assertEqual(followup["command"], "check status")
 
