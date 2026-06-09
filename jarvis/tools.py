@@ -3448,6 +3448,7 @@ def wake_status() -> dict[str, Any]:
     reply = (
         "Wake status: keyboard shortcut wake/focus is available with Command+Option+J. "
         "Typed wake simulation is available for Hey Jarvis, OK Jarvis, and Okay Jarvis. "
+        f"The fuzzy wake threshold is {DEFAULT_WAKE_THRESHOLD:.2f}. "
         "Experimental Hey Jarvis microphone listening is available in the macOS app as a toggle, "
         f"and the wake audition page is at {audition_page_url}."
     )

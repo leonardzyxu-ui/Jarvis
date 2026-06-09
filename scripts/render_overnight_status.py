@@ -25,6 +25,7 @@ SHIPPED_ITEMS = [
     "Wake-audition lab at /wake-audition/ for recording samples, scoring transcripts, running noise trials, and copying JSON.",
     "Wake scoring now accepts close transcripts such as hey jervis while still rejecting unrelated speech.",
     "Wake scoring now uses a stricter 0.86 fuzzy threshold so short near-misses such as hey jars are rejected.",
+    "Wake status now says the current fuzzy threshold in the visible/spoken reply.",
     "Typed wake simulation now uses the same fuzzy wake tolerance, so Hey Jervis please check status is understood as check status.",
     "One-breath commands like Hey Jarvis check my email now go straight to command capture instead of also speaking the wake-only Yes sir? prompt.",
     "If the listener is already awake and hears Hey Jarvis again without a command, it keeps listening instead of submitting hey jarvis as the command.",
@@ -65,6 +66,7 @@ PROOF_ITEMS = [
     "A muted live streaming app-status probe displayed Yes sir, checking Safari now before the final answer.",
     "A muted live wake probe understood Hey Jervis please check status as check status, and wake scoring reported fuzzy_window score 0.916667 instead of a fake exact match.",
     "Python and Swift wake tests now keep hey jervis working while rejecting the short near-miss hey jars.",
+    "A muted live wake-status probe confirmed the visible reply includes the 0.86 threshold.",
     "Native one-breath wake commands now skip the separate wake-only Yes sir? prompt, reducing overlapping speech between the wake greeting and the working line.",
     "Native awaiting-command handling now ignores repeated wake-only phrases instead of routing them as user commands.",
     "Native awaiting-command handling now ignores the wake greeting echo, reducing accidental yes sir command captures from Jarvis's own speaker.",
@@ -275,6 +277,7 @@ def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
         ("done", "Ship Hey Jarvis native listener", "Experimental app toggle and Speech framework pipeline are in place."),
         ("done", "Tighten fuzzy wake threshold", "Hey jervis still works, while short near-misses such as hey jars are rejected."),
+        ("done", "Explain wake threshold", "Wake status now says the current 0.86 fuzzy threshold in the reply."),
         ("done", "Avoid wake-command double speech", "Direct Hey Jarvis commands now skip the wake-only prompt and go straight to capture."),
         ("done", "Ignore repeated wake-only phrases", "When already awake, Hey Jarvis alone keeps listening instead of becoming the command."),
         ("done", "Ignore wake-greeting echo", "The command listener ignores Jarvis's own Yes sir? prompt if the microphone hears it."),

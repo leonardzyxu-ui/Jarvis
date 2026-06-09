@@ -2743,6 +2743,9 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result["microphone_wake_available"])
         self.assertTrue(result["experimental_native_listener_available"])
         self.assertFalse(result["background_listener_active"])
+        self.assertGreaterEqual(result["wake_threshold"], 0.86)
+        self.assertIn("threshold", result["reply"].lower())
+        self.assertIn("0.86", result["reply"])
         self.assertIn("/wake-audition/", result["wake_audition_page_url"])
         self.assertIn("experimental", result["reply"].lower())
 
