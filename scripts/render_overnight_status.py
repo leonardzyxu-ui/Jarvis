@@ -102,6 +102,7 @@ SUPPORTING_FILES = [
     ("http://127.0.0.1:8765/wake-audition/", "Hey Jarvis wake audition lab"),
     ("runtime/wake_audition/samples/", "Locally saved wake samples"),
     ("runtime/verification/", "Safe verifier reports"),
+    ("output/playwright/", "Visual QA screenshots"),
 ]
 
 
