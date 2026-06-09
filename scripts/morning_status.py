@@ -99,6 +99,7 @@ def main() -> int:
     print_requirement_audit()
     print_latest_latency_smoke()
     print_latest_context_smoke()
+    print_latest_wake_threshold_smoke()
     print_current_bundle()
     print_process_status()
     return 0
@@ -316,6 +317,29 @@ def print_latest_context_smoke() -> None:
     )
 
 
+def print_latest_wake_threshold_smoke() -> None:
+    reports = sorted((PROJECT_ROOT / "runtime" / "wake_threshold").glob("wake-threshold-*.json"))
+    if not reports:
+        print("Latest wake threshold: none")
+        return
+
+    latest = reports[-1]
+    try:
+        data = json.loads(latest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"Latest wake threshold: {latest.relative_to(PROJECT_ROOT)} unreadable ({error})")
+        return
+
+    summary = wake_threshold_summary(data)
+    age = format_uptime(time_since(latest.stat().st_mtime))
+    state = "passed" if summary["ok"] else "needs attention"
+    print(
+        f"Latest wake threshold: {state} {summary['passed']}/{summary['total']} "
+        f"(closest reject {summary['closest_reject_label']} {summary['closest_reject_score']:.6f}, "
+        f"{latest.relative_to(PROJECT_ROOT)}, age {age})"
+    )
+
+
 def latency_smoke_summary(data: dict[str, Any]) -> dict[str, Any]:
     results = data.get("results", [])
     if not isinstance(results, list):
@@ -374,6 +398,21 @@ def context_smoke_summary(data: dict[str, Any]) -> dict[str, Any]:
         "status": status,
         "used_history": used_history,
         "total_seconds": numeric_value(result.get("total_seconds")) or 0.0,
+    }
+
+
+def wake_threshold_summary(data: dict[str, Any]) -> dict[str, Any]:
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    passed = int(numeric_value(summary.get("passed")) or 0)
+    total = int(numeric_value(summary.get("total")) or 0)
+    status = str(summary.get("status") or "")
+    return {
+        "ok": status == "passed" and total > 0 and passed == total,
+        "status": status,
+        "passed": passed,
+        "total": total,
+        "closest_reject_label": str(summary.get("closest_reject_label") or ""),
+        "closest_reject_score": numeric_value(summary.get("closest_reject_score")) or 0.0,
     }
 
 

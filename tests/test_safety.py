@@ -117,7 +117,7 @@ from jarvis.tools import (
     wake_status,
 )
 from jarvis.wake import WakeSession, detect_wake_command, score_wake_transcript
-from scripts import render_overnight_status, smoke_conversation_context, verify_safe
+from scripts import render_overnight_status, smoke_conversation_context, smoke_wake_threshold, verify_safe
 from scripts.morning_status import (
     MAX_VERIFICATION_AGE_SECONDS as MORNING_MAX_VERIFICATION_AGE_SECONDS,
     base_url_from_environment,
@@ -134,6 +134,7 @@ from scripts.morning_status import (
     time_since,
     verification_action,
     verification_highlights,
+    wake_threshold_summary,
 )
 
 
@@ -183,6 +184,17 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(report["result"]["used_history"])
         self.assertEqual(mute_calls, [True, True])
         self.assertEqual(report["result"]["speech_mute_restored_to"], True)
+
+    def test_wake_threshold_smoke_has_expected_boundary(self):
+        report = smoke_wake_threshold.run_wake_threshold_smoke()
+
+        self.assertEqual(report["summary"]["status"], "passed")
+        self.assertEqual(report["summary"]["passed"], report["summary"]["total"])
+        cases = {case["label"]: case for case in report["cases"]}
+        self.assertTrue(cases["fuzzy hey jervis"]["detected"])
+        self.assertFalse(cases["short near miss"]["detected"])
+        self.assertFalse(cases["below-threshold charvis"]["detected"])
+        self.assertEqual(cases["below-threshold charvis"]["score"], 0.857143)
 
     def test_render_overnight_status_outputs_report_and_workboard_contract(self):
         context = {
@@ -8775,6 +8787,28 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(summary["total_seconds"], 1.283)
 
         failed = context_smoke_summary({"result": {"status": "passed", "used_history": False}})
+        self.assertFalse(failed["ok"])
+
+    def test_morning_status_wake_threshold_summary(self):
+        summary = wake_threshold_summary(
+            {
+                "summary": {
+                    "status": "passed",
+                    "passed": 10,
+                    "total": 10,
+                    "closest_reject_label": "below-threshold charvis",
+                    "closest_reject_score": 0.857143,
+                }
+            }
+        )
+
+        self.assertTrue(summary["ok"])
+        self.assertEqual(summary["passed"], 10)
+        self.assertEqual(summary["total"], 10)
+        self.assertEqual(summary["closest_reject_label"], "below-threshold charvis")
+        self.assertEqual(summary["closest_reject_score"], 0.857143)
+
+        failed = wake_threshold_summary({"summary": {"status": "passed", "passed": 9, "total": 10}})
         self.assertFalse(failed["ok"])
 
     def test_morning_status_requirement_audit_summary(self):

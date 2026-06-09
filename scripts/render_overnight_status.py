@@ -38,6 +38,7 @@ SHIPPED_ITEMS = [
     "Jarvis can now analyze pasted Copy Chat JSON wake logs with voice.wake_debug.",
     "Copy Chat JSON now includes the filtered history payload preview Jarvis would send with the current command.",
     "A conversation-context smoke script now checks whether Jarvis can answer a follow-up using prior chat history.",
+    "A wake-threshold smoke script now proves exact, fuzzy, and near-miss wake phrases without recording audio.",
     "Normal Dock-app behavior is preserved, with a menu-bar item enabled for quick controls.",
     "Menu-bar Shut Up toggle mutes Jarvis, interrupts current speech, and switches to Keep Blabbering for unmute.",
     "Menu-bar Start Hey Jarvis / Stop Hey Jarvis controls make the wake listener reachable without opening the panel.",
@@ -58,7 +59,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Python safety suite: 407/407 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, and fuzzy-wake work.",
+    "Python safety suite: 409/409 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, and fuzzy-wake work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Live safe verifier passed 96/96 after the speech-mute, wake-audition, model-context, wake-debug, repeated-wake, voice-loop echo, and report-route endpoints were added.",
@@ -73,6 +74,7 @@ PROOF_ITEMS = [
     "Live verifier now probes diagnostics.model_context and requires the speech-dictation input policy without calling models.",
     "Swift source-contract tests now require Copy Chat JSON to expose the filtered conversation-history payload preview.",
     "Conversation-context smoke tests now verify the script mutes speech, restores the previous mute state, and detects whether a follow-up used prior history.",
+    "Wake-threshold smoke tests now verify hey jervis passes while hey jars and hey charvis reject at the 0.86 threshold.",
     "A muted live streaming app-status probe displayed Yes sir, checking Safari now before the final answer.",
     "A muted live wake probe understood Hey Jervis please check status as check status, and wake scoring reported fuzzy_window score 0.916667 instead of a fake exact match.",
     "Python and Swift wake tests now keep hey jervis working while rejecting the short near-miss hey jars.",
@@ -119,6 +121,7 @@ SUPPORTING_FILES = [
     ("runtime/verification/", "Safe verifier reports"),
     ("runtime/model_benchmarks/", "Fast latency smoke reports"),
     ("runtime/conversation_context/", "Conversation-context smoke reports"),
+    ("runtime/wake_threshold/", "Wake-threshold smoke reports"),
     ("output/playwright/", "Visual QA screenshots"),
 ]
 
@@ -145,6 +148,7 @@ def build_context(base_url: str) -> dict[str, Any]:
     verification = latest_verification()
     latency = latest_latency_smoke()
     context_smoke = latest_context_smoke()
+    wake_threshold = latest_wake_threshold_smoke()
     now = datetime.now(BEIJING)
     version = str(app.get("version") or "unknown")
     build = str(app.get("build") or "unknown")
@@ -166,12 +170,13 @@ def build_context(base_url: str) -> dict[str, Any]:
         "verification": verification,
         "latency": latency,
         "context_smoke": context_smoke,
+        "wake_threshold": wake_threshold,
         "worker_source_kind": app.get("worker_source_kind") or "unknown",
         "launch_mode": app.get("launch_mode") or "unknown",
         "runtime_pid": runtime.get("pid") or "unknown",
         "fast_model": fast_model,
         "shipped": SHIPPED_ITEMS,
-        "proof": proof_items_with_verification(verification, latency, context_smoke),
+        "proof": proof_items_with_verification(verification, latency, context_smoke, wake_threshold),
         "try": TRY_ITEMS,
         "risks": RISK_ITEMS,
         "supporting": SUPPORTING_FILES,
@@ -182,6 +187,7 @@ def proof_items_with_verification(
     verification: dict[str, Any],
     latency: dict[str, Any] | None = None,
     context_smoke: dict[str, Any] | None = None,
+    wake_threshold: dict[str, Any] | None = None,
 ) -> list[str]:
     items = list(PROOF_ITEMS)
     if verification.get("path"):
@@ -201,6 +207,13 @@ def proof_items_with_verification(
             "Latest conversation-context smoke: "
             f"{context_smoke['label']}, total {context_smoke['total_seconds']:.3f}s "
             f"({context_smoke['path']})."
+        )
+    if wake_threshold and wake_threshold.get("path"):
+        items.append(
+            "Latest wake-threshold smoke: "
+            f"{wake_threshold['label']}, {wake_threshold['passed']}/{wake_threshold['total']} cases, "
+            f"closest reject {wake_threshold['closest_reject_label']} at {wake_threshold['closest_reject_score']:.6f} "
+            f"({wake_threshold['path']})."
         )
     return items
 
@@ -295,6 +308,47 @@ def latest_context_smoke() -> dict[str, Any]:
     }
 
 
+def latest_wake_threshold_smoke() -> dict[str, Any]:
+    reports = sorted((PROJECT_ROOT / "runtime" / "wake_threshold").glob("wake-threshold-*.json"))
+    if not reports:
+        return {
+            "ok": False,
+            "path": "",
+            "label": "none",
+            "passed": 0,
+            "total": 0,
+            "closest_reject_label": "",
+            "closest_reject_score": 0.0,
+        }
+    latest = reports[-1]
+    try:
+        data = json.loads(latest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "ok": False,
+            "path": str(latest),
+            "label": "unreadable",
+            "passed": 0,
+            "total": 0,
+            "closest_reject_label": "",
+            "closest_reject_score": 0.0,
+        }
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    passed = int(summary.get("passed") or 0)
+    total = int(summary.get("total") or 0)
+    ok = summary.get("status") == "passed" and total > 0 and passed == total
+    relative = str(latest.relative_to(PROJECT_ROOT))
+    return {
+        "ok": ok,
+        "path": relative,
+        "label": "passed" if ok else "needs attention",
+        "passed": passed,
+        "total": total,
+        "closest_reject_label": str(summary.get("closest_reject_label") or ""),
+        "closest_reject_score": float(summary.get("closest_reject_score") or 0.0),
+    }
+
+
 def nested(data: dict[str, Any], *keys: str) -> dict[str, Any]:
     current: Any = data
     for key in keys:
@@ -383,6 +437,7 @@ def render_workboard(context: dict[str, Any]) -> str:
         ("done", "Expose wake detector scores", "Copy Chat JSON now includes score, threshold, phrase, window, and mode for wake events."),
         ("done", "Expose history payload preview", "Copy Chat JSON shows the filtered history Jarvis would send with the current command."),
         ("done", "Add context smoke", "A muted smoke script checks that Jarvis can use prior chat history for follow-ups."),
+        ("done", "Add wake-threshold smoke", "An offline corpus proves fuzzy wake passes and near misses reject before mic testing."),
         ("done", "Ship wake audition lab", "Local page records samples, scores transcripts, and saves samples under runtime."),
         ("done", "Add menu-bar silence control", "Shut Up interrupts and mutes; Keep Blabbering unmutes."),
         ("done", "Add menu-bar wake controls", "Start/Stop Hey Jarvis and Open Wake Test are reachable without the panel."),
@@ -497,7 +552,7 @@ def spotlight_section(context: dict[str, Any]) -> str:
         ),
         (
             "Best Proof",
-            f"{context['verification']['label']} verifier, 407/407 Python tests, Swift self-tests, and live muted speech probes.{latency_text}",
+            f"{context['verification']['label']} verifier, 409/409 Python tests, Swift self-tests, and live muted speech probes.{latency_text}",
         ),
         (
             "Honest Limit",
