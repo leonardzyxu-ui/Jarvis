@@ -95,7 +95,7 @@ def run_self_checks() -> dict[str, Any]:
     add("planner_daily_memory_summary_routes", planner.handle("daily memory summary").tool == "memory.daily_summary")
     add("planner_final_qa_routes", planner.handle("final QA plan").tool == "diagnostics.final_qa")
     add("planner_ui_overlay_routes", planner.handle_selected_tool("plan Jarvis overlay", "ui.overlay", {"mode": "normal"}).tool == "ui.overlay")
-    add("planner_stop_speaking_routes", planner.handle("stop talking").tool == "voice.stop_speaking")
+    add("planner_stop_speaking_routes", planner.preview("stop talking").tool == "voice.stop_speaking")
     add("planner_codex_chat_plan_routes", planner.handle("which Codex chat would you use for a Teams Music assignment").tool == "codex.chat_plan")
     open_app_preview = planner.preview("open app Safari").to_dict()
     add(

@@ -2426,7 +2426,6 @@ class PlannerTests(unittest.TestCase):
                         "CFBundleIdentifier": "local.leo.jarvis",
                         "CFBundleShortVersionString": "0.1.test",
                         "CFBundleVersion": "999",
-                        "LSUIElement": True,
                     },
                     handle,
                 )
@@ -2437,12 +2436,12 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["status"], "available")
         self.assertEqual(result["metadata"]["version"], "0.1.test")
         self.assertEqual(result["metadata"]["build"], "999")
-        self.assertTrue(result["metadata"]["lsui_element"])
-        self.assertEqual(result["metadata"]["launch_mode"], "menu-bar accessory app")
-        self.assertFalse(result["metadata"]["dock_icon_visible_by_default"])
+        self.assertFalse(result["metadata"]["lsui_element"])
+        self.assertEqual(result["metadata"]["launch_mode"], "regular Dock app")
+        self.assertTrue(result["metadata"]["dock_icon_visible_by_default"])
         self.assertIn('open "', result["open_command"])
         self.assertIn("version 0.1.test", result["reply"])
-        self.assertIn("Dock icon: hidden by default", result["reply"])
+        self.assertIn("Dock icon: visible by default", result["reply"])
 
     def test_packaged_diagnostics_use_enclosing_app_bundle(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3738,6 +3737,28 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('"final_answer_speech_expected": true', model_source)
         self.assertNotIn("automatic spoken replies are not enabled", model_source)
 
+    def test_swift_app_uses_normal_dock_window_contract(self):
+        app_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "App"
+            / "JarvisMenuBarApp.swift"
+        ).read_text(encoding="utf-8")
+        bundle_script = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "scripts"
+            / "build_app_bundle.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("== false ? .accessory : .regular", app_source)
+        self.assertIn('NSMenuItem(title: "Close Window", action: #selector(closeWindow), keyEquivalent: "w")', app_source)
+        self.assertIn("panel?.performClose(nil)", app_source)
+        self.assertIn("window.level = .normal", app_source)
+        self.assertNotIn("<key>LSUIElement</key>", bundle_script)
+
     def test_swift_permission_footer_names_app_scope(self):
         service_source = (
             PROJECT_ROOT
@@ -3831,6 +3852,14 @@ class RuntimeSurfaceTests(unittest.TestCase):
         route_check = next(check for check in result["checks"] if check["name"] == "planner_open_app_routes")
         self.assertTrue(route_check["passed"])
         open_mock.assert_called_once_with("Safari", execute=False)
+
+    def test_self_check_stop_speaking_route_is_preview_only(self):
+        with patch("jarvis.planner.stop_speaking") as stop_mock:
+            result = jarvis_self_check.run_self_checks()
+
+        route_check = next(check for check in result["checks"] if check["name"] == "planner_stop_speaking_routes")
+        self.assertTrue(route_check["passed"])
+        stop_mock.assert_not_called()
 
     def test_policy_summary_reports_shell_constraints(self):
         policy = policy_summary()
@@ -4240,9 +4269,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
             "bundle_id": "local.leo.jarvis",
             "version": "0.1.212",
             "build": "212",
-            "lsui_element": True,
-            "launch_mode": "menu-bar accessory app",
-            "dock_icon_visible_by_default": False,
+            "lsui_element": False,
+            "launch_mode": "regular Dock app",
+            "dock_icon_visible_by_default": True,
         }
 
         with patch("jarvis.tools._current_jarvis_bundle_path", return_value=Path("/Applications/Jarvis.app")), \
@@ -4254,13 +4283,13 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(app["bundle_metadata"], metadata)
         self.assertEqual(app["version"], "0.1.212")
         self.assertEqual(app["build"], "212")
-        self.assertEqual(app["launch_mode"], "menu-bar accessory app")
-        self.assertFalse(app["dock_icon_visible_by_default"])
+        self.assertEqual(app["launch_mode"], "regular Dock app")
+        self.assertTrue(app["dock_icon_visible_by_default"])
         self.assertFalse(app["read_private_content"])
         self.assertFalse(app["changed_system_state"])
         self.assertIn(app["worker_source_kind"], {"project source", "bundled app resources"})
         self.assertIn("Jarvis 0.1.212 build 212 is online", status["reply"])
-        self.assertIn("Launch mode: menu-bar accessory app", status["reply"])
+        self.assertIn("Launch mode: regular Dock app", status["reply"])
 
     def test_codex_job_summaries_persist_across_worker_restart(self):
         session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -7674,8 +7703,6 @@ class RuntimeSurfaceTests(unittest.TestCase):
   <string>51</string>
 	  <key>CFBundleIdentifier</key>
 	  <string>local.leo.jarvis</string>
-	  <key>LSUIElement</key>
-	  <true/>
 	</dict>
 	</plist>
 	""",
@@ -7690,9 +7717,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 "version": "0.1.51",
                 "build": "51",
                 "bundle_id": "local.leo.jarvis",
-                "lsui_element": "true",
-                "launch_mode": "menu-bar accessory app",
-                "dock_icon": "Dock hidden by default",
+                "lsui_element": "false",
+                "launch_mode": "regular Dock app",
+                "dock_icon": "Dock visible by default",
             },
         )
 

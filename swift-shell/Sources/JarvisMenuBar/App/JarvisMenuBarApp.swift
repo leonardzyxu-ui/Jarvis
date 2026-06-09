@@ -43,7 +43,7 @@ struct JarvisMenuBarApp {
     }
 
     static func activationPolicy(environment: [String: String] = ProcessInfo.processInfo.environment) -> NSApplication.ActivationPolicy {
-        environmentFlag("JARVIS_SHOW_DOCK_ICON", environment: environment) == true ? .regular : .accessory
+        environmentFlag("JARVIS_SHOW_DOCK_ICON", environment: environment) == false ? .accessory : .regular
     }
 
     static func environmentFlag(_ name: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool? {
@@ -192,6 +192,14 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
+        let fileMenuItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        let closeItem = NSMenuItem(title: "Close Window", action: #selector(closeWindow), keyEquivalent: "w")
+        closeItem.target = self
+        fileMenu.addItem(closeItem)
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
         addResponderMenuItem("Undo", action: Selector(("undo:")), keyEquivalent: "z", to: editMenu)
@@ -254,7 +262,7 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate {
         if let override = JarvisMenuBarApp.environmentFlag("JARVIS_SHOW_MENU_BAR_ITEM", environment: environment) {
             return override
         }
-        return JarvisMenuBarApp.activationPolicy(environment: environment) == .accessory
+        return false
     }
 
     private static func statusItemImage() -> NSImage? {
@@ -288,6 +296,7 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate {
                 defer: false
             )
             window.title = "Jarvis"
+            window.level = .normal
             window.contentViewController = hostingController
             window.isReleasedWhenClosed = false
             window.center()
@@ -297,6 +306,10 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate {
         panel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         model.refresh()
+    }
+
+    @objc private func closeWindow() {
+        panel?.performClose(nil)
     }
 
     @objc private func runStatus() {

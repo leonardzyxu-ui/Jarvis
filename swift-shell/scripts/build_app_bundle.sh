@@ -107,8 +107,6 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <string>$BUILD_NUMBER_XML</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
-  <key>LSUIElement</key>
-  <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
