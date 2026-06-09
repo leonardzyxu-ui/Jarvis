@@ -308,6 +308,11 @@ final class JarvisWakeListener {
         let command: String
     }
 
+    static func testDetectWake(_ transcript: String) -> (detected: Bool, command: String) {
+        let detection = detectWake(transcript)
+        return (detection.detected, detection.command)
+    }
+
     private static func detectWake(_ transcript: String) -> Detection {
         let normalizedText = normalized(transcript)
         let phrases = ["hey jarvis", "okay jarvis", "ok jarvis"]

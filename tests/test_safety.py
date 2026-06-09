@@ -3996,6 +3996,14 @@ class RuntimeSurfaceTests(unittest.TestCase):
             / "Views"
             / "JarvisPanelView.swift"
         ).read_text(encoding="utf-8")
+        self_test_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisMenuBarSelfTest.swift"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("SFSpeechRecognizer", listener_source)
         self.assertIn("AVAudioEngine", listener_source)
@@ -4004,6 +4012,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("requiresOnDeviceRecognition", listener_source)
         self.assertIn("onWakeDetected", listener_source)
         self.assertIn("onCommandCaptured", listener_source)
+        self.assertIn("testDetectWake", listener_source)
+        self.assertIn('"hey jervis please check email"', self_test_source)
         self.assertIn(
             'if !detection.command.isEmpty {\n            status = "Wake detected"\n            onWakeDetected?(transcript)\n            captureCommand',
             listener_source,

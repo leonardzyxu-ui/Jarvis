@@ -44,7 +44,7 @@ SHIPPED_ITEMS = [
 PROOF_ITEMS = [
     "Python safety suite: 383/383 passed after the wake, mute, final-speech, report-route, and speech-alignment work.",
     "Swift build passed for the Jarvis menu-bar app.",
-    "Swift self-tests passed, including menu-bar routing labels and worker checks.",
+    "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Live safe verifier passed 92/92 after the speech-mute, wake-audition, and report-route endpoints were added.",
     "Live verifier now checks that muted final speech preserves a substantial prefix of the final visible reply.",
     "Live Jarvis health showed the rebuilt app running from bundled app resources.",

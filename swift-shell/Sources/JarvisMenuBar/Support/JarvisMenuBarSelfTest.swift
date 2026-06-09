@@ -136,6 +136,19 @@ enum JarvisMenuBarSelfTest {
         guard JarvisAppDelegate.wakeListenerMenuTitle(listening: true) == "Stop Hey Jarvis" else {
             throw SelfTestError.failed("Running wake listener menu title should be Stop Hey Jarvis.")
         }
+        let wakeCases: [(transcript: String, detected: Bool, command: String)] = [
+            ("Hey Jarvis check email", true, "check email"),
+            ("hey jervis please check email", true, "check email"),
+            ("please check email later", false, ""),
+        ]
+        for wakeCase in wakeCases {
+            let actual = JarvisWakeListener.testDetectWake(wakeCase.transcript)
+            guard actual.detected == wakeCase.detected, actual.command == wakeCase.command else {
+                throw SelfTestError.failed(
+                    "Wake detector mismatch for \(wakeCase.transcript): detected=\(actual.detected), command=\(actual.command)"
+                )
+            }
+        }
         guard !JarvisShellModel.shouldUseNativeVoiceStatus("tts status") else {
             throw SelfTestError.failed("TTS status should route to backend diagnostics.tts, not the native voice snapshot.")
         }
