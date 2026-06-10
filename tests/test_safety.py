@@ -4477,6 +4477,53 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("openPanel()", app_source)
         self.assertNotIn("item.menu = menu", app_source)
 
+    def test_swift_wake_permission_callbacks_are_not_main_actor_isolated(self):
+        listener_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisWakeListener.swift"
+        ).read_text(encoding="utf-8")
+        app_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "App"
+            / "JarvisMenuBarApp.swift"
+        ).read_text(encoding="utf-8")
+        self_test_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisMenuBarSelfTest.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("let authorized = await Self.requestPermissions()", listener_source)
+        self.assertIn("nonisolated private static func requestPermissions() async -> Bool", listener_source)
+        self.assertIn("SFSpeechRecognizer.requestAuthorization", listener_source)
+        self.assertIn("Self.installAudioTap(on: input, request: request)", listener_source)
+        self.assertIn("nonisolated private static func installAudioTap", listener_source)
+        self.assertIn("nonisolated private static func makeRecognitionTask", listener_source)
+        self.assertIn("recognitionGeneration", listener_source)
+        self.assertIn("generation == recognitionGeneration", listener_source)
+        self.assertIn('status = "Wake detected; listening for your command"', listener_source)
+        self.assertNotIn("scheduleRestart(after: 0.15)", listener_source)
+        self.assertIn("static func testPermissionCallbackPath() async -> Bool", listener_source)
+        self.assertIn("--wake-permission-self-test", app_source)
+        self.assertIn("--wake-start-self-test", app_source)
+        self.assertIn("--wake-soak-self-test", app_source)
+        self.assertIn("durationSeconds: 35", app_source)
+        self.assertIn("runWakePermissionCallbacks", self_test_source)
+        self.assertIn("runWakeStartStop", self_test_source)
+        self.assertIn("resettingCount <= 3", self_test_source)
+        self.assertIn("listener.start()", self_test_source)
+        self.assertIn("listener.stop()", self_test_source)
+
     def test_swift_app_has_experimental_wake_listener_contract(self):
         listener_source = (
             PROJECT_ROOT
@@ -4544,6 +4591,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("wakeListener.start()", model_source)
         self.assertIn("wakeListener.stop()", model_source)
         self.assertIn('text: "Yes sir?"', model_source)
+        self.assertNotIn('speakStatus("Yes sir?")', model_source)
         self.assertIn("submit(command)", model_source)
         self.assertIn("wakeEventLog", model_source)
         self.assertIn('recordWakeEvent("wake_detected"', model_source)

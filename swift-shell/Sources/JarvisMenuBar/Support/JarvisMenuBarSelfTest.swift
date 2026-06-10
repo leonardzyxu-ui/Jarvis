@@ -244,6 +244,41 @@ enum JarvisMenuBarSelfTest {
     }
 
     @MainActor
+    static func runWakePermissionCallbacks() async throws {
+        let authorized = await JarvisWakeListener.testPermissionCallbackPath()
+        print("Jarvis wake permission self-test passed")
+        print("Wake permission callback returned: \(authorized ? "authorized" : "not authorized")")
+    }
+
+    @MainActor
+    static func runWakeStartStop() async throws {
+        try await runWakeStartStop(durationSeconds: 2.5)
+    }
+
+    @MainActor
+    static func runWakeStartStop(durationSeconds: Double) async throws {
+        let listener = JarvisWakeListener()
+        var snapshots: [JarvisWakeListenerSnapshot] = []
+        listener.onStateChange = { snapshot in
+            snapshots.append(snapshot)
+        }
+        listener.start()
+        try await Task.sleep(nanoseconds: UInt64(max(0.1, durationSeconds) * 1_000_000_000))
+        listener.stop()
+        guard !snapshots.isEmpty else {
+            throw SelfTestError.failed("Wake listener did not publish any state changes.")
+        }
+        let resettingCount = snapshots.filter { $0.phase == "Resetting" }.count
+        guard resettingCount <= 3 else {
+            throw SelfTestError.failed("Wake listener restarted too often during soak: \(resettingCount) resets.")
+        }
+        let phases = snapshots.map(\.phase).joined(separator: ", ")
+        print("Jarvis wake start self-test passed")
+        print("Wake phases: \(phases)")
+        print("Final wake status: \(listener.snapshot.status)")
+    }
+
+    @MainActor
     static func runWorkerMonitorRecovery() async throws {
         let client = try JarvisClient.fromEnvironment()
         let supervisor = JarvisWorkerSupervisor(client: client)

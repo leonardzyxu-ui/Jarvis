@@ -49,6 +49,7 @@ final class JarvisWakeListener {
     private var restartTask: Task<Void, Never>?
     private var captureTask: Task<Void, Never>?
     private var pendingCommand: String = ""
+    private var recognitionGeneration = 0
 
     #if canImport(Speech)
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -81,7 +82,7 @@ final class JarvisWakeListener {
         phase = .restarting
         publish()
         Task { @MainActor in
-            let authorized = await requestPermissions()
+            let authorized = await Self.requestPermissions()
             guard authorized else {
                 self.shouldKeepRunning = false
                 self.phase = .stopped
@@ -116,7 +117,7 @@ final class JarvisWakeListener {
     }
 
     #if canImport(Speech)
-    private func requestPermissions() async -> Bool {
+    nonisolated private static func requestPermissions() async -> Bool {
         let micAllowed = await withCheckedContinuation { continuation in
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 continuation.resume(returning: granted)
@@ -138,10 +139,12 @@ final class JarvisWakeListener {
             return
         }
         stopRecognitionSession()
+        recognitionGeneration += 1
+        let generation = recognitionGeneration
         guard recognizer.isAvailable else {
             status = "Speech recognizer is not available"
             publish()
-            scheduleRestart(after: 2.0)
+            scheduleRestart(after: 2.0, generation: generation)
             return
         }
 
@@ -156,10 +159,7 @@ final class JarvisWakeListener {
 
         let engine = AVAudioEngine()
         let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            request.append(buffer)
-        }
+        Self.installAudioTap(on: input, request: request)
         engine.prepare()
 
         recognitionRequest = request
@@ -169,23 +169,43 @@ final class JarvisWakeListener {
         } catch {
             status = "Microphone engine failed: \(error.localizedDescription)"
             publish()
-            scheduleRestart(after: 2.0)
+            scheduleRestart(after: 2.0, generation: generation)
             return
         }
 
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            let transcript = result?.bestTranscription.formattedString
-            let isFinal = result?.isFinal == true
-            let hasError = error != nil
-            Task { @MainActor [weak self, transcript, isFinal, hasError] in
-                self?.handleRecognition(transcript: transcript, isFinal: isFinal, hasError: hasError)
-            }
-        }
+        recognitionTask = Self.makeRecognitionTask(listener: self, recognizer: recognizer, request: request, generation: generation)
         status = phase == .awaitingCommand ? "Listening for your command" : "Listening for Hey Jarvis"
         publish()
     }
 
+    nonisolated private static func installAudioTap(
+        on input: AVAudioInputNode,
+        request: SFSpeechAudioBufferRecognitionRequest
+    ) {
+        let format = input.outputFormat(forBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+    }
+
+    nonisolated private static func makeRecognitionTask(
+        listener: JarvisWakeListener,
+        recognizer: SFSpeechRecognizer,
+        request: SFSpeechAudioBufferRecognitionRequest,
+        generation: Int
+    ) -> SFSpeechRecognitionTask {
+        recognizer.recognitionTask(with: request) { [weak listener] result, error in
+            let transcript = result?.bestTranscription.formattedString
+            let isFinal = result?.isFinal == true
+            let hasError = error != nil
+            Task { @MainActor [weak listener, transcript, isFinal, hasError, generation] in
+                listener?.handleRecognition(transcript: transcript, isFinal: isFinal, hasError: hasError, generation: generation)
+            }
+        }
+    }
+
     private func stopRecognitionSession() {
+        recognitionGeneration += 1
         captureTask?.cancel()
         captureTask = nil
         recognitionTask?.cancel()
@@ -199,7 +219,10 @@ final class JarvisWakeListener {
         audioEngine = nil
     }
 
-    private func handleRecognition(transcript: String?, isFinal: Bool, hasError: Bool) {
+    private func handleRecognition(transcript: String?, isFinal: Bool, hasError: Bool, generation: Int) {
+        guard generation == recognitionGeneration else {
+            return
+        }
         if let transcript, !transcript.isEmpty {
             lastTranscript = transcript
             switch phase {
@@ -216,7 +239,7 @@ final class JarvisWakeListener {
             guard shouldKeepRunning else {
                 return
             }
-            scheduleRestart(after: phase == .awaitingCommand ? 0.2 : 0.7)
+            scheduleRestart(after: phase == .awaitingCommand ? 0.8 : 1.2, generation: generation)
         }
     }
 
@@ -233,9 +256,8 @@ final class JarvisWakeListener {
         phase = .awaitingCommand
         pendingCommand = ""
         captureTask?.cancel()
-        status = "Wake detected"
+        status = "Wake detected; listening for your command"
         onWakeDetected?(transcript)
-        scheduleRestart(after: 0.15)
     }
 
     private func handleCommandCandidate(_ transcript: String) {
@@ -286,17 +308,23 @@ final class JarvisWakeListener {
         }
     }
 
-    private func scheduleRestart(after seconds: TimeInterval) {
+    private func scheduleRestart(after seconds: TimeInterval, generation: Int? = nil) {
         restartTask?.cancel()
         guard shouldKeepRunning else {
             return
         }
+        if let generation, generation != recognitionGeneration {
+            return
+        }
         phase = phase == .awaitingCommand ? .awaitingCommand : .restarting
         publish()
-        restartTask = Task { @MainActor [weak self] in
+        restartTask = Task { @MainActor [weak self, generation] in
             let nanoseconds = UInt64(max(0.05, seconds) * 1_000_000_000)
             try? await Task.sleep(nanoseconds: nanoseconds)
             guard let self, self.shouldKeepRunning else {
+                return
+            }
+            if let generation, generation != self.recognitionGeneration {
                 return
             }
             if self.phase == .restarting {
@@ -352,6 +380,16 @@ final class JarvisWakeListener {
     static func testWakeScore(_ transcript: String) -> [String: String] {
         detectWake(transcript).diagnostics
     }
+
+    #if canImport(Speech)
+    static func testPermissionCallbackPath() async -> Bool {
+        await requestPermissions()
+    }
+    #else
+    static func testPermissionCallbackPath() async -> Bool {
+        false
+    }
+    #endif
 
     private static func detectWake(_ transcript: String) -> Detection {
         let normalizedText = normalized(transcript)

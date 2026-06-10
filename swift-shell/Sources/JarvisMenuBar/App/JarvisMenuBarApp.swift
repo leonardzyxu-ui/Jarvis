@@ -14,6 +14,18 @@ struct JarvisMenuBarApp {
             runPermissionSelfTest()
             return
         }
+        if CommandLine.arguments.contains("--wake-permission-self-test") {
+            runWakePermissionSelfTest()
+            return
+        }
+        if CommandLine.arguments.contains("--wake-start-self-test") {
+            runWakeStartSelfTest()
+            return
+        }
+        if CommandLine.arguments.contains("--wake-soak-self-test") {
+            runWakeSoakSelfTest()
+            return
+        }
         if CommandLine.arguments.contains("--routing-self-test") {
             runRoutingSelfTest()
             return
@@ -103,6 +115,48 @@ struct JarvisMenuBarApp {
                 Foundation.exit(0)
             } catch {
                 fputs("Jarvis permission self-test failed: \(error)\n", stderr)
+                Foundation.exit(1)
+            }
+        }
+
+        RunLoop.main.run()
+    }
+
+    private static func runWakePermissionSelfTest() {
+        Task {
+            do {
+                try await JarvisMenuBarSelfTest.runWakePermissionCallbacks()
+                Foundation.exit(0)
+            } catch {
+                fputs("Jarvis wake permission self-test failed: \(error)\n", stderr)
+                Foundation.exit(1)
+            }
+        }
+
+        RunLoop.main.run()
+    }
+
+    private static func runWakeStartSelfTest() {
+        Task { @MainActor in
+            do {
+                try await JarvisMenuBarSelfTest.runWakeStartStop()
+                Foundation.exit(0)
+            } catch {
+                fputs("Jarvis wake start self-test failed: \(error)\n", stderr)
+                Foundation.exit(1)
+            }
+        }
+
+        RunLoop.main.run()
+    }
+
+    private static func runWakeSoakSelfTest() {
+        Task { @MainActor in
+            do {
+                try await JarvisMenuBarSelfTest.runWakeStartStop(durationSeconds: 35)
+                Foundation.exit(0)
+            } catch {
+                fputs("Jarvis wake soak self-test failed: \(error)\n", stderr)
                 Foundation.exit(1)
             }
         }
