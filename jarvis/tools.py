@@ -8769,19 +8769,34 @@ def _fast_chat_with_fallback(
     if not _find_executable("ollama"):
         return primary
 
-    fallback = _run_ollama_fast_chat(prompt, history=history, tool_specs=tool_specs)
     primary_summary = {
         "backend": primary.get("backend"),
         "model": primary.get("model"),
         "status": primary.get("status"),
         "duration_human": primary.get("duration_human"),
     }
+    fallback = _run_ollama_fast_chat(prompt, history=history, tool_specs=tool_specs)
+    fallback["fallback_used"] = True
+    fallback["primary_backend"] = primary.get("backend")
+    fallback["primary_model"] = primary.get("model")
+    fallback["primary_status"] = primary.get("status")
+    fallback["fallback_backend"] = "ollama"
+    fallback["primary_result"] = primary_summary
+
+    primary_seconds = _float_or_none(primary.get("duration_seconds"))
+    fallback_seconds = _float_or_none(fallback.get("duration_seconds"))
+    if (
+        fallback.get("first_visible_token_seconds") is None
+        and str(fallback.get("reply") or "").strip()
+        and primary_seconds is not None
+        and fallback_seconds is not None
+    ):
+        fallback["first_visible_token_seconds"] = round(primary_seconds + fallback_seconds, 3)
+        fallback["first_token_seconds"] = fallback["first_visible_token_seconds"]
+
     if _fast_chat_completed(fallback):
-        fallback["fallback_used"] = True
-        fallback["primary_backend"] = primary.get("backend")
-        fallback["primary_model"] = primary.get("model")
-        fallback["primary_status"] = primary.get("status")
-        fallback["fallback_backend"] = "ollama"
+        return fallback
+    if str(fallback.get("reply") or "").strip():
         return fallback
 
     primary["fallback_attempt"] = {
@@ -9259,25 +9274,28 @@ def _fast_chat_tool_catalog(tool_specs: list[dict[str, Any]]) -> str:
         tool_id = _clean_local_field(spec.get("tool"))
         if tool_id == "conversation.fast_local":
             continue
-        description = _clean_local_field(spec.get("description"))
+        description = _compact_fast_chat_tool_description(tool_id, spec.get("description"))
         entities = ", ".join(str(entity) for entity in spec.get("entities", []) if entity)
-        line = f"- {tool_id}: {description} Entities: {entities or 'none'}"
-        details = spec.get("entity_details")
-        if isinstance(details, dict):
-            detail_text = "; ".join(
-                f"{_clean_local_field(key)}={_clean_local_field(value)}"
-                for key, value in details.items()
-                if _clean_local_field(key) and _clean_local_field(value)
-            )
-            if detail_text:
-                line += f" Entity details: {detail_text}"
-        examples = spec.get("examples")
-        if isinstance(examples, list):
-            clean_examples = [_clean_local_field(example) for example in examples if _clean_local_field(example)]
-            if clean_examples:
-                line += " Examples: " + " | ".join(clean_examples[:2])
-        lines.append(line)
+        lines.append(f"- {tool_id}: {description} Entities: {entities or 'none'}")
     return "\n".join(lines)
+
+
+def _compact_fast_chat_tool_description(tool_id: str, raw_description: Any) -> str:
+    description = _clean_local_field(raw_description)
+    if tool_id == "tools.more":
+        return (
+            "Ask the smarter middle model for broader planning, multi-app workflows, "
+            "UI automation, future capabilities, or complex tasks."
+        )
+    if not description:
+        return "Use this tool only when the user clearly asks for it."
+
+    first_sentence = re.split(r"(?<=[.!?])\s+", description, maxsplit=1)[0].strip()
+    compact = first_sentence or description
+    max_chars = 150
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 12].rstrip(" ,.;:") + " [truncated]"
 
 
 def _parse_fast_chat_tool_request(text: str, tool_specs: list[dict[str, Any]]) -> dict[str, Any] | None:

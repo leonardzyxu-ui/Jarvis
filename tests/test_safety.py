@@ -1409,6 +1409,8 @@ class PlannerTests(unittest.TestCase):
         catalog = jarvis_tools._fast_chat_tool_catalog(NATURAL_LANGUAGE_TOOL_SPECS)
         prompt = jarvis_tools._fast_chat_system_prompt(NATURAL_LANGUAGE_TOOL_SPECS)
 
+        self.assertLess(len(catalog), 8000)
+        self.assertLess(len(prompt), 10000)
         self.assertNotIn("future skills", catalog.lower())
         self.assertNotIn("skill.", catalog.lower())
         self.assertIn("future capabilities", catalog)
@@ -6855,6 +6857,79 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(result["primary_backend"], "groq")
         self.assertEqual(result["primary_status"], "network_error")
         self.assertEqual(result["fallback_backend"], "ollama")
+
+    def test_fast_local_chat_groq_http_error_falls_back_to_ollama(self):
+        fallback_result = {
+            "tool": "conversation.fast_local",
+            "backend": "ollama",
+            "model": "qwen3:0.6b",
+            "available": True,
+            "status": "completed",
+            "executed": True,
+            "fallback_used": False,
+            "duration_seconds": 0.4,
+            "reply": "Fallback answer after rate limit.",
+        }
+        http_error = urllib.error.HTTPError(
+            "https://api.groq.com/openai/v1/chat/completions",
+            429,
+            "Too Many Requests",
+            hdrs=None,
+            fp=io.BytesIO(b'{"error":"rate limit"}'),
+        )
+        with patch("jarvis.tools.FAST_MODEL_BACKEND", "groq"), \
+             patch("jarvis.tools.FAST_MODEL_FALLBACK_ENABLED", True), \
+             patch("jarvis.tools.FAST_MODEL_FALLBACK_BACKEND", "ollama"), \
+             patch("jarvis.tools.GROQ_API_KEY", "test-groq-key"), \
+             patch("jarvis.tools._find_executable", return_value="/usr/local/bin/ollama"), \
+             patch("jarvis.tools.urllib.request.urlopen", side_effect=http_error), \
+             patch("jarvis.tools._run_ollama_fast_chat", return_value=fallback_result):
+            result = run_fast_local_chat("hello Jarvis")
+
+        self.assertEqual(result["backend"], "ollama")
+        self.assertEqual(result["reply"], "Fallback answer after rate limit.")
+        self.assertTrue(result["fallback_used"])
+        self.assertEqual(result["primary_status"], "http_error")
+        self.assertEqual(result["fallback_backend"], "ollama")
+        self.assertNotIn("Groq fast chat returned an HTTP error", result["reply"])
+
+    def test_fast_chat_fallback_failure_does_not_expose_primary_error_reply(self):
+        primary_result = {
+            "tool": "conversation.fast_local",
+            "backend": "groq",
+            "model": "llama-3.3-70b-versatile",
+            "available": True,
+            "status": "http_error",
+            "executed": True,
+            "fallback_used": True,
+            "duration_seconds": 0.8,
+            "duration_human": "0.8s",
+            "reply": "Groq fast chat returned an HTTP error.",
+        }
+        fallback_result = {
+            "tool": "conversation.fast_local",
+            "backend": "ollama",
+            "model": "qwen3:0.6b",
+            "available": True,
+            "status": "timeout",
+            "executed": True,
+            "fallback_used": True,
+            "duration_seconds": 5.0,
+            "duration_human": "5.0s",
+            "reply": "The local fallback model took longer than expected.",
+        }
+        with patch("jarvis.tools.FAST_MODEL_FALLBACK_ENABLED", True), \
+             patch("jarvis.tools.FAST_MODEL_FALLBACK_BACKEND", "ollama"), \
+             patch("jarvis.tools._find_executable", return_value="/usr/local/bin/ollama"), \
+             patch("jarvis.tools._run_ollama_fast_chat", return_value=fallback_result):
+            result = jarvis_tools._fast_chat_with_fallback("hello Jarvis", primary_result)
+
+        self.assertEqual(result["backend"], "ollama")
+        self.assertEqual(result["status"], "timeout")
+        self.assertEqual(result["reply"], "The local fallback model took longer than expected.")
+        self.assertEqual(result["primary_status"], "http_error")
+        self.assertIsNotNone(result["first_visible_token_seconds"])
+        self.assertNotIn("Groq fast chat returned an HTTP error", result["reply"])
 
     def test_stream_fast_local_chat_falls_back_to_ollama_on_groq_error(self):
         fallback_result = {
