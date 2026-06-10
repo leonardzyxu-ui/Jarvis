@@ -56,6 +56,7 @@ def run_no_prompt_checks(base_url: str = DEFAULT_BASE_URL) -> dict[str, object]:
         ("voice_loop_echo", lambda: verify_safe.check_endpoint_voice_loop_echo(base_url)),
         ("voice_loop_repeated_wake", lambda: verify_safe.check_endpoint_voice_loop_repeated_wake(base_url)),
         ("wake_debug", lambda: verify_safe.check_endpoint_wake_debug(base_url)),
+        ("swift_source_contracts", check_swift_source_contracts),
     ]
     results = [asdict(verify_safe.endpoint_check(name, check)) for name, check in checks]
     passed = sum(1 for item in results if item.get("passed"))
@@ -88,6 +89,20 @@ def check_worker_health(base_url: str) -> str:
     build = app.get("build") or "unknown"
     worker_kind = app.get("worker_source_kind") or "unknown worker"
     return f"worker healthy, Jarvis {version} build {build}, {worker_kind}"
+
+
+def check_swift_source_contracts() -> str:
+    model_path = PROJECT_ROOT / "swift-shell" / "Sources" / "JarvisMenuBar" / "Models" / "JarvisShellModel.swift"
+    source = model_path.read_text(encoding="utf-8")
+    verify_safe.require("guard !isBusy else" in source, "typed submit busy guard missing")
+    verify_safe.require("private static let busyReplyText" in source, "busy reply text missing")
+    verify_safe.require("private func sendSpeechMute" in source, "direct speech mute helper missing")
+    first_mute = source.find("return try await client.setSpeechMuted(muted)")
+    fallback = source.find("let startup = await workerSupervisor.ensureRunning()")
+    verify_safe.require(first_mute >= 0, "direct speech mute call missing")
+    verify_safe.require(fallback >= 0, "worker-start fallback missing")
+    verify_safe.require(first_mute < fallback, "speech mute should call backend before worker-start fallback")
+    return "Swift source keeps busy-submit guard and direct mute-first path"
 
 
 if __name__ == "__main__":

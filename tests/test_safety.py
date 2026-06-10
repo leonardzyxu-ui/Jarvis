@@ -174,7 +174,8 @@ class VerifySafeScriptTests(unittest.TestCase):
              patch("scripts.verify_no_prompt.verify_safe.check_endpoint_model_context", side_effect=fake_check("model_context")), \
              patch("scripts.verify_no_prompt.verify_safe.check_endpoint_voice_loop_echo", side_effect=fake_check("voice_echo")), \
              patch("scripts.verify_no_prompt.verify_safe.check_endpoint_voice_loop_repeated_wake", side_effect=fake_check("repeated_wake")), \
-             patch("scripts.verify_no_prompt.verify_safe.check_endpoint_wake_debug", side_effect=fake_check("wake_debug")):
+             patch("scripts.verify_no_prompt.verify_safe.check_endpoint_wake_debug", side_effect=fake_check("wake_debug")), \
+             patch("scripts.verify_no_prompt.check_swift_source_contracts", side_effect=lambda: calls.append("swift_source") or "swift source ok"):
             report = verify_no_prompt.run_no_prompt_checks("http://127.0.0.1:8765")
 
         self.assertTrue(report["ok"])
@@ -182,7 +183,17 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(report["schema"], "jarvis.no_prompt_verification.v1")
         self.assertEqual(
             calls,
-            ["overnight", "wake_lab", "wake_sim", "speech_mute", "model_context", "voice_echo", "repeated_wake", "wake_debug"],
+            [
+                "overnight",
+                "wake_lab",
+                "wake_sim",
+                "speech_mute",
+                "model_context",
+                "voice_echo",
+                "repeated_wake",
+                "wake_debug",
+                "swift_source",
+            ],
         )
         policy = report["policy"]
         self.assertFalse(policy["opens_apps"])

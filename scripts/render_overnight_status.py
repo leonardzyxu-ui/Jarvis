@@ -243,7 +243,7 @@ def proof_items_with_verification(
         items.append(
             "Latest no-prompt live verifier: "
             f"{no_prompt_verification['path']} with {no_prompt_verification['passed']}/{no_prompt_verification['total']} checks, "
-            "covering only routes that do not request microphone, Speech Recognition, Screen Recording, Accessibility, app launch, or GitHub push."
+            "covering only routes and source checks that do not request microphone, Speech Recognition, Screen Recording, Accessibility, app launch, or GitHub push."
         )
     if latency and latency.get("path"):
         items.append(
