@@ -4983,7 +4983,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("runtime\" / \"voice_loop_qa", script_source)
         self.assertIn("--stt-file-self-test", script_source)
         self.assertIn("/api/command", script_source)
-        self.assertIn("/api/speech/mute", script_source)
+        self.assertIn('"suppress_speech": True', script_source)
         self.assertIn("detect_wake_command", script_source)
         self.assertIn("faster_whisper", script_source)
         self.assertIn("LOCAL_STT_PYTHON", script_source)

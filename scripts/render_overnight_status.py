@@ -112,6 +112,7 @@ PROOF_ITEMS = [
     "Swift self-tests now require fuzzy matching for okay jervis as well as hey jervis, with detector diagnostics exposed for pasted JSON.",
     "Live verifier now probes voice.wake_debug with pasted Copy Chat JSON and requires no audio recording.",
     "Closed-loop voice QA now synthesizes a command with Piper, transcribes it, routes it through Jarvis while muted, synthesizes the visible reply, and compares the spoken transcript back to the screen text.",
+    "Closed-loop voice QA now uses per-command speech suppression instead of globally muting Jarvis while it routes the recognized command.",
     "Closed-loop voice QA now has a no-permission-prompts mode that skips Apple Speech and fails closed through local STT only.",
     "Local faster-whisper tiny.en now has a complete checked model cache from the mirror endpoint, so no-permission voice QA can run without Apple Speech.",
     "Latest voice-loop QA passed with Hey Jarvis status routed to status and 0.94 reply similarity.",

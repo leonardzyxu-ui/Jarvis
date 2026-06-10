@@ -241,16 +241,11 @@ def run_voice_loop(
             }
             return report
 
-        original_mute = speech_mute_status(base_url)
-        set_speech_mute(base_url, True)
-        try:
-            command_response = post_json(
-                f"{base_url}/api/command",
-                {"command": route["command"]},
-                timeout=timeout,
-            )
-        finally:
-            set_speech_mute(base_url, original_mute)
+        command_response = post_json(
+            f"{base_url}/api/command",
+            {"command": route["command"], "suppress_speech": True},
+            timeout=timeout,
+        )
 
         visible_reply = extract_visible_reply(command_response)
         reply_tts = synthesize(visible_reply or "No visible reply.", reply_audio, length_scale=length_scale)
