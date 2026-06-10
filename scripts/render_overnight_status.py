@@ -44,6 +44,7 @@ SHIPPED_ITEMS = [
     "Normal Dock-app behavior is preserved, with a menu-bar item enabled for quick controls.",
     "Menu-bar Shut Up toggle mutes Jarvis, interrupts current speech, and switches to Keep Blabbering for unmute.",
     "The Shut Up menu action now marks the Swift UI muted immediately before the backend round trip, reducing speech-race windows.",
+    "The Shut Up menu action now sends the mute request directly to the worker before any worker-start fallback can delay it.",
     "Menu-bar Start Hey Jarvis / Stop Hey Jarvis controls make the wake listener reachable without opening the panel.",
     "Menu-bar Open Wake Test jumps straight to the local wake-audition page.",
     "Menu-bar Open Overnight Report jumps straight to the master report route.",
@@ -59,6 +60,7 @@ SHIPPED_ITEMS = [
     "Final answers with normal reply text now auto-speak by default instead of leaving only the working line audible.",
     "Streaming status updates can no longer overwrite an answer that has already started appearing on screen.",
     "Synthetic Still working progress rows are removed when the task finishes, so they do not remain below a completed answer.",
+    "Typed submissions now refuse overlapping turns while Jarvis is busy, which prevents orphaned progress nudges from a second command race.",
     "Speech diagnostics now include a short sanitized text preview, so Copy Chat JSON can show what TTS was asked to say.",
     "Copy Chat JSON turn traces now include speech-alignment diagnostics that flag tiny TTS previews such as Hello against longer visible answers.",
     "Hey Jarvis now pauses after immediate silent Apple Speech endings instead of repeatedly flashing the menu bar while it restarts.",
@@ -67,7 +69,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Python safety suite: 423/423 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, and voice-QA work.",
+    "Python safety suite: 424/424 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, overlapping-turn, and voice-QA work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Live safe verifier passed 97/97 after the speech-mute, wake-audition, wake-lab corpus, model-context, wake-debug, repeated-wake, voice-loop echo, and report-route endpoints were added.",
@@ -87,7 +89,7 @@ PROOF_ITEMS = [
     "Static wake-lab tests now require the threshold corpus panel, corpus buttons, and below-threshold charvis case.",
     "Static and verifier wake-lab tests now require the self-explanatory Live Transcript Only and Copy Codex JSON labels.",
     "Static wake-lab tests now require Copy JSON to include the selected corpus case.",
-    "Swift source tests now require Shut Up to apply the target mute state immediately and still roll back on backend failure.",
+    "Swift source tests now require Shut Up to apply the target mute state immediately, call the mute endpoint before worker-start fallback, and still roll back on backend failure.",
     "Live verifier now checks that the bundled wake-audition page, JavaScript, and CSS expose the threshold corpus route.",
     "A muted live streaming app-status probe displayed Yes sir, checking Safari now before the final answer.",
     "A muted live wake probe understood Hey Jervis please check status as check status, and wake scoring reported fuzzy_window score 0.916667 instead of a fake exact match.",
@@ -621,6 +623,7 @@ def render_workboard(context: dict[str, Any]) -> str:
         ("done", "Ship wake audition lab", "Local page records samples, scores transcripts, and saves samples under runtime."),
         ("done", "Add menu-bar silence control", "Shut Up interrupts and mutes; Keep Blabbering unmutes."),
         ("done", "Mute optimistically", "The UI now treats Shut Up as active immediately while the backend confirms."),
+        ("done", "Send mute first", "Shut Up now calls the mute endpoint before worker startup fallback can slow it down."),
         ("done", "Add menu-bar wake controls", "Start/Stop Hey Jarvis and Open Wake Test are reachable without the panel."),
         ("done", "Add permission quick action", "The panel has a Perms button for the exact macOS readiness check."),
         ("done", "Add wake-lab decision summary", "Runs now summarize detected count, best noisy pass, and next step."),
@@ -632,6 +635,7 @@ def render_workboard(context: dict[str, Any]) -> str:
         ("done", "Fix final-answer speech coverage", "Normal final replies speak after the working line instead of staying silent."),
         ("done", "Protect streaming answer text", "Late status events can no longer replace visible answer text."),
         ("done", "Remove stale progress rows", "Synthetic Still working rows are removed as soon as the final answer is displayed."),
+        ("done", "Reject overlapping typed turns", "If Jarvis is busy, a second typed command is not accepted into a competing turn."),
         ("done", "Add speech preview diagnostics", "Speech JSON now records the sanitized text_preview requested from TTS."),
         ("done", "Add speech-alignment trace", "Copy Chat JSON now flags when TTS preview text is too short to match the visible answer."),
         ("done", "Add closed-loop voice QA", "The harness compares Piper audio, STT transcript, Jarvis reply text, and spoken reply transcript."),
@@ -744,7 +748,7 @@ def spotlight_section(context: dict[str, Any]) -> str:
         ),
         (
             "Best Proof",
-            f"{context['verification']['label']} verifier, 423/423 Python tests, Swift self-tests, and closed-loop voice QA.{latency_text}",
+            f"{context['verification']['label']} verifier, 424/424 Python tests, Swift self-tests, and closed-loop voice QA.{latency_text}",
         ),
         (
             "Honest Limit",
