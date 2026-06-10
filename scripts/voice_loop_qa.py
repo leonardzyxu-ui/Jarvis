@@ -166,7 +166,7 @@ def main() -> int:
     print(f"Visible reply: {result.get('visible_reply_preview')!r}")
     print(f"Reply transcript: {result.get('reply_transcript')!r}")
     print(f"Similarity: {result.get('reply_similarity')}")
-    return 0 if result.get("status") in {"passed", "warning"} else 1
+    return 0 if result.get("status") == "passed" else 1
 
 
 def run_voice_loop(
@@ -212,6 +212,21 @@ def run_voice_loop(
         )
         command_transcript = str(command_transcription.get("transcript") or "").strip()
         route = route_transcript(command_transcript)
+        if not route["command"]:
+            report["result"] = {
+                "status": "failed",
+                "warnings": [
+                    f"Command STT status was {command_transcription.get('status')}.",
+                    "No command was extracted from the spoken command transcript.",
+                ],
+                "total_seconds": round(time.monotonic() - started, 3),
+                "command_tts": command_tts,
+                "command_stt": command_transcription,
+                "command_transcript": command_transcript,
+                "wake_route": route,
+                "routed_command": "",
+            }
+            return report
 
         original_mute = speech_mute_status(base_url)
         set_speech_mute(base_url, True)
@@ -446,7 +461,14 @@ def transcribe_with_local_stt(audio_path: Path, output_json: Path, *, timeout: f
     output_json.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["PYTHONNOUSERSITE"] = "1"
-    ca_bundle = Path("/opt/homebrew/Cellar/ca-certificates/2025-05-20/share/ca-certificates/cacert.pem")
+    env.setdefault("HF_HUB_DISABLE_XET", "1")
+    ca_bundle = first_existing_path(
+        [
+            *sorted((LOCAL_STT_ROOT / ".venv" / "lib").glob("python*/site-packages/certifi/cacert.pem")),
+            Path("/etc/ssl/cert.pem"),
+            Path("/opt/homebrew/Cellar/ca-certificates/2025-05-20/share/ca-certificates/cacert.pem"),
+        ]
+    )
     if ca_bundle.exists():
         env.setdefault("SSL_CERT_FILE", str(ca_bundle))
         env.setdefault("REQUESTS_CA_BUNDLE", str(ca_bundle))
@@ -499,17 +521,22 @@ def transcribe_with_local_stt(audio_path: Path, output_json: Path, *, timeout: f
     return data
 
 
+def first_existing_path(paths: list[Path]) -> Path:
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[-1] if paths else Path("")
+
+
 def route_transcript(transcript: str) -> dict[str, Any]:
     detection = detect_wake_command(transcript)
     command = detection.command.strip() if detection.woke else transcript.strip()
-    if detection.woke and not command:
-        command = "status"
     return {
         "woke": detection.woke,
         "wake_phrase": detection.phrase,
         "needs_followup": detection.needs_followup,
         "normalized": detection.normalized,
-        "command": command or "status",
+        "command": command,
     }
 
 

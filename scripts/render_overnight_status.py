@@ -98,6 +98,7 @@ PROOF_ITEMS = [
     "Latest voice-loop QA passed with Hey Jarvis status routed to status and 0.94 reply similarity.",
     "A 35-second app-bundle Hey Jarvis soak on Jarvis 0.1.279 returned successfully without a new crash report.",
     "Native Hey Jarvis now pauses itself if Apple Speech enters a rapid microphone restart loop, preventing the menu-bar flicker from becoming a crash spiral.",
+    "Local-only voice QA now fails closed: if STT returns an empty transcript, it does not route a fake status command.",
     "The current live build launched cleanly after the stale-progress-row cleanup.",
 ]
 
@@ -117,7 +118,7 @@ RISK_ITEMS = [
     "Real microphone pickup, false wakes, and room-noise reliability still need Leo testing.",
     "Browser loopback noise trials are useful but not a perfect model of a real room.",
     "Speech Recognition permission can still block the native listener until macOS grants it to the current Jarvis bundle.",
-    "Local-only faster-whisper STT is installed as a no-permission fallback path, but the first tiny-model weight fetch stalled at the HF/Xet blob and needs a stable retry before it can replace Apple Speech in overnight QA.",
+    "Local-only faster-whisper STT is installed as a no-permission fallback path, but the tiny-model weight fetch still fails with connection reset and needs a stable retry before it can replace Apple Speech in overnight QA.",
     "The current wake phrase is experimental; it is not yet personalized to Leo's voice.",
     "Very technical diagnostics are still intentionally speech-silent so Jarvis does not read backend internals aloud.",
     "GitHub main still preserves the older small-tree history; the full Jarvis folder is published on the overnight branch and should be promoted deliberately.",
@@ -527,7 +528,8 @@ def render_workboard(context: dict[str, Any]) -> str:
         ("done", "Remove stale progress rows", "Synthetic Still working rows are removed as soon as the final answer is displayed."),
         ("done", "Add speech preview diagnostics", "Speech JSON now records the sanitized text_preview requested from TTS."),
         ("done", "Add closed-loop voice QA", "The harness compares Piper audio, STT transcript, Jarvis reply text, and spoken reply transcript."),
-        ("done", "Add local STT fallback hook", "faster-whisper is installed; the first no-permission model-weight fetch stalled and needs a stable retry."),
+        ("done", "Add local STT fallback hook", "faster-whisper is installed; the tiny model-weight fetch still hits a connection reset."),
+        ("done", "Fail closed on empty local STT", "If local STT returns no transcript, the QA harness stops instead of routing a fake status command."),
         ("done", "Soak-test wake listener", "Jarvis 0.1.279 completed a 35-second app-bundle wake soak without a new crash report."),
         ("done", "Pause wake restart storms", "If Apple Speech rapidly restarts the microphone engine, Jarvis pauses Hey Jarvis instead of flickering until it crashes."),
         ("done", "Add report loopback URLs", "The master report and workboard are reachable from the running Jarvis worker."),
