@@ -188,6 +188,7 @@ final class JarvisShellModel: ObservableObject {
     func toggleSpeechMuted() {
         let target = !isSpeechMuted
         let previous = isSpeechMuted
+        applySpeechMuteState(muted: target)
         state = target ? "Muting" : "Unmuting"
         chatExportText = target ? "Muting speech..." : "Restoring speech..."
         Task {
