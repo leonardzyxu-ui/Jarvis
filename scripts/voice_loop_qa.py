@@ -139,6 +139,11 @@ def main() -> int:
         default="auto",
         help="auto tries Apple Speech first, apple uses only the app-bundle Speech path, local uses faster-whisper only.",
     )
+    parser.add_argument(
+        "--no-permission-prompts",
+        action="store_true",
+        help="Do not open the Apple Speech transcription path; use local STT only and fail closed if it is unavailable.",
+    )
     args = parser.parse_args()
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -152,6 +157,7 @@ def main() -> int:
         length_scale=args.length_scale,
         timeout=args.timeout,
         stt_provider=args.stt_provider,
+        no_permission_prompts=args.no_permission_prompts,
     )
 
     report_path = run_dir / "report.json"
@@ -177,6 +183,7 @@ def run_voice_loop(
     length_scale: float,
     timeout: float,
     stt_provider: str,
+    no_permission_prompts: bool = False,
 ) -> dict[str, Any]:
     started = time.monotonic()
     command_audio = run_dir / "01-command.wav"
@@ -190,7 +197,12 @@ def run_voice_loop(
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "base_url": base_url,
         "run_dir": str(run_dir),
-        "input": {"command_text": command_text, "length_scale": length_scale, "stt_provider": stt_provider},
+        "input": {
+            "command_text": command_text,
+            "length_scale": length_scale,
+            "stt_provider": stt_provider,
+            "no_permission_prompts": no_permission_prompts,
+        },
         "artifacts": {
             "command_audio": str(command_audio),
             "command_stt": str(command_stt),
@@ -209,6 +221,7 @@ def run_voice_loop(
             local_output_json=command_local_stt,
             timeout=timeout,
             provider=stt_provider,
+            no_permission_prompts=no_permission_prompts,
         )
         command_transcript = str(command_transcription.get("transcript") or "").strip()
         route = route_transcript(command_transcript)
@@ -247,6 +260,7 @@ def run_voice_loop(
             local_output_json=reply_local_stt,
             timeout=timeout,
             provider=stt_provider,
+            no_permission_prompts=no_permission_prompts,
         )
         reply_transcript = str(reply_transcription.get("transcript") or "").strip()
         similarity = text_similarity(visible_reply, reply_transcript)
@@ -416,21 +430,32 @@ def transcribe_audio(
     local_output_json: Path,
     timeout: float,
     provider: str,
+    no_permission_prompts: bool = False,
 ) -> dict[str, Any]:
     if provider == "local":
         return transcribe_with_local_stt(audio_path, local_output_json, timeout=timeout)
 
-    try:
-        apple = transcribe_with_jarvis_app(audio_path, apple_output_json, timeout=timeout)
-    except Exception as error:
+    if no_permission_prompts:
         apple = {
-            "status": "apple_speech_failed",
+            "status": "apple_speech_skipped_no_permission_prompts",
             "provider": "apple_speech",
             "audio_path": str(audio_path),
             "transcript": "",
-            "error": f"{type(error).__name__}: {error}",
+            "error": "Skipped Apple Speech so the overnight harness cannot trigger a macOS permission prompt.",
         }
         apple_output_json.write_text(json.dumps(apple, indent=2, ensure_ascii=False), encoding="utf-8")
+    else:
+        try:
+            apple = transcribe_with_jarvis_app(audio_path, apple_output_json, timeout=timeout)
+        except Exception as error:
+            apple = {
+                "status": "apple_speech_failed",
+                "provider": "apple_speech",
+                "audio_path": str(audio_path),
+                "transcript": "",
+                "error": f"{type(error).__name__}: {error}",
+            }
+            apple_output_json.write_text(json.dumps(apple, indent=2, ensure_ascii=False), encoding="utf-8")
     apple["provider"] = "apple_speech"
     if apple.get("status") == "completed" and str(apple.get("transcript") or "").strip():
         return apple

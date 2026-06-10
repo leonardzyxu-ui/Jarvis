@@ -117,7 +117,7 @@ from jarvis.tools import (
     wake_status,
 )
 from jarvis.wake import WakeSession, detect_wake_command, score_wake_transcript
-from scripts import render_overnight_status, smoke_conversation_context, smoke_wake_threshold, verify_safe
+from scripts import render_overnight_status, smoke_conversation_context, smoke_wake_threshold, verify_safe, voice_loop_qa
 from scripts.morning_status import (
     MAX_VERIFICATION_AGE_SECONDS as MORNING_MAX_VERIFICATION_AGE_SECONDS,
     base_url_from_environment,
@@ -184,6 +184,36 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(report["result"]["used_history"])
         self.assertEqual(mute_calls, [True, True])
         self.assertEqual(report["result"]["speech_mute_restored_to"], True)
+
+    def test_voice_loop_qa_no_permission_mode_skips_apple_speech(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "input.wav"
+            apple_json = Path(temp_dir) / "apple.json"
+            local_json = Path(temp_dir) / "local.json"
+            audio_path.write_bytes(b"placeholder")
+
+            local_result = {
+                "status": "completed",
+                "provider": "faster_whisper",
+                "transcript": "Hey Jarvis status",
+            }
+            with patch(
+                "scripts.voice_loop_qa.transcribe_with_jarvis_app",
+                side_effect=AssertionError("Apple Speech path should not run"),
+            ), patch("scripts.voice_loop_qa.transcribe_with_local_stt", return_value=local_result) as local_stt:
+                result = voice_loop_qa.transcribe_audio(
+                    audio_path,
+                    apple_output_json=apple_json,
+                    local_output_json=local_json,
+                    timeout=1,
+                    provider="auto",
+                    no_permission_prompts=True,
+                )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["provider"], "faster_whisper")
+        self.assertEqual(result["apple_speech"]["status"], "apple_speech_skipped_no_permission_prompts")
+        local_stt.assert_called_once()
 
     def test_wake_threshold_smoke_has_expected_boundary(self):
         report = smoke_wake_threshold.run_wake_threshold_smoke()
@@ -4671,6 +4701,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("LOCAL_STT_PYTHON", script_source)
         self.assertIn("--stt-provider", script_source)
         self.assertIn('choices=("auto", "apple", "local")', script_source)
+        self.assertIn("--no-permission-prompts", script_source)
+        self.assertIn("apple_speech_skipped_no_permission_prompts", script_source)
+        self.assertIn("no_permission_prompts", script_source)
         self.assertIn('if provider == "local"', script_source)
         self.assertIn('HF_HUB_DISABLE_XET", "1"', script_source)
         self.assertIn("first_existing_path", script_source)
