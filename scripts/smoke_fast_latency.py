@@ -35,18 +35,26 @@ def main() -> int:
     parser.add_argument("--no-report", action="store_true")
     args = parser.parse_args()
 
+    base_url = args.base_url.rstrip("/")
     prompts = args.prompts or DEFAULT_PROMPTS
-    results = [
-        smoke_prompt(prompt, base_url=args.base_url, timeout=args.timeout)
-        for prompt in prompts
-    ]
+    original_mute = speech_mute_status(base_url)
+    set_speech_mute(base_url, True)
+    try:
+        results = [
+            smoke_prompt(prompt, base_url=base_url, timeout=args.timeout)
+            for prompt in prompts
+        ]
+    finally:
+        set_speech_mute(base_url, original_mute)
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "base_url": args.base_url,
+        "base_url": base_url,
         "max_first_visible_seconds": args.max_first_visible,
         "max_total_seconds": args.max_total,
         "min_after_first_chars_per_second": args.min_after_first_cps,
         "min_rate_visible_chars": args.min_rate_visible_chars,
+        "speech_was_muted": True,
+        "speech_mute_restored_to": original_mute,
         "results": results,
     }
 
@@ -206,6 +214,34 @@ def error_result(prompt: str, started: float, status: str, message: str) -> dict
         "total_seconds": round(time.monotonic() - started, 3),
         "error": message[:500],
     }
+
+
+def speech_mute_status(base_url: str) -> bool:
+    try:
+        data = get_json(f"{base_url}/api/speech/mute")
+        return bool(data.get("muted", False))
+    except Exception:
+        return False
+
+
+def set_speech_mute(base_url: str, muted: bool) -> None:
+    post_json(f"{base_url}/api/speech/mute", {"muted": muted}, timeout=5)
+
+
+def get_json(url: str, *, timeout: float = 5.0) -> dict[str, Any]:
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def post_json(url: str, payload: dict[str, Any], *, timeout: float = 5.0) -> dict[str, Any]:
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def render_markdown(report: dict[str, Any]) -> str:

@@ -69,7 +69,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Python safety suite: 424/424 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, overlapping-turn, and voice-QA work.",
+    "Python safety suite: 425/425 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, muted-latency, overlapping-turn, and voice-QA work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Live safe verifier passed 97/97 after the speech-mute, wake-audition, wake-lab corpus, model-context, wake-debug, repeated-wake, voice-loop echo, and report-route endpoints were added.",
@@ -85,6 +85,7 @@ PROOF_ITEMS = [
     "Live verifier now probes diagnostics.model_context and requires the speech-dictation input policy without calling models.",
     "Swift source-contract tests now require Copy Chat JSON to expose the filtered conversation-history payload preview.",
     "Conversation-context smoke tests now verify the script mutes speech, restores the previous mute state, and detects whether a follow-up used prior history.",
+    "Fast-latency smoke tests now verify the script mutes speech and restores the previous mute state before timing live prompts.",
     "Wake-threshold smoke tests now verify hey jervis passes while hey jars and hey charvis reject at the 0.86 threshold.",
     "Static wake-lab tests now require the threshold corpus panel, corpus buttons, and below-threshold charvis case.",
     "Static and verifier wake-lab tests now require the self-explanatory Live Transcript Only and Copy Codex JSON labels.",
@@ -748,7 +749,7 @@ def spotlight_section(context: dict[str, Any]) -> str:
         ),
         (
             "Best Proof",
-            f"{context['verification']['label']} verifier, 424/424 Python tests, Swift self-tests, and closed-loop voice QA.{latency_text}",
+            f"{context['verification']['label']} verifier, 425/425 Python tests, Swift self-tests, and closed-loop voice QA.{latency_text}",
         ),
         (
             "Honest Limit",

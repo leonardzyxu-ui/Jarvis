@@ -117,7 +117,15 @@ from jarvis.tools import (
     wake_status,
 )
 from jarvis.wake import WakeSession, detect_wake_command, score_wake_transcript
-from scripts import render_overnight_status, smoke_conversation_context, smoke_wake_threshold, verify_no_prompt, verify_safe, voice_loop_qa
+from scripts import (
+    render_overnight_status,
+    smoke_conversation_context,
+    smoke_fast_latency,
+    smoke_wake_threshold,
+    verify_no_prompt,
+    verify_safe,
+    voice_loop_qa,
+)
 from scripts.morning_status import (
     MAX_VERIFICATION_AGE_SECONDS as MORNING_MAX_VERIFICATION_AGE_SECONDS,
     base_url_from_environment,
@@ -201,6 +209,28 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(policy["requests_speech_recognition"])
         self.assertFalse(policy["uses_screen_capture"])
         self.assertFalse(policy["uses_accessibility"])
+
+    def test_fast_latency_smoke_mutes_speech_during_run(self):
+        mute_calls = []
+
+        def fake_smoke_prompt(prompt, *, base_url, timeout):
+            return {
+                "prompt": prompt,
+                "status": "completed",
+                "first_visible_seconds": 0.2,
+                "total_seconds": 0.5,
+                "visible_chars": 12,
+                "chars_per_second_after_first_visible": 40.0,
+            }
+
+        with patch("scripts.smoke_fast_latency.speech_mute_status", return_value=False), \
+             patch("scripts.smoke_fast_latency.set_speech_mute", side_effect=lambda _base_url, muted: mute_calls.append(muted)), \
+             patch("scripts.smoke_fast_latency.smoke_prompt", side_effect=fake_smoke_prompt), \
+             patch("sys.argv", ["smoke_fast_latency.py", "--no-report", "--prompt", "hello"]):
+            code = smoke_fast_latency.main()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(mute_calls, [True, False])
 
     def test_conversation_context_smoke_detects_history_use(self):
         self.assertTrue(smoke_conversation_context.context_reply_uses_history("Correct, x is 3."))
