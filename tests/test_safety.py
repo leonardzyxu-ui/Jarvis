@@ -4457,6 +4457,26 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("setSpeechMuted", client_source)
         self.assertIn('appendingPathComponent("mute")', client_source)
 
+    def test_swift_menu_bar_icon_left_click_opens_panel(self):
+        app_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "App"
+            / "JarvisMenuBarApp.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("private var statusMenu: NSMenu?", app_source)
+        self.assertIn("#selector(statusItemClicked(_:))", app_source)
+        self.assertIn("sendAction(on: [.leftMouseUp, .rightMouseUp])", app_source)
+        self.assertIn("event?.type == .rightMouseUp", app_source)
+        self.assertIn("event?.modifierFlags.contains(.control)", app_source)
+        self.assertIn("showStatusMenu(from: sender)", app_source)
+        self.assertIn("statusMenu.popUp(positioning: nil", app_source)
+        self.assertIn("openPanel()", app_source)
+        self.assertNotIn("item.menu = menu", app_source)
+
     def test_swift_app_has_experimental_wake_listener_contract(self):
         listener_source = (
             PROJECT_ROOT

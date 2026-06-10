@@ -156,6 +156,7 @@ struct JarvisMenuBarApp {
 @MainActor
 final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
     private var speechMuteItem: NSMenuItem?
     private var wakeListenerItem: NSMenuItem?
     private var panel: NSWindow?
@@ -242,6 +243,9 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.title = "Jarvis"
         item.button?.image = Self.statusItemImage()
         item.button?.imagePosition = .imageLeading
+        item.button?.target = self
+        item.button?.action = #selector(statusItemClicked(_:))
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         let menu = NSMenu()
         menu.delegate = self
@@ -264,7 +268,7 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.target = self
         }
 
-        item.menu = menu
+        statusMenu = menu
         statusItem = item
     }
 
@@ -301,6 +305,30 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         image.size = NSSize(width: 18, height: 18)
         image.isTemplate = false
         return image
+    }
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            showStatusMenu(from: sender)
+            return
+        }
+        openPanel()
+    }
+
+    private func showStatusMenu(from sender: NSStatusBarButton? = nil) {
+        guard let statusMenu else {
+            openPanel()
+            return
+        }
+        updateWakeListenerMenuItem()
+        updateSpeechMuteMenuItem()
+        let sourceView = sender ?? statusItem?.button
+        guard let sourceView else {
+            openPanel()
+            return
+        }
+        statusMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: sourceView.bounds.height + 4), in: sourceView)
     }
 
     private func configureHotKey() {
