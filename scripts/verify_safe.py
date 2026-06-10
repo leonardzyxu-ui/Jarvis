@@ -1124,12 +1124,16 @@ def check_endpoint_wake_audition_corpus(base_url: str) -> str:
     require(css_status == 200, f"wake css status={css_status}")
     require('id="corpus-list"' in page_body, "wake page missing corpus list")
     require('id="corpus-status"' in page_body, "wake page missing corpus status")
+    require('id="guide-message"' in page_body, "wake page missing guide message")
+    require("Record Sample" in page_body and "Finish Recording" in page_body, "wake page missing clear recording labels")
     require("THRESHOLD_CORPUS" in script_body, "wake script missing threshold corpus")
     require("fillCorpusTranscript" in script_body, "wake script missing corpus click handler")
+    require("setGuide" in script_body, "wake script missing live guide updates")
     require("hey charvis status" in script_body, "wake script missing below-threshold boundary phrase")
     require("selected_corpus_case" in script_body, "wake script missing selected corpus export")
     require(".corpus-list" in css_body, "wake css missing corpus layout")
-    return "wake audition page exposes clickable threshold corpus"
+    require(".step-grid" in css_body, "wake css missing guide step layout")
+    return "wake audition page exposes clickable threshold corpus and guided controls"
 
 
 def check_endpoint_model_context(base_url: str) -> str:

@@ -46,6 +46,8 @@ final class JarvisShellModel: ObservableObject {
     private var codexActivityTask: Task<Void, Never>?
     private var activeTimerTasks: [String: Task<Void, Never>] = [:]
     private var wakeEventLog: [[String: String]] = []
+    private var activeTurnID: UUID?
+    var onSpeechMuteStateChanged: (() -> Void)?
     private static let smokeTestPrompts = [
         "hello Jarvis",
         "tell me a short joke",
@@ -183,7 +185,9 @@ final class JarvisShellModel: ObservableObject {
 
     func toggleSpeechMuted() {
         let target = !isSpeechMuted
-        applySpeechMuteState(muted: target)
+        let previous = isSpeechMuted
+        state = target ? "Muting" : "Unmuting"
+        chatExportText = target ? "Muting speech..." : "Restoring speech..."
         Task {
             do {
                 let startup = await workerSupervisor.ensureRunning()
@@ -202,7 +206,7 @@ final class JarvisShellModel: ObservableObject {
                     )
                 )
             } catch {
-                applySpeechMuteState(muted: !target)
+                applySpeechMuteState(muted: previous)
                 state = "Error"
                 chatExportText = "Mute failed"
                 messages.append(ChatMessage(role: .jarvis, text: "I could not change speech mute: \(error)"))
@@ -225,6 +229,7 @@ final class JarvisShellModel: ObservableObject {
     private func applySpeechMuteState(muted: Bool) {
         isSpeechMuted = muted
         speechMuteText = Self.speechMuteText(muted: muted)
+        onSpeechMuteStateChanged?()
     }
 
     static func speechMuteText(muted: Bool) -> String {
@@ -567,10 +572,19 @@ final class JarvisShellModel: ObservableObject {
         recordTurnPhase("Heard", detail: "User command accepted.")
         recordTurnPhase("Thinking", detail: "Choosing direct answer or tool route.")
         let history = conversationHistoryPayload(currentCommand: commandText)
+        let turnID = UUID()
+        activeTurnID = turnID
         var placeholderId: UUID?
         var progressTask: Task<Void, Never>?
-        defer {
+        func stopProgressNudges() {
             progressTask?.cancel()
+            progressTask = nil
+            if activeTurnID == turnID {
+                activeTurnID = nil
+            }
+        }
+        defer {
+            stopProgressNudges()
             if state == "Error" {
                 recordTurnPhase("Error", detail: "Turn ended with a worker or app error.")
             } else if !turnEndedCleanly {
@@ -682,7 +696,7 @@ final class JarvisShellModel: ObservableObject {
                         recordTurnPhase("Working", detail: statusText)
                         if !streamedReply.isEmpty {
                             if progressTask == nil {
-                                progressTask = self.startProgressNudges(for: commandText)
+                                progressTask = self.startProgressNudges(for: commandText, turnID: turnID)
                             }
                             return
                         }
@@ -700,11 +714,11 @@ final class JarvisShellModel: ObservableObject {
                             _ = self.appendJarvisMessage(text: statusText, detail: "Working")
                         }
                         if progressTask == nil {
-                            progressTask = self.startProgressNudges(for: commandText)
+                            progressTask = self.startProgressNudges(for: commandText, turnID: turnID)
                         }
                     },
                     onDelta: { delta in
-                        progressTask?.cancel()
+                        stopProgressNudges()
                         if streamedReply.isEmpty {
                             recordTurnPhase("Answering", detail: "First visible answer text arrived.")
                         }
@@ -732,6 +746,7 @@ final class JarvisShellModel: ObservableObject {
             let finalText = assistantReply(for: response)
             finalVisibleText = finalText
             let finalDetail = chatDetail(for: response)
+            stopProgressNudges()
             recordTurnPhase("Answering", detail: "Final visible answer displayed.")
             if let placeholderId {
                 replaceMessage(
@@ -763,6 +778,7 @@ final class JarvisShellModel: ObservableObject {
                 "command": commandText,
                 "error": "\(error)",
             ]
+            stopProgressNudges()
             if let placeholderId {
                 replaceMessage(
                     id: placeholderId,
@@ -1185,7 +1201,7 @@ final class JarvisShellModel: ObservableObject {
         return Array(eligible.suffix(12))
     }
 
-    private func startProgressNudges(for commandText: String) -> Task<Void, Never> {
+    private func startProgressNudges(for commandText: String, turnID: UUID) -> Task<Void, Never> {
         let nudges = Self.progressReplies(for: commandText)
         return Task { [weak self] in
             for nudge in nudges {
@@ -1195,7 +1211,7 @@ final class JarvisShellModel: ObservableObject {
                     return
                 }
                 await MainActor.run {
-                    guard let self, self.isBusy else {
+                    guard let self, self.isBusy, self.activeTurnID == turnID else {
                         return
                     }
                     self.messages.append(

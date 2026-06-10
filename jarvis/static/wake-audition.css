@@ -89,6 +89,13 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.header-note {
+  max-width: 680px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 h1,
 h2 {
   margin: 0;
@@ -150,6 +157,64 @@ h2 {
   gap: 16px;
   align-items: center;
   padding: 14px 16px;
+}
+
+.guide-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-title {
+  margin-bottom: 0;
+}
+
+.guide-message,
+.panel-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.guide-message {
+  min-height: 28px;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.step-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.step-card {
+  min-height: 92px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfd;
+}
+
+.step-card.active {
+  border-color: rgba(13, 118, 110, 0.45);
+  background: rgba(13, 118, 110, 0.08);
+  box-shadow: 0 0 0 3px rgba(13, 118, 110, 0.10);
+}
+
+.step-card strong,
+.step-card span {
+  display: block;
+}
+
+.step-card strong {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.step-card span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .threshold-control,
@@ -364,7 +429,8 @@ tbody tr:last-child td {
   .topbar,
   .control-band,
   .live-grid,
-  .decision-grid {
+  .decision-grid,
+  .step-grid {
     grid-template-columns: 1fr;
   }
 

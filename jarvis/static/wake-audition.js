@@ -38,6 +38,8 @@
     stopRecording: document.getElementById("stop-recording"),
     saveSample: document.getElementById("save-sample"),
     copyExport: document.getElementById("copy-export"),
+    guideState: document.getElementById("guide-state"),
+    guideMessage: document.getElementById("guide-message"),
     corpusStatus: document.getElementById("corpus-status"),
     corpusList: document.getElementById("corpus-list"),
     manualTranscript: document.getElementById("manual-transcript"),
@@ -67,6 +69,7 @@
     setPill(els.recognizerStatus, SpeechRecognition ? "Ready" : "No Web Speech", SpeechRecognition ? "ok" : "fail");
     updateThreshold();
     updateNoise();
+    setGuide("record", "Ready", "Click Record Sample, say \"Hey Jarvis, status\", then click Finish Recording.");
     renderCorpus();
     renderRuns();
     bindEvents();
@@ -119,6 +122,7 @@
       candidate.classList.toggle("active", candidate === button);
     }
     setPill(els.corpusStatus, item.expected, item.expected === "reject" ? "warn" : "ok");
+    setGuide("record", "Corpus", "This only tests scoring. To test your real voice, click Record Sample and say the phrase out loud.");
     await scoreCurrentTranscript();
   }
 
@@ -154,15 +158,20 @@
       setPill(els.recognizerStatus, "Listening", "ok");
       els.startListener.disabled = true;
       els.stopListener.disabled = false;
+      setGuide("record", "Listening", "Live Test is only checking the transcript box. Use Record Sample when you want to save audio.");
     };
     recognition.onerror = (event) => {
       setPill(els.recognizerStatus, event.error || "Error", "fail");
+      setGuide("record", "Recognizer Error", "Speech recognition hit an error. You can type a transcript manually or try Start Live Test again.");
     };
     recognition.onend = () => {
       if (state.recognition === recognition) {
         els.startListener.disabled = false;
         els.stopListener.disabled = true;
         setPill(els.recognizerStatus, "Stopped", "warn");
+        if (!state.mediaRecorder || state.mediaRecorder.state === "inactive") {
+          setGuide("record", "Ready", "Click Record Sample, say \"Hey Jarvis, status\", then click Finish Recording.");
+        }
       }
     };
     recognition.onresult = (event) => {
@@ -212,12 +221,14 @@
       els.recordSample.disabled = true;
       els.stopRecording.disabled = false;
       els.saveSample.disabled = true;
+      setGuide("finish", "Recording", "Say \"Hey Jarvis, status\" once. Then click Finish Recording.");
       if (SpeechRecognition && !state.recognition) {
         startLiveListener();
       }
     } catch (error) {
       setPill(els.micStatus, "Denied", "fail");
       els.trialStatus.textContent = "Microphone recording failed: " + error;
+      setGuide("record", "Mic Blocked", "The browser could not use the microphone. Check microphone permission, then try Record Sample again.");
     }
   }
 
@@ -233,6 +244,7 @@
     }
     els.recordSample.disabled = false;
     els.stopRecording.disabled = true;
+    setGuide("save", "Scoring", "Review the transcript and score. If it looks right, click Save Run.");
   }
 
   function finishRecording() {
@@ -252,6 +264,7 @@
     els.downloadSample.disabled = false;
     setPill(els.sampleStatus, Math.round(state.lastBlob.size / 1024) + " KB", "ok");
     setPill(els.micStatus, "Ready", "ok");
+    setGuide("save", "Ready to Save", "Play the sample if you want, then click Save Run so Codex can inspect it later.");
     scoreCurrentTranscript();
   }
 
@@ -291,9 +304,11 @@
         metadata_path: data.metadata_path,
       });
       setPill(els.sampleStatus, "Saved", "ok");
+      setGuide("noise", "Saved", "Now run a Noise Trial, record another sample, or click Copy Results JSON if something looks wrong.");
     } catch (error) {
       setPill(els.sampleStatus, "Save failed", "fail");
       els.trialStatus.textContent = "Save failed: " + error;
+      setGuide("save", "Save Failed", "The run did not save. Copy Results JSON or try Save Run again after checking the API.");
     }
   }
 
@@ -318,6 +333,11 @@
       }
       const data = await response.json();
       applyScore(data);
+      if (transcript && (!state.mediaRecorder || state.mediaRecorder.state === "inactive") && !state.lastBlob) {
+        setGuide("record", data.detected ? "Detected" : "Below Threshold", data.detected
+          ? "The transcript detects the wake phrase. Record a real sample if you want audio evidence."
+          : "The transcript is below threshold. Try a cleaner \"Hey Jarvis\" phrase or lower the threshold.");
+      }
       return data;
     } catch (error) {
       setPill(els.wakeResult, "Score error", "fail");
@@ -338,7 +358,9 @@
     if (!state.lastBlob) {
       return;
     }
+    setGuide("noise", "Playing Noise", "Listen for whether the sample still sounds understandable with the selected noise level.");
     await playBlobWithNoise(state.lastBlob, numericNoiseDb());
+    setGuide("noise", "Noise Playback Done", "Click Run Noise Trial to see whether speech recognition still catches the wake phrase.");
   }
 
   async function runLoopbackTrial() {
@@ -346,6 +368,7 @@
       return;
     }
     els.trialStatus.textContent = "Loopback trial running...";
+    setGuide("noise", "Noise Trial", "Jarvis is replaying the sample with noise and listening for the transcript.");
     const transcript = await recognizeDuringPlayback(() => playBlobWithNoise(state.lastBlob, numericNoiseDb()));
     els.manualTranscript.value = transcript;
     const score = await scoreCurrentTranscript();
@@ -361,6 +384,9 @@
     els.trialStatus.textContent = transcript
       ? "Loopback transcript: " + transcript
       : "Loopback trial produced no transcript.";
+    setGuide("noise", score && score.detected ? "Noise Passed" : "Noise Failed", score && score.detected
+      ? "That noise level still detected. Raise the noise or copy the results."
+      : "That noise level failed. Lower the noise or record a clearer sample.");
   }
 
   async function recognizeDuringPlayback(playback) {
@@ -451,6 +477,7 @@
     link.href = state.lastBlobUrl;
     link.download = "hey-jarvis-" + shortId() + extensionForMime(state.lastBlob.type);
     link.click();
+    setGuide("noise", "Downloaded", "Audio downloaded. Save the run too if you want it included in the JSON report.");
   }
 
   async function copyExport() {
@@ -473,6 +500,7 @@
     };
     await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
     setPill(els.copyStatus, "Copied", "ok");
+    setGuide("noise", "Copied", "Paste the copied JSON back to Codex when a wake attempt feels wrong.");
   }
 
   function addRun(run) {
@@ -610,6 +638,18 @@
     if (kind) {
       element.classList.add(kind);
     }
+  }
+
+  function setGuide(step, stateLabel, message) {
+    if (els.guideState) {
+      setPill(els.guideState, stateLabel, stateLabel.toLowerCase().includes("fail") || stateLabel.toLowerCase().includes("blocked") ? "fail" : "");
+    }
+    if (els.guideMessage) {
+      els.guideMessage.textContent = message;
+    }
+    document.querySelectorAll(".step-card").forEach((card) => {
+      card.classList.toggle("active", card.dataset.step === step);
+    });
   }
 
   function shortId() {

@@ -1387,6 +1387,10 @@ def _record_piper_worker_event(event: dict[str, Any]) -> None:
             PIPER_WORKER_SPEECH_EVENTS[speech_id] = event
             if PIPER_WORKER_ACTIVE_ID == speech_id:
                 PIPER_WORKER_ACTIVE_ID = None
+        elif event_name == "stop_ack" and event.get("stopped"):
+            PIPER_WORKER_SPEECH_EVENTS[speech_id] = event
+            if not speech_id or PIPER_WORKER_ACTIVE_ID == speech_id:
+                PIPER_WORKER_ACTIVE_ID = None
         elif event_name == "fatal":
             PIPER_WORKER_READY = False
             PIPER_WORKER_ACTIVE_ID = None
@@ -1563,6 +1567,57 @@ def _stop_active_speech_locked(timeout_seconds: float = 0.45) -> dict[str, Any]:
             SPEECH_PROCESS = None
             SPEECH_PROCESS_REASON = None
             SPEECH_GENERATION += 1
+    return status
+
+
+def _stop_piper_worker_audio_locked() -> dict[str, Any]:
+    """Best-effort stop for warm-worker audio, even if the parent handle is stale."""
+    global PIPER_WORKER_PROCESS, PIPER_WORKER_READY, PIPER_WORKER_ACTIVE_ID
+    with PIPER_WORKER_LOCK:
+        process = PIPER_WORKER_PROCESS
+        running = process is not None and process.poll() is None
+        active_id = PIPER_WORKER_ACTIVE_ID
+    if not running:
+        return {"piper_worker_running": False, "piper_worker_stop_sent": False}
+    sent = _send_piper_worker_message({"type": "stop", "id": active_id})
+    if sent:
+        with PIPER_WORKER_LOCK:
+            if active_id is None or PIPER_WORKER_ACTIVE_ID == active_id:
+                PIPER_WORKER_ACTIVE_ID = None
+        return {
+            "piper_worker_running": True,
+            "piper_worker_stop_sent": True,
+            "piper_worker_interrupted": bool(active_id),
+            "piper_worker_active_id": active_id,
+        }
+    status: dict[str, Any] = {
+        "piper_worker_running": True,
+        "piper_worker_stop_sent": False,
+        "piper_worker_stop_method": "unavailable",
+        "piper_worker_active_id": active_id,
+    }
+    try:
+        process.terminate()
+        process.wait(timeout=0.25)
+        status["piper_worker_stop_method"] = "terminate"
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+            process.wait(timeout=0.25)
+            status["piper_worker_stop_method"] = "kill"
+        except (subprocess.TimeoutExpired, OSError) as error:
+            status["piper_worker_stop_method"] = "failed"
+            status["piper_worker_stop_error"] = str(error)
+    except (AttributeError, OSError) as error:
+        status["piper_worker_stop_method"] = "failed"
+        status["piper_worker_stop_error"] = str(error)
+    finally:
+        with PIPER_WORKER_LOCK:
+            if PIPER_WORKER_PROCESS is process and process.poll() is not None:
+                PIPER_WORKER_PROCESS = None
+                PIPER_WORKER_READY = False
+            if active_id is None or PIPER_WORKER_ACTIVE_ID == active_id:
+                PIPER_WORKER_ACTIVE_ID = None
     return status
 
 
@@ -1939,12 +1994,17 @@ def speech_mute_status() -> dict[str, Any]:
 
 def set_speech_muted(muted: bool) -> dict[str, Any]:
     """Mute or unmute Jarvis speech and stop current playback when muting."""
-    global SPEECH_MUTED
+    global SPEECH_MUTED, SPEECH_GENERATION
     started_at = time.monotonic()
     with SPEECH_LOCK:
         previous = SPEECH_MUTED
         SPEECH_MUTED = bool(muted)
-        stop_status = _stop_active_speech_locked(timeout_seconds=0.6) if SPEECH_MUTED else {}
+        if SPEECH_MUTED:
+            SPEECH_GENERATION += 1
+            stop_status = _stop_active_speech_locked(timeout_seconds=0.6)
+            stop_status.update(_stop_piper_worker_audio_locked())
+        else:
+            stop_status = {}
         active = SPEECH_PROCESS is not None and getattr(SPEECH_PROCESS, "poll", lambda: 0)() is None
     return {
         "tool": "voice.speech_mute",
@@ -1953,10 +2013,10 @@ def set_speech_muted(muted: bool) -> dict[str, Any]:
         "muted": SPEECH_MUTED,
         "previous_muted": previous,
         "active_speech": active,
-        "interrupted_previous": bool(stop_status.get("interrupted_previous")),
         "started_audio": False,
         "played_audio": False,
         **stop_status,
+        "interrupted_previous": bool(stop_status.get("interrupted_previous") or stop_status.get("piper_worker_interrupted")),
         **_duration_fields(started_at),
         "reply": "Jarvis speech is muted." if SPEECH_MUTED else "Jarvis speech is on.",
     }
@@ -1967,17 +2027,18 @@ def stop_speaking() -> dict[str, Any]:
     started_at = time.monotonic()
     with SPEECH_LOCK:
         stop_status = _stop_active_speech_locked(timeout_seconds=0.6)
-    interrupted = bool(stop_status.get("interrupted_previous"))
+        stop_status.update(_stop_piper_worker_audio_locked())
+    interrupted = bool(stop_status.get("interrupted_previous") or stop_status.get("piper_worker_interrupted"))
     return {
         "tool": "voice.stop_speaking",
         "status": "stopped" if interrupted else "idle",
         "executed": True,
-        "interrupted_previous": interrupted,
         "started_audio": False,
         "played_audio": False,
         "recorded_audio": False,
         "read_private_content": False,
         **stop_status,
+        "interrupted_previous": interrupted,
         **_duration_fields(started_at),
         "reply": "Stopped speaking." if interrupted else "I was not speaking.",
     }

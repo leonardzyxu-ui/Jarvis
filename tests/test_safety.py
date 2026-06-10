@@ -272,17 +272,17 @@ class VerifySafeScriptTests(unittest.TestCase):
     def test_verify_safe_checks_wake_audition_corpus_route(self):
         def fake_http_response(_base_url, path, **_kwargs):
             if path == "/wake-audition/":
-                return 200, '<!doctype html><div id="corpus-list"></div><span id="corpus-status"></span>', {}
+                return 200, '<!doctype html><button>Record Sample</button><button>Finish Recording</button><div id="corpus-list"></div><span id="corpus-status"></span><p id="guide-message"></p>', {}
             if path == "/static/wake-audition.js":
-                return 200, "const THRESHOLD_CORPUS = ['hey charvis status']; function fillCorpusTranscript() {} const selected_corpus_case = true;", {}
+                return 200, "const THRESHOLD_CORPUS = ['hey charvis status']; function fillCorpusTranscript() {} function setGuide() {} const selected_corpus_case = true;", {}
             if path == "/static/wake-audition.css":
-                return 200, ".corpus-list { display: grid; }", {}
+                return 200, ".corpus-list { display: grid; } .step-grid { display: grid; }", {}
             return 404, "", {}
 
         with patch("scripts.verify_safe.http_response", side_effect=fake_http_response):
             detail = verify_safe.check_endpoint_wake_audition_corpus("http://127.0.0.1:8765")
 
-        self.assertEqual(detail, "wake audition page exposes clickable threshold corpus")
+        self.assertEqual(detail, "wake audition page exposes clickable threshold corpus and guided controls")
 
     def test_verify_safe_checks_muted_final_speech_alignment(self):
         posts = []
@@ -3038,9 +3038,26 @@ class PlannerTests(unittest.TestCase):
         script = (PROJECT_ROOT / "jarvis" / "static" / "wake-audition.js").read_text(encoding="utf-8")
         css = (PROJECT_ROOT / "jarvis" / "static" / "wake-audition.css").read_text(encoding="utf-8")
 
-        for element_id in ("detected-summary", "noise-summary", "next-step-summary", "copy-status", "corpus-list", "corpus-status"):
+        for element_id in (
+            "detected-summary",
+            "noise-summary",
+            "next-step-summary",
+            "copy-status",
+            "corpus-list",
+            "corpus-status",
+            "guide-state",
+            "guide-message",
+        ):
             self.assertIn(f'id="{element_id}"', html)
             self.assertIn(element_id.replace("-", ""), script.replace("-", ""))
+        self.assertIn("Record Sample", html)
+        self.assertIn("Finish Recording", html)
+        self.assertIn("Save Run", html)
+        self.assertIn("Start Live Test", html)
+        self.assertIn("Run Noise Trial", html)
+        self.assertIn("setGuide", script)
+        self.assertIn(".step-grid", css)
+        self.assertIn(".step-card.active", css)
         self.assertIn("renderDecisionSummary", script)
         self.assertIn("recommendationForRuns", script)
         self.assertIn("THRESHOLD_CORPUS", script)
@@ -4423,6 +4440,11 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("menuNeedsUpdate", app_source)
         self.assertIn("toggleSpeechMuted()", model_source)
         self.assertIn("isSpeechMuted", model_source)
+        self.assertIn("onSpeechMuteStateChanged", model_source)
+        self.assertIn('state = target ? "Muting" : "Unmuting"', model_source)
+        self.assertIn("let previous = isSpeechMuted", model_source)
+        self.assertIn("applySpeechMuteState(muted: previous)", model_source)
+        self.assertIn("model.onSpeechMuteStateChanged", app_source)
         self.assertIn('"Open Overnight Report"', app_source)
         self.assertIn("openOvernightReport", app_source)
         self.assertIn("overnightReportURL", model_source)
@@ -4531,6 +4553,24 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("if !streamedReply.isEmpty", model_source)
         self.assertNotIn("streamedReply = statusText", model_source)
 
+    def test_swift_progress_nudges_are_tied_to_active_turn(self):
+        model_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Models"
+            / "JarvisShellModel.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("private var activeTurnID: UUID?", model_source)
+        self.assertIn("let turnID = UUID()", model_source)
+        self.assertIn("activeTurnID = turnID", model_source)
+        self.assertIn("func stopProgressNudges()", model_source)
+        self.assertIn("stopProgressNudges()", model_source)
+        self.assertIn("startProgressNudges(for: commandText, turnID: turnID)", model_source)
+        self.assertIn("self.activeTurnID == turnID", model_source)
+
     def test_swift_permission_footer_names_app_scope(self):
         service_source = (
             PROJECT_ROOT
@@ -4634,6 +4674,22 @@ class RuntimeSurfaceTests(unittest.TestCase):
         route_check = next(check for check in result["checks"] if check["name"] == "planner_stop_speaking_routes")
         self.assertTrue(route_check["passed"])
         stop_mock.assert_not_called()
+
+    def test_self_check_email_natural_language_waits_for_model_tool_choice(self):
+        result = jarvis_self_check.run_self_checks()
+
+        natural_check = next(
+            check for check in result["checks"]
+            if check["name"] == "planner_email_natural_language_waits_for_model_tool_choice"
+        )
+        selected_tool_check = next(
+            check for check in result["checks"]
+            if check["name"] == "planner_outlook_selected_tool_preview_routes"
+        )
+        self.assertTrue(natural_check["passed"])
+        self.assertTrue(selected_tool_check["passed"])
+        self.assertEqual(selected_tool_check["details"]["selected_tool"], "outlook.visible_summary")
+        self.assertTrue(selected_tool_check["details"]["planned_only"])
 
     def test_policy_summary_reports_shell_constraints(self):
         policy = policy_summary()
@@ -5615,6 +5671,71 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(result["interrupted_previous"])
         self.assertTrue(process.terminated)
 
+    def test_speech_mute_stops_warm_worker_without_active_process_handle(self):
+        class FakeStdin:
+            def __init__(self):
+                self.lines: list[str] = []
+
+            def write(self, text):
+                self.lines.append(text)
+
+            def flush(self):
+                pass
+
+        class FakeWorker:
+            def __init__(self):
+                self.stdin = FakeStdin()
+
+            def poll(self):
+                return None
+
+        fake_worker = FakeWorker()
+        with jarvis_tools.SPEECH_LOCK:
+            jarvis_tools.SPEECH_PROCESS = None
+            jarvis_tools.SPEECH_PROCESS_REASON = None
+            jarvis_tools.SPEECH_GENERATION = 10
+            jarvis_tools.SPEECH_MUTED = False
+        jarvis_tools.PIPER_WORKER_PROCESS = fake_worker
+        jarvis_tools.PIPER_WORKER_READY = True
+        jarvis_tools.PIPER_WORKER_ACTIVE_ID = "speech-1"
+        try:
+            result = jarvis_tools.set_speech_muted(True)
+        finally:
+            with jarvis_tools.SPEECH_LOCK:
+                jarvis_tools.SPEECH_PROCESS = None
+                jarvis_tools.SPEECH_PROCESS_REASON = None
+                jarvis_tools.SPEECH_MUTED = False
+            jarvis_tools.PIPER_WORKER_PROCESS = None
+            jarvis_tools.PIPER_WORKER_READY = False
+            jarvis_tools.PIPER_WORKER_ACTIVE_ID = None
+
+        self.assertTrue(result["muted"])
+        self.assertTrue(result["interrupted_previous"])
+        self.assertTrue(result["piper_worker_stop_sent"])
+        self.assertTrue(result["piper_worker_interrupted"])
+        self.assertIsNone(jarvis_tools.PIPER_WORKER_ACTIVE_ID)
+        message = json.loads(fake_worker.stdin.lines[0])
+        self.assertEqual(message["type"], "stop")
+        self.assertEqual(message["id"], "speech-1")
+
+    def test_speech_mute_invalidates_deferred_final_even_without_active_process(self):
+        with jarvis_tools.SPEECH_LOCK:
+            jarvis_tools.SPEECH_PROCESS = None
+            jarvis_tools.SPEECH_PROCESS_REASON = None
+            jarvis_tools.SPEECH_GENERATION = 25
+            jarvis_tools.SPEECH_MUTED = False
+        try:
+            result = jarvis_tools.set_speech_muted(True)
+            generation = jarvis_tools.SPEECH_GENERATION
+        finally:
+            with jarvis_tools.SPEECH_LOCK:
+                jarvis_tools.SPEECH_PROCESS = None
+                jarvis_tools.SPEECH_PROCESS_REASON = None
+                jarvis_tools.SPEECH_MUTED = False
+
+        self.assertTrue(result["muted"])
+        self.assertGreater(generation, 25)
+
     def test_auto_speech_sanitizer_flattens_audio_unfriendly_formatting(self):
         spoken = jarvis_tools._sanitize_spoken_text(
             "Summary:\n"
@@ -5799,6 +5920,18 @@ class RuntimeSurfaceTests(unittest.TestCase):
         finally:
             jarvis_tools.PIPER_WORKER_PROCESS = None
             jarvis_tools.PIPER_WORKER_READY = False
+            jarvis_tools.PIPER_WORKER_ACTIVE_ID = None
+            jarvis_tools.PIPER_WORKER_SPEECH_EVENTS.clear()
+            jarvis_tools.PIPER_WORKER_EVENT_LOG.clear()
+
+    def test_piper_worker_stop_ack_clears_active_id(self):
+        jarvis_tools.PIPER_WORKER_ACTIVE_ID = "speech-1"
+        try:
+            jarvis_tools._record_piper_worker_event({"event": "stop_ack", "id": "speech-1", "stopped": True})
+
+            self.assertIsNone(jarvis_tools.PIPER_WORKER_ACTIVE_ID)
+            self.assertEqual(jarvis_tools.PIPER_WORKER_SPEECH_EVENTS["speech-1"]["event"], "stop_ack")
+        finally:
             jarvis_tools.PIPER_WORKER_ACTIVE_ID = None
             jarvis_tools.PIPER_WORKER_SPEECH_EVENTS.clear()
             jarvis_tools.PIPER_WORKER_EVENT_LOG.clear()

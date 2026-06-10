@@ -164,6 +164,9 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hotKeyStatus: HotKeyRegistrationResult?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        model.onSpeechMuteStateChanged = { [weak self] in
+            self?.updateSpeechMuteMenuItem()
+        }
         configureMainMenu()
         if Self.menuBarItemEnabled {
             configureStatusItem()

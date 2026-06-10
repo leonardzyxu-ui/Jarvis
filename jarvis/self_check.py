@@ -142,12 +142,32 @@ def run_self_checks() -> dict[str, Any]:
     wake_score = score_wake_transcript("hey jervis check status")
     add("wake_score_accepts_close_transcript", wake_score.detected and wake_score.command == "check status", wake_score.to_dict())
     add("planner_browser_plan_routes", planner.handle("open browser https://example.com").tool == "browser.open_url")
-    outlook_preview = planner.preview("check my Outlook email").to_dict()
+    email_natural_preview = planner.preview("check my Outlook email", use_model_router=False).to_dict()
     add(
-        "planner_outlook_preview_routes",
-        outlook_preview["tool"] == "outlook.visible_summary"
-        and outlook_preview["result"]["would_execute_if_run"] is True
-        and outlook_preview["executed"] is False,
+        "planner_email_natural_language_waits_for_model_tool_choice",
+        email_natural_preview["tool"] == "conversation.fast_local"
+        and email_natural_preview["executed"] is False,
+        email_natural_preview.get("tool"),
+    )
+    outlook_preview = planner._handle_model_intent(
+        "check my Outlook email",
+        classify_command("check my Outlook email"),
+        {
+            "status": "completed",
+            "selected_tool": "outlook.visible_summary",
+            "confidence": 1.0,
+            "entities": {"selection": "unread_first"},
+            "reason": "Self-check selected tool preview.",
+        },
+        execute=False,
+    )
+    outlook_preview_dict = outlook_preview.to_dict() if outlook_preview else {}
+    add(
+        "planner_outlook_selected_tool_preview_routes",
+        outlook_preview_dict.get("tool") == "outlook.visible_summary"
+        and outlook_preview_dict.get("result", {}).get("would_execute_if_run") is True
+        and outlook_preview_dict.get("executed") is False,
+        outlook_preview_dict.get("result"),
     )
     codex_result = planner.preview("ask Codex to review this project").to_dict()
     add(
