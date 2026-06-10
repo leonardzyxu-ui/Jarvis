@@ -185,6 +185,7 @@ class VerifySafeScriptTests(unittest.TestCase):
              patch("scripts.verify_no_prompt.verify_safe.check_endpoint_voice_loop_echo", side_effect=fake_check("voice_echo")), \
              patch("scripts.verify_no_prompt.verify_safe.check_endpoint_voice_loop_repeated_wake", side_effect=fake_check("repeated_wake")), \
              patch("scripts.verify_no_prompt.verify_safe.check_endpoint_wake_debug", side_effect=fake_check("wake_debug")), \
+             patch("scripts.verify_no_prompt.check_swift_wake_preflight_contracts", side_effect=lambda: calls.append("swift_wake_preflight") or "swift wake preflight ok"), \
              patch("scripts.verify_no_prompt.check_swift_source_contracts", side_effect=lambda: calls.append("swift_source") or "swift source ok"):
             report = verify_no_prompt.run_no_prompt_checks("http://127.0.0.1:8765")
 
@@ -203,6 +204,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 "voice_echo",
                 "repeated_wake",
                 "wake_debug",
+                "swift_wake_preflight",
                 "swift_source",
             ],
         )
@@ -5218,6 +5220,35 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertIn('"App perms: \\(readyCount)/\\(permissions.count) ready"', service_source)
         self.assertNotIn('"\\(readyCount)/\\(permissions.count) permissions ready"', service_source)
+
+    def test_swift_wake_start_preflights_permissions_without_prompting(self):
+        model_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Models"
+            / "JarvisShellModel.swift"
+        ).read_text(encoding="utf-8")
+        service_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisPermissionService.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("static func wakeStartPreflight()", service_source)
+        self.assertIn("wakeStartPreflight(microphone: microphoneStatus(), speechRecognition: speechRecognitionStatus())", service_source)
+        self.assertIn("I cannot start Hey Jarvis yet", service_source)
+        self.assertIn("let preflight = JarvisPermissionService.wakeStartPreflight()", model_source)
+        self.assertIn('recordWakeEvent("listener_start_blocked"', model_source)
+        self.assertIn('detail: "Wake not started"', model_source)
+        self.assertLess(
+            model_source.index("let preflight = JarvisPermissionService.wakeStartPreflight()"),
+            model_source.index("wakeListener.start()"),
+        )
 
     def test_build_launch_script_reports_failed_health_attempts(self):
         script_source = (

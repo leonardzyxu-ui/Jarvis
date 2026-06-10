@@ -57,6 +57,7 @@ def run_no_prompt_checks(base_url: str = DEFAULT_BASE_URL) -> dict[str, object]:
         ("voice_loop_echo", lambda: verify_safe.check_endpoint_voice_loop_echo(base_url)),
         ("voice_loop_repeated_wake", lambda: verify_safe.check_endpoint_voice_loop_repeated_wake(base_url)),
         ("wake_debug", lambda: verify_safe.check_endpoint_wake_debug(base_url)),
+        ("swift_wake_preflight_contracts", check_swift_wake_preflight_contracts),
         ("swift_source_contracts", check_swift_source_contracts),
     ]
     results = [asdict(verify_safe.endpoint_check(name, check)) for name, check in checks]
@@ -113,6 +114,18 @@ def check_swift_source_contracts() -> str:
     verify_safe.require("shouldPauseAfterActivationRestartLimit" in listener_source, "wake activation restart decision missing")
     verify_safe.require("lastPublishedSnapshot" in listener_source, "duplicate wake snapshot guard missing")
     return "Swift source keeps busy-submit guard, direct mute-first path, non-actor wake audio tap, and wake restart caps"
+
+
+def check_swift_wake_preflight_contracts() -> str:
+    model_path = PROJECT_ROOT / "swift-shell" / "Sources" / "JarvisMenuBar" / "Models" / "JarvisShellModel.swift"
+    permission_path = PROJECT_ROOT / "swift-shell" / "Sources" / "JarvisMenuBar" / "Support" / "JarvisPermissionService.swift"
+    model_source = model_path.read_text(encoding="utf-8")
+    permission_source = permission_path.read_text(encoding="utf-8")
+    verify_safe.require("wakeStartPreflight()" in permission_source, "wake permission preflight helper missing")
+    verify_safe.require("let preflight = JarvisPermissionService.wakeStartPreflight()" in model_source, "wake start should preflight permissions")
+    verify_safe.require('recordWakeEvent("listener_start_blocked"' in model_source, "wake start blocked event missing")
+    verify_safe.require('detail: "Wake not started"' in model_source, "wake start blocked visible message missing")
+    return "Swift wake start preflights permissions and shows a visible blocked message without requesting prompts"
 
 
 if __name__ == "__main__":
