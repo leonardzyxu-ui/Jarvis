@@ -450,23 +450,35 @@ def transcribe_with_local_stt(audio_path: Path, output_json: Path, *, timeout: f
     if ca_bundle.exists():
         env.setdefault("SSL_CERT_FILE", str(ca_bundle))
         env.setdefault("REQUESTS_CA_BUNDLE", str(ca_bundle))
-    completed = subprocess.run(
-        [
-            str(LOCAL_STT_PYTHON),
-            "-c",
-            LOCAL_STT_TRANSCRIBE_CODE,
-            str(audio_path),
-            str(output_json),
-            LOCAL_STT_MODEL,
-            str(LOCAL_STT_ROOT / "models"),
-        ],
-        cwd=PROJECT_ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        timeout=max(120.0, timeout + 90.0),
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            [
+                str(LOCAL_STT_PYTHON),
+                "-c",
+                LOCAL_STT_TRANSCRIBE_CODE,
+                str(audio_path),
+                str(output_json),
+                LOCAL_STT_MODEL,
+                str(LOCAL_STT_ROOT / "models"),
+            ],
+            cwd=PROJECT_ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=max(120.0, timeout + 90.0),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        data = {
+            "status": "local_stt_timeout",
+            "provider": "faster_whisper",
+            "model": LOCAL_STT_MODEL,
+            "audio_path": str(audio_path),
+            "transcript": "",
+            "error": f"Timed out after {error.timeout}s.",
+        }
+        output_json.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return data
     if output_json.exists():
         data = json.loads(output_json.read_text(encoding="utf-8"))
     else:

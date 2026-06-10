@@ -4577,6 +4577,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("--stt-provider", script_source)
         self.assertIn('choices=("auto", "apple", "local")', script_source)
         self.assertIn('if provider == "local"', script_source)
+        self.assertIn("local_stt_timeout", script_source)
         self.assertIn("open\",", script_source)
         self.assertIn("01-command.wav", script_source)
         self.assertIn("02-command-local-stt.json", script_source)
