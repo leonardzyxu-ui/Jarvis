@@ -47,6 +47,7 @@ final class JarvisShellModel: ObservableObject {
     private var activeTimerTasks: [String: Task<Void, Never>] = [:]
     private var wakeEventLog: [[String: String]] = []
     private var activeTurnID: UUID?
+    private var activeProgressNudgeIDs: Set<UUID> = []
     var onSpeechMuteStateChanged: (() -> Void)?
     private static let smokeTestPrompts = [
         "hello Jarvis",
@@ -569,11 +570,18 @@ final class JarvisShellModel: ObservableObject {
         let history = conversationHistoryPayload(currentCommand: commandText)
         let turnID = UUID()
         activeTurnID = turnID
+        activeProgressNudgeIDs.removeAll()
         var placeholderId: UUID?
         var progressTask: Task<Void, Never>?
         func stopProgressNudges() {
             progressTask?.cancel()
             progressTask = nil
+            if !activeProgressNudgeIDs.isEmpty {
+                messages.removeAll { message in
+                    activeProgressNudgeIDs.contains(message.id)
+                }
+                activeProgressNudgeIDs.removeAll()
+            }
             if activeTurnID == turnID {
                 activeTurnID = nil
             }
@@ -1209,13 +1217,13 @@ final class JarvisShellModel: ObservableObject {
                     guard let self, self.isBusy, self.activeTurnID == turnID else {
                         return
                     }
-                    self.messages.append(
-                        ChatMessage(
-                            role: .jarvis,
-                            text: nudge.text,
-                            detail: "Working"
-                        )
+                    let message = ChatMessage(
+                        role: .jarvis,
+                        text: nudge.text,
+                        detail: "Working"
                     )
+                    self.messages.append(message)
+                    self.activeProgressNudgeIDs.insert(message.id)
                 }
             }
         }

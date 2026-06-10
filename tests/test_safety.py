@@ -4694,12 +4694,17 @@ class RuntimeSurfaceTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("private var activeTurnID: UUID?", model_source)
+        self.assertIn("private var activeProgressNudgeIDs: Set<UUID> = []", model_source)
         self.assertIn("let turnID = UUID()", model_source)
         self.assertIn("activeTurnID = turnID", model_source)
+        self.assertIn("activeProgressNudgeIDs.removeAll()", model_source)
         self.assertIn("func stopProgressNudges()", model_source)
         self.assertIn("stopProgressNudges()", model_source)
+        self.assertIn("messages.removeAll { message in", model_source)
+        self.assertIn("activeProgressNudgeIDs.contains(message.id)", model_source)
         self.assertIn("startProgressNudges(for: commandText, turnID: turnID)", model_source)
         self.assertIn("self.activeTurnID == turnID", model_source)
+        self.assertIn("self.activeProgressNudgeIDs.insert(message.id)", model_source)
 
     def test_swift_permission_footer_names_app_scope(self):
         service_source = (
