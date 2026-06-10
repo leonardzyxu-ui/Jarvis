@@ -135,7 +135,7 @@ PROOF_ITEMS = [
 
 TRY_ITEMS = [
     "Open Jarvis from the Dock; it should be a normal app window, not an always-front overlay.",
-    "Click Perms first; if Microphone and Speech Recognition are ready, use Start Hey Jarvis from the menu bar, then say Hey Jarvis followed by a short command.",
+    "Click Perms first and read the permission tiles; if Microphone and Speech Recognition are ready, use Start Hey Jarvis from the menu bar, then say Hey Jarvis followed by a short command.",
     "Try a one-breath command such as Hey Jarvis wake status; Jarvis should avoid a separate Yes sir? prompt and go straight into the task response.",
     "Use Shut Up if Jarvis is talking too much; use Keep Blabbering to restore speech.",
     "Ask for wake status or overnight status; Jarvis should speak the final answer, not only the Yes sir working line.",
@@ -821,7 +821,7 @@ def spotlight_section(context: dict[str, Any]) -> str:
     cards = [
         (
             "Try First",
-            "Open Jarvis from the Dock, click Perms, then start Hey Jarvis only after Microphone and Speech Recognition are ready.",
+            "Open Jarvis from the Dock, click Perms, read the permission tiles, then start Hey Jarvis only after Microphone and Speech Recognition are ready.",
         ),
         (
             "Best Proof",
