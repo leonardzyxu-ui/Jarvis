@@ -140,7 +140,13 @@ final class JarvisWorkerSupervisor {
             environment["JARVIS_TTS_SPEAK_STATUS"] = "1"
         }
         if environment["JARVIS_TTS_PROVIDER"] == nil {
-            environment["JARVIS_TTS_PROVIDER"] = "piper"
+            environment["JARVIS_TTS_PROVIDER"] = "macos"
+        }
+        if environment["JARVIS_TTS_VOICE"] == nil {
+            environment["JARVIS_TTS_VOICE"] = "Reed (English (UK))"
+        }
+        if environment["JARVIS_TTS_RATE"] == nil {
+            environment["JARVIS_TTS_RATE"] = "185"
         }
         if let workspaceRoot = sourceWorkspaceRoot(),
            workspaceRoot.standardizedFileURL.path != projectRoot.standardizedFileURL.path {

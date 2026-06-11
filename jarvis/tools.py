@@ -6926,6 +6926,10 @@ def quick_local_control(command: str, *, execute: bool = True) -> dict[str, Any]
     """Handle deterministic low-latency commands without model or Codex calls."""
     text = command.strip()
     lower = text.lower()
+    social = _quick_social_reply(text, lower)
+    if social is not None:
+        return social
+
     if _is_time_request(lower):
         now = time.localtime()
         return {
@@ -11700,12 +11704,59 @@ def _is_time_request(lower: str) -> bool:
     )
 
 
+def _quick_social_reply(text: str, lower: str) -> dict[str, Any] | None:
+    """Return instant replies only for no-side-effect conversational niceties."""
+    compact = re.sub(r"[^\w\s']", "", lower).strip()
+    compact = re.sub(r"\s+", " ", compact)
+    greetings = {
+        "hello",
+        "hello jarvis",
+        "hi",
+        "hi jarvis",
+        "hey",
+        "hey jarvis",
+        "good morning",
+        "good morning jarvis",
+        "good afternoon",
+        "good afternoon jarvis",
+        "good evening",
+        "good evening jarvis",
+    }
+    thanks = {
+        "thanks",
+        "thanks jarvis",
+        "thank you",
+        "thank you jarvis",
+    }
+    if compact in greetings:
+        return {
+            "tool": "quick.local_control",
+            "matched": True,
+            "status": "completed",
+            "executed": True,
+            "action": "conversation.greeting",
+            "reply": "Hello, sir. What would you like done?",
+            "input": text,
+        }
+    if compact in thanks:
+        return {
+            "tool": "quick.local_control",
+            "matched": True,
+            "status": "completed",
+            "executed": True,
+            "action": "conversation.acknowledgement",
+            "reply": "Of course, sir.",
+            "input": text,
+        }
+    return None
+
+
 def _is_date_request(lower: str) -> bool:
     if "timer" in lower:
         return False
     return bool(
         re.search(
-            r"\b(what date is it|what day is it|current date|today's date|date today|day today|tell me the date|check the date)\b",
+            r"\b(what date is it|what is the date|what's the date|what day is it|current date|today's date|what is today's date|what's today's date|date today|day today|tell me the date|check the date)\b",
             lower,
         )
         or lower.strip() in {"today", "the date"}

@@ -129,8 +129,8 @@ class JarvisServer:
         preview = self.planner.preview(command, use_model_router=False, history=history).to_dict()
         if preview.get("tool") != "conversation.fast_local":
             status_text = _stream_status_text(preview)
-            if status_text:
-                preview_tool = str(preview.get("tool") or "")
+            preview_tool = str(preview.get("tool") or "")
+            if status_text and preview_tool != "quick.local_control":
                 if preview_tool == "voice.stop_speaking":
                     speech = {"spoken": False, "status": "suppressed_for_stop_speaking", "reason": "status"}
                 elif suppress_speech:

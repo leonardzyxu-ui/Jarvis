@@ -235,6 +235,7 @@ private struct JarvisSummonCore: View {
             let time = timeline.date.timeIntervalSinceReferenceDate
             let spin = Angle.degrees(time.truncatingRemainder(dividingBy: 3.2) / 3.2 * 360)
             let breath = 0.92 + 0.08 * sin(time * 3.4)
+            let speakingLevel = phase == .speaking ? 0.55 + 0.45 * abs(sin(time * 8.0)) : 0
 
             ZStack {
                 Circle()
@@ -263,6 +264,13 @@ private struct JarvisSummonCore: View {
                     .trim(from: 0.62, to: 0.88)
                     .stroke(Color.white.opacity(0.68), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
                     .rotationEffect(-spin * 0.72)
+
+                if phase == .speaking {
+                    JarvisSpeakingWave(time: time, level: speakingLevel)
+                        .frame(width: 34, height: 24)
+                        .offset(y: 18)
+                        .transition(.opacity)
+                }
 
                 Image(systemName: iconName)
                     .font(.system(size: 19, weight: .semibold))
@@ -324,5 +332,37 @@ private struct JarvisSummonCore: View {
         case .hidden:
             return "circle"
         }
+    }
+}
+
+private struct JarvisSpeakingWave: View {
+    let time: TimeInterval
+    let level: Double
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2.4) {
+            ForEach(0..<5, id: \.self) { index in
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.28, green: 0.72, blue: 1.0),
+                                Color(red: 0.18, green: 0.86, blue: 0.74),
+                                Color.white.opacity(0.86),
+                            ],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
+                    .frame(width: 3.2, height: barHeight(index))
+                    .shadow(color: Color(red: 0.18, green: 0.86, blue: 0.74).opacity(0.44), radius: 4, x: 0, y: 0)
+            }
+        }
+        .opacity(0.92)
+    }
+
+    private func barHeight(_ index: Int) -> CGFloat {
+        let wave = abs(sin(time * 9.2 + Double(index) * 0.72))
+        return CGFloat(6.0 + (4.0 + 14.0 * wave) * level)
     }
 }

@@ -343,7 +343,8 @@ final class JarvisShellModel: ObservableObject {
                 phase: .listening,
                 title: greeting,
                 transcript: transcript,
-                detail: "Listening for your command."
+                detail: "Listening for your command.",
+                autoHideAfter: 5
             )
             if !isSpeechMuted {
                 Task { [weak self, greeting] in
@@ -379,7 +380,8 @@ final class JarvisShellModel: ObservableObject {
                 phase: .transcribing,
                 title: "I heard you.",
                 transcript: command,
-                detail: "Cleaning up the dictation."
+                detail: "Cleaning up the dictation.",
+                autoHideAfter: 5
             )
             submit(command)
         }
@@ -616,15 +618,36 @@ final class JarvisShellModel: ObservableObject {
             }
             try? await Task.sleep(nanoseconds: 1_100_000_000)
             await MainActor.run {
-                self?.updateSummonSurface(
+                guard let self else {
+                    return
+                }
+                self.updateSummonSurface(
                     phase: .speaking,
                     title: "Speaking.",
                     transcript: "Show me the Jarvis popout",
                     response: "The new Jarvis surface is ready.",
                     detail: "Reading the answer aloud.",
-                    autoHideAfter: 8
+                    autoHideAfter: Self.summonSpeechHoldSeconds(for: "The new Jarvis surface is ready.", muted: self.isSpeechMuted)
                 )
             }
+        }
+    }
+
+    private static func summonSpeechHoldSeconds(for text: String, muted: Bool) -> TimeInterval {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return 5
+        }
+        if muted {
+            return 5
+        }
+        let estimatedSpeechSeconds = Double(trimmed.count) / 14.0
+        return min(28, max(5, estimatedSpeechSeconds + 5))
+    }
+
+    private func schedulePostTurnRefresh() {
+        Task { [weak self] in
+            await self?.refreshNow()
         }
     }
 
@@ -804,7 +827,7 @@ final class JarvisShellModel: ObservableObject {
                 transcript: commandText,
                 response: text,
                 detail: isError ? "The debug window has details." : "Ready for the next command.",
-                autoHideAfter: isError ? 8 : 9
+                autoHideAfter: isError ? 8 : Self.summonSpeechHoldSeconds(for: text, muted: isSpeechMuted)
             )
         }
         defer {
@@ -1005,7 +1028,7 @@ final class JarvisShellModel: ObservableObject {
             turnEndedCleanly = true
             turnPhaseText = response.confirmation?.required == true ? "Approval" : "Done"
             recordTurnPhase(turnPhaseText, detail: "Turn lifecycle finished.")
-            await refreshNow()
+            schedulePostTurnRefresh()
         } catch {
             state = "Error"
             turnPhaseText = "Error"

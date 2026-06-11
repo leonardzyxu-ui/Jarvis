@@ -2605,6 +2605,33 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.result["action"], "date")
         self.assertRegex(result.result["local_date"], r"^\d{4}-\d{2}-\d{2}$")
 
+    def test_quick_date_command_accepts_common_what_is_phrasing(self):
+        result = Planner().handle("what is the date")
+
+        self.assertEqual(result.tool, "quick.local_control")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["action"], "date")
+
+    def test_quick_social_greeting_bypasses_model(self):
+        with patch("jarvis.planner.run_fast_local_chat") as model_mock:
+            result = Planner().handle("hello Jarvis")
+
+        self.assertEqual(result.tool, "quick.local_control")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["action"], "conversation.greeting")
+        self.assertIn("Hello, sir", result.result["reply"])
+        model_mock.assert_not_called()
+
+    def test_quick_social_thanks_bypasses_model(self):
+        with patch("jarvis.planner.run_fast_local_chat") as model_mock:
+            result = Planner().handle("thank you")
+
+        self.assertEqual(result.tool, "quick.local_control")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["action"], "conversation.acknowledgement")
+        self.assertEqual(result.result["reply"], "Of course, sir.")
+        model_mock.assert_not_called()
+
     def test_quick_battery_status_bypasses_model(self):
         pmset_output = "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1234567)\t82%; discharging; 4:12 remaining present: true\n"
         with patch("jarvis.tools._find_executable", return_value="/usr/bin/pmset"), \
@@ -3067,19 +3094,25 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("stop talking", result["reply"])
         self.assertIn("did not play audio", result["reply"])
 
-    def test_app_voice_defaults_enable_piper_status_speech_without_cli_default(self):
+    def test_app_voice_defaults_enable_macos_status_speech_without_cli_default(self):
         env = os.environ.copy()
         env["JARVIS_ENV_FILE"] = "/dev/null"
         env["JARVIS_APP_VOICE_DEFAULTS"] = "1"
-        for key in ("JARVIS_TTS_AUTOMATIC_ENABLED", "JARVIS_TTS_SPEAK_STATUS", "JARVIS_TTS_PROVIDER"):
+        for key in (
+            "JARVIS_TTS_AUTOMATIC_ENABLED",
+            "JARVIS_TTS_SPEAK_STATUS",
+            "JARVIS_TTS_PROVIDER",
+            "JARVIS_TTS_VOICE",
+            "JARVIS_TTS_RATE",
+        ):
             env.pop(key, None)
         completed = subprocess.run(
             [
                 sys.executable,
                 "-c",
                 (
-                    "from jarvis.config import TTS_AUTOMATIC_ENABLED, TTS_SPEAK_STATUS, TTS_PROVIDER; "
-                    "print(f'{TTS_AUTOMATIC_ENABLED} {TTS_SPEAK_STATUS} {TTS_PROVIDER}')"
+                    "from jarvis.config import TTS_AUTOMATIC_ENABLED, TTS_SPEAK_STATUS, TTS_PROVIDER, TTS_VOICE, TTS_RATE; "
+                    "print(f'{TTS_AUTOMATIC_ENABLED} {TTS_SPEAK_STATUS} {TTS_PROVIDER} {TTS_VOICE} {TTS_RATE}')"
                 ),
             ],
             shell=False,
@@ -3093,7 +3126,22 @@ class PlannerTests(unittest.TestCase):
         )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.strip(), "True True piper")
+        self.assertEqual(completed.stdout.strip(), "True True macos Reed (English (UK)) 185")
+
+    def test_swift_worker_defaults_to_macos_say_voice(self):
+        source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisWorkerSupervisor.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('environment["JARVIS_TTS_PROVIDER"] = "macos"', source)
+        self.assertIn('environment["JARVIS_TTS_VOICE"] = "Reed (English (UK))"', source)
+        self.assertIn('environment["JARVIS_TTS_RATE"] = "185"', source)
+        self.assertNotIn('environment["JARVIS_TTS_PROVIDER"] = "piper"', source)
 
     def test_tts_status_reports_piper_when_configured(self):
         def fake_exists(self):
@@ -4966,11 +5014,16 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("pendingWakeSummonCommand = true", model_source)
         self.assertIn("updateSummonSurface(", model_source)
         self.assertIn("finishSummon(finalText)", model_source)
+        self.assertIn("summonSpeechHoldSeconds(for:", model_source)
+        self.assertIn("estimatedSpeechSeconds + 5", model_source)
+        self.assertIn("schedulePostTurnRefresh()", model_source)
         self.assertIn('Button("Popout")', panel_source)
         self.assertIn("glassEffect(.regular.tint", view_source)
         self.assertIn("NSVisualEffectView", view_source)
         self.assertIn("AngularGradient", view_source)
         self.assertIn("TimelineView(.animation)", view_source)
+        self.assertIn("JarvisSpeakingWave", view_source)
+        self.assertIn("speakingLevel", view_source)
         self.assertNotIn("phaseProgressWidth", view_source)
 
     def test_swift_menu_bar_has_shut_up_toggle_contract(self):
@@ -8550,7 +8603,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             intent = {"status": "completed", "selected_tool": "conversation.fast_local", "confidence": 0.86, "entities": {}}
             with patch("jarvis.planner.select_tool_intent", return_value=intent), \
                  patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events):
-                events = list(server.stream_command("hello Jarvis"))
+                events = list(server.stream_command("tell me one tiny joke"))
 
         self.assertEqual([event["event"] for event in events], ["meta", "delta", "final"])
         self.assertEqual(events[1]["data"]["text"], "Hello")
@@ -8558,6 +8611,19 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(events[-1]["data"]["result"]["reply"], "Hello, what would you like done?")
         self.assertEqual(events[-1]["data"]["result"]["first_visible_token_seconds"], 0.123)
         self.assertIn("First visible text: 0.1s.", events[-1]["data"]["summary"])
+
+    def test_stream_command_skips_status_for_instant_quick_local_reply(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = JarvisServer()
+            server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
+            events = list(server.stream_command("hello Jarvis", suppress_speech=True))
+
+        self.assertEqual([event["event"] for event in events], ["final"])
+        final = events[0]["data"]
+        self.assertEqual(final["tool"], "quick.local_control")
+        self.assertEqual(final["result"]["action"], "conversation.greeting")
+        self.assertEqual(final["speech"]["reason"], "final")
+        self.assertEqual(final["speech"]["status"], "suppressed_by_request")
 
     def test_stream_command_yields_tool_status_before_email_final(self):
         fake_result = {
@@ -8717,7 +8783,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             server = JarvisServer()
             server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
-            with patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events), \
+            intent = {"status": "completed", "selected_tool": "conversation.fast_local", "confidence": 0.86, "entities": {}}
+            with patch("jarvis.planner.select_tool_intent", return_value=intent), \
+                 patch("jarvis.server.stream_fast_local_chat_events", return_value=fake_events), \
                  patch(
                      "jarvis.server.speak_text_async",
                      side_effect=lambda text, *, reason: {
@@ -8727,7 +8795,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                          "text_preview": text,
                      },
                  ):
-                events = list(server.stream_command("hello Jarvis"))
+                events = list(server.stream_command("tell me one tiny joke"))
 
         self.assertEqual([event["event"] for event in events], ["delta", "delta", "final"])
         final = events[-1]["data"]

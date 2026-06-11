@@ -120,10 +120,10 @@ MIDDLE_MODEL_MAX_TOKENS = env_int("JARVIS_MIDDLE_MODEL_MAX_TOKENS", 420, minimum
 APP_VOICE_DEFAULTS = env_bool("JARVIS_APP_VOICE_DEFAULTS", False)
 TTS_AUTOMATIC_ENABLED = env_bool("JARVIS_TTS_AUTOMATIC_ENABLED", APP_VOICE_DEFAULTS)
 TTS_SPEAK_STATUS = env_bool("JARVIS_TTS_SPEAK_STATUS", APP_VOICE_DEFAULTS)
-TTS_PROVIDER = os.environ.get("JARVIS_TTS_PROVIDER", "piper" if APP_VOICE_DEFAULTS else "macos").strip().lower() or "macos"
+TTS_PROVIDER = os.environ.get("JARVIS_TTS_PROVIDER", "macos").strip().lower() or "macos"
 TTS_FALLBACK_PROVIDER = os.environ.get("JARVIS_TTS_FALLBACK_PROVIDER", "macos").strip().lower() or "macos"
-TTS_VOICE = os.environ.get("JARVIS_TTS_VOICE", "Samantha").strip() or "Samantha"
-TTS_RATE = env_int("JARVIS_TTS_RATE", 152, minimum=80, maximum=280)
+TTS_VOICE = os.environ.get("JARVIS_TTS_VOICE", "Reed (English (UK))" if APP_VOICE_DEFAULTS else "Samantha").strip() or "Samantha"
+TTS_RATE = env_int("JARVIS_TTS_RATE", 185 if APP_VOICE_DEFAULTS else 152, minimum=80, maximum=280)
 TTS_MAX_CHARS = env_int("JARVIS_TTS_MAX_CHARS", 900, minimum=80, maximum=2400)
 TTS_PIPER_MODEL = Path(
     os.environ.get("JARVIS_TTS_PIPER_MODEL", str(RUNTIME_DIR / "tts_models" / "piper" / "en_US-ryan-high.onnx"))
