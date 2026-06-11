@@ -21,6 +21,8 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "A top-right Jarvis summon popout now appears for the Hey Jarvis flow and moves through listening, transcribing, thinking, answering, and speaking states.",
+    "The summon popout was refined into a smaller 386x118 glass capsule instead of the oversized grey block, with transparent AppKit host layers and the stray bottom progress line removed.",
     "Experimental native Hey Jarvis listener in the macOS app, using Speech and AVAudioEngine.",
     "Wake-audition lab at /wake-audition/ for recording samples, scoring transcripts, running noise trials, and copying JSON.",
     "Wake scoring now accepts close transcripts such as hey jervis while still rejecting unrelated speech.",
@@ -77,7 +79,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Python safety suite: 445/445 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, muted-latency, local-STT repair, overlapping-turn, crash-monitor, fallback-hardening, quiet-command, and voice-QA work.",
+    "Python safety suite: 447/447 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, muted-latency, local-STT repair, overlapping-turn, crash-monitor, fallback-hardening, quiet-command, summon-popout, and voice-QA work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Swift permission-readiness self-test passed without requesting permissions; it currently reports Microphone ready and Speech Recognition not requested.",
@@ -131,10 +133,12 @@ PROOF_ITEMS = [
     "Swift self-tests now require less frantic wake restart timing, fourth-activation-restart pause behavior, third-close-restart pause behavior, and duplicate wake snapshot suppression.",
     "Static safety tests and the no-prompt verifier now require the wake audio tap to capture a non-actor sink instead of appending to Speech from a MainActor-inherited closure.",
     "The current live build launched cleanly after the anti-flicker cleanup.",
+    "Jarvis 0.1.308 build 308 launched cleanly after the summon-popout glass refinement.",
 ]
 
 TRY_ITEMS = [
     "Open Jarvis from the Dock; it should be a normal app window, not an always-front overlay.",
+    "Use the Popout button in the debug panel to preview the new top-right glass summon surface without starting the microphone listener.",
     "Click Perms first and read the permission tiles; if Microphone and Speech Recognition are ready, use Start Hey Jarvis from the menu bar, then say Hey Jarvis followed by a short command.",
     "Try a one-breath command such as Hey Jarvis wake status; Jarvis should avoid a separate Yes sir? prompt and go straight into the task response.",
     "Use Shut Up if Jarvis is talking too much; use Keep Blabbering to restore speech.",
@@ -147,6 +151,7 @@ TRY_ITEMS = [
 
 RISK_ITEMS = [
     "Real microphone pickup, false wakes, and room-noise reliability still need Leo testing.",
+    "The summon popout's code-level rectangle and stray-line causes are fixed, but Leo should do the final human-eye check on the real Stage Manager desktop.",
     "Browser loopback noise trials are useful but not a perfect model of a real room.",
     "Speech Recognition permission can still block the native listener until macOS grants it to the current Jarvis bundle.",
     "Local-only faster-whisper STT now works for file-based QA, but tiny.en still mishears some technical words and is not good enough as the final live dictation model.",
