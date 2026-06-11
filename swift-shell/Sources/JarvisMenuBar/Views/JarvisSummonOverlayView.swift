@@ -1,78 +1,75 @@
+import AppKit
 import SwiftUI
 
 struct JarvisSummonOverlayView: View {
     @ObservedObject var model: JarvisShellModel
+    private let panelWidth: CGFloat = 386
+    private let panelHeight: CGFloat = 118
 
     var body: some View {
         let surface = model.summonSurface
         ZStack {
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
+            JarvisGlassCapsule(accent: accentColor(for: surface.phase))
                 .overlay(
                     Capsule(style: .continuous)
-                        .strokeBorder(borderGradient(for: surface.phase), lineWidth: 1.1)
+                        .strokeBorder(borderGradient(for: surface.phase), lineWidth: 0.7)
                 )
-                .shadow(color: Color.black.opacity(0.28), radius: 28, x: 0, y: 18)
-                .shadow(color: accentColor(for: surface.phase).opacity(0.22), radius: 34, x: 0, y: 8)
 
-            HStack(spacing: 18) {
+            HStack(spacing: 14) {
                 JarvisSummonCore(phase: surface.phase)
-                    .frame(width: 72, height: 72)
+                    .frame(width: 54, height: 54)
 
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(surface.title.isEmpty ? phaseTitle(surface.phase) : surface.title)
-                            .font(.system(size: 21, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.primary)
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
+                            .shadow(color: .black.opacity(0.24), radius: 2, x: 0, y: 1)
 
                         Spacer(minLength: 6)
 
                         Text(phaseLabel(surface.phase))
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(.system(size: 8.5, weight: .bold, design: .rounded))
                             .tracking(0.8)
                             .foregroundStyle(accentColor(for: surface.phase))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(.thinMaterial, in: Capsule(style: .continuous))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.22), in: Capsule(style: .continuous))
                     }
 
                     if !surface.transcript.isEmpty {
                         Text(surface.transcript)
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.72))
+                            .lineLimit(1)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
                     if !surface.response.isEmpty {
                         Text(surface.response)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.primary)
-                            .lineLimit(4)
+                            .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .shadow(color: .black.opacity(0.22), radius: 2, x: 0, y: 1)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     } else {
                         Text(surface.detail.isEmpty ? phaseDetail(surface.phase) : surface.detail)
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.72))
+                            .lineLimit(1)
                     }
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 18)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
         }
-        .frame(width: 468, height: 168)
-        .overlay(alignment: .bottomTrailing) {
-            Capsule(style: .continuous)
-                .fill(accentColor(for: surface.phase).opacity(0.34))
-                .frame(width: phaseProgressWidth(surface.phase), height: 3)
-                .padding(.trailing, 34)
-                .padding(.bottom, 14)
-                .animation(.spring(response: 0.42, dampingFraction: 0.82), value: surface.phase)
-        }
-        .compositingGroup()
+        .frame(width: panelWidth, height: panelHeight)
+        .clipShape(Capsule(style: .continuous))
+        .contentShape(Capsule(style: .continuous))
+        .shadow(color: Color.black.opacity(0.26), radius: 22, x: 0, y: 12)
+        .shadow(color: accentColor(for: surface.phase).opacity(0.18), radius: 24, x: 0, y: 6)
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: surface)
     }
 
@@ -139,27 +136,6 @@ struct JarvisSummonOverlayView: View {
         }
     }
 
-    private func phaseProgressWidth(_ phase: JarvisSummonPhase) -> CGFloat {
-        switch phase {
-        case .hidden:
-            return 0
-        case .listening:
-            return 42
-        case .transcribing:
-            return 86
-        case .thinking:
-            return 132
-        case .answering:
-            return 182
-        case .speaking:
-            return 228
-        case .complete:
-            return 260
-        case .error:
-            return 148
-        }
-    }
-
     private func accentColor(for phase: JarvisSummonPhase) -> Color {
         switch phase {
         case .error:
@@ -188,6 +164,69 @@ struct JarvisSummonOverlayView: View {
     }
 }
 
+private struct JarvisGlassCapsule: View {
+    let accent: Color
+
+    var body: some View {
+        ZStack {
+            if #available(macOS 26.0, *) {
+                Capsule(style: .continuous)
+                    .fill(Color.white.opacity(0.001))
+                    .glassEffect(.regular.tint(accent.opacity(0.18)), in: Capsule(style: .continuous))
+            } else {
+                JarvisVisualEffectBackground()
+                    .clipShape(Capsule(style: .continuous))
+            }
+
+            Capsule(style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.22),
+                            Color.white.opacity(0.07),
+                            accent.opacity(0.10),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .blendMode(.plusLighter)
+
+            Capsule(style: .continuous)
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            accent.opacity(0.20),
+                            Color.clear,
+                        ],
+                        center: .bottomTrailing,
+                        startRadius: 12,
+                        endRadius: 220
+                    )
+                )
+        }
+    }
+}
+
+private struct JarvisVisualEffectBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.isEmphasized = true
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+    }
+}
+
 private struct JarvisSummonCore: View {
     let phase: JarvisSummonPhase
 
@@ -200,7 +239,7 @@ private struct JarvisSummonCore: View {
             ZStack {
                 Circle()
                     .fill(radialFill)
-                    .overlay(Circle().stroke(Color.white.opacity(0.30), lineWidth: 1))
+                    .overlay(Circle().stroke(Color.white.opacity(0.24), lineWidth: 0.8))
                     .scaleEffect(breath)
 
                 Circle()
@@ -216,17 +255,17 @@ private struct JarvisSummonCore: View {
                             ],
                             center: .center
                         ),
-                        style: StrokeStyle(lineWidth: 5.5, lineCap: .round)
+                        style: StrokeStyle(lineWidth: 4.2, lineCap: .round)
                     )
                     .rotationEffect(spin)
 
                 Circle()
                     .trim(from: 0.62, to: 0.88)
-                    .stroke(Color.white.opacity(0.72), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .stroke(Color.white.opacity(0.68), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
                     .rotationEffect(-spin * 0.72)
 
                 Image(systemName: iconName)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 19, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.white)
                     .shadow(color: Color.black.opacity(0.20), radius: 4, x: 0, y: 2)

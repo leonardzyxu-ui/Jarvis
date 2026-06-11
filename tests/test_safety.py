@@ -4954,6 +4954,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("styleMask: [.borderless, .nonactivatingPanel]", window_source)
         self.assertIn("panel.level = .statusBar", window_source)
         self.assertIn("panel.ignoresMouseEvents = true", window_source)
+        self.assertIn("NSSize(width: 386, height: 118)", window_source)
+        self.assertIn("layer?.backgroundColor = NSColor.clear.cgColor", window_source)
         self.assertIn("visibleFrame.maxX - size.width - edgeInset", window_source)
         self.assertIn("visibleFrame.maxY - size.height - edgeInset", window_source)
         self.assertIn("enum JarvisSummonPhase", surface_source)
@@ -4965,9 +4967,11 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("updateSummonSurface(", model_source)
         self.assertIn("finishSummon(finalText)", model_source)
         self.assertIn('Button("Popout")', panel_source)
-        self.assertIn(".ultraThinMaterial", view_source)
+        self.assertIn("glassEffect(.regular.tint", view_source)
+        self.assertIn("NSVisualEffectView", view_source)
         self.assertIn("AngularGradient", view_source)
         self.assertIn("TimelineView(.animation)", view_source)
+        self.assertNotIn("phaseProgressWidth", view_source)
 
     def test_swift_menu_bar_has_shut_up_toggle_contract(self):
         app_source = (
