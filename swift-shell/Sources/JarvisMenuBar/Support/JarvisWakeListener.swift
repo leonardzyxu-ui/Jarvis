@@ -479,6 +479,10 @@ final class JarvisWakeListener {
         detectWake(transcript).diagnostics
     }
 
+    static func testCleanCommand(_ command: String) -> String {
+        cleanCommand(command)
+    }
+
     static func testRestartStormDecision(priorRestartAges: [TimeInterval], now: Date) -> (count: Int, shouldPause: Bool) {
         let priorRestartTimes = priorRestartAges.map { now.addingTimeInterval(-$0) }
         let decision = restartStormDecision(priorRestartTimes: priorRestartTimes, now: now)
@@ -668,6 +672,8 @@ final class JarvisWakeListener {
 
     private static func cleanCommand(_ value: String) -> String {
         normalized(value)
+            .replacingOccurrences(of: #"^(yes\s+sir\s+)+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^yes\s+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^(please\s+)+"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -291,7 +291,16 @@ final class JarvisShellModel: ObservableObject {
             turnPhaseText = "Awake"
             wakeTranscriptText = transcript
             recordWakeEvent("wake_detected", detail: "Wake callback fired.", transcript: transcript)
-            messages.append(ChatMessage(role: .jarvis, text: "Yes sir?", detail: "Wake detected."))
+            let greeting = "Yes sir?"
+            messages.append(ChatMessage(role: .jarvis, text: greeting, detail: "Wake detected."))
+            if !isSpeechMuted {
+                Task { [weak self, greeting] in
+                    guard let self else {
+                        return
+                    }
+                    _ = try? await self.client.speakStatus(greeting)
+                }
+            }
         }
         wakeListener.onCommandCaptured = { [weak self] command, transcript in
             guard let self else {

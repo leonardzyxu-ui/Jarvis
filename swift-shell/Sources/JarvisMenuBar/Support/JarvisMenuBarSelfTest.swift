@@ -172,6 +172,9 @@ enum JarvisMenuBarSelfTest {
         guard score["detected"] == "true", score["phrase"] == "okay jarvis", score["command"] == "check status" else {
             throw SelfTestError.failed("Wake score diagnostics should explain fuzzy okay jarvis detection.")
         }
+        guard JarvisWakeListener.testCleanCommand("Yes sir check email") == "check email" else {
+            throw SelfTestError.failed("Wake command cleanup should remove speaker-echo greeting prefixes.")
+        }
         let now = Date()
         let quietRestart = JarvisWakeListener.testRestartStormDecision(priorRestartAges: [1, 28], now: now)
         guard quietRestart.count == 2, !quietRestart.shouldPause else {
