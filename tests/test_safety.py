@@ -252,6 +252,36 @@ class VerifySafeScriptTests(unittest.TestCase):
         )
         self.assertEqual(smoke_fast_latency.effective_result_status(None, {}), "missing_final")
 
+    def test_fast_latency_smoke_counts_final_only_reply_as_visible(self):
+        class FakeStream:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def __iter__(self):
+                payload = {
+                    "status": "completed",
+                    "tool": "conversation.fast_local",
+                    "result": {
+                        "status": "completed",
+                        "reply": "Hello, sir. What would you like done?",
+                    },
+                }
+                yield b"event: final\n"
+                yield ("data: " + json.dumps(payload) + "\n").encode("utf-8")
+                yield b"\n"
+
+        with patch("scripts.smoke_fast_latency.urllib.request.urlopen", return_value=FakeStream()), \
+             patch("scripts.smoke_fast_latency.time.monotonic", side_effect=[100.0, 100.25]):
+            result = smoke_fast_latency.smoke_prompt("hello Jarvis", base_url="http://127.0.0.1:8765", timeout=1)
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["reply_preview"], "Hello, sir. What would you like done?")
+        self.assertEqual(result["first_visible_seconds"], result["total_seconds"])
+        self.assertEqual(result["first_visible_seconds"], 0.25)
+
     def test_repair_local_stt_model_detects_valid_cache(self):
         payload = b"fake model payload"
         digest = __import__("hashlib").sha256(payload).hexdigest()
@@ -3857,6 +3887,16 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result.result["route_preview"]["executed"])
         self.assertEqual(result.result["route_preview"]["tool"], "system.status")
 
+    def test_voice_loop_simulation_phrase_routes_without_model(self):
+        with patch("jarvis.planner.run_fast_local_chat") as fast_chat:
+            result = Planner().handle("voice loop simulation: Hey Jarvis status")
+
+        self.assertEqual(result.tool, "voice.loop_simulation")
+        self.assertEqual(result.result["status"], "command_previewed")
+        self.assertEqual(result.result["command"], "status")
+        self.assertEqual(result.result["route_preview"]["tool"], "system.status")
+        fast_chat.assert_not_called()
+
     def test_voice_loop_preview_does_not_run_simulation(self):
         result = Planner().preview("voice loop: Hey Jarvis status")
 
@@ -4757,6 +4797,49 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["min_after_first_chars_per_second"], 324.3)
         self.assertIn("max first visible text 0.750s", result["reply"])
         self.assertIn("min after-first output 324.3 chars/s", result["reply"])
+
+    def test_latest_latency_status_keeps_failed_values_in_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_dir = root / "runtime" / "model_benchmarks"
+            report_dir.mkdir(parents=True)
+            (report_dir / "localhost-fast-latency-20260611-232406.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at": "2026-06-11T23:24:06+0800",
+                        "max_first_visible_seconds": 3.0,
+                        "max_total_seconds": 5.0,
+                        "min_after_first_chars_per_second": 20.0,
+                        "results": [
+                            {
+                                "prompt": "hello Jarvis",
+                                "status": "completed",
+                                "first_visible_seconds": 0.335,
+                                "total_seconds": 0.335,
+                                "visible_chars": 37,
+                                "chars_per_second_after_first_visible": 37000.0,
+                            },
+                            {
+                                "prompt": "tell me a short joke",
+                                "status": "completed",
+                                "first_visible_seconds": 3.528,
+                                "total_seconds": 3.701,
+                                "visible_chars": 66,
+                                "chars_per_second_after_first_visible": 381.7,
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.PROJECT_ROOT", root):
+                result = latest_latency_status()
+
+        self.assertEqual(result["status"], "needs_attention")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["max_first_visible_seconds"], 3.528)
+        self.assertEqual(result["max_total_seconds"], 3.701)
+        self.assertIn("max first visible text 3.528s", result["reply"])
 
     def test_outlook_command_executes_with_mocked_private_read(self):
         fake_result = {
@@ -6417,6 +6500,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(result["spoken"])
         self.assertEqual(result["status"], "queued_after_status")
         self.assertEqual(result["deferred_after"], "status")
+        self.assertLessEqual(result["max_defer_seconds"], 0.6)
         self.assertEqual(result["text_preview"], "Final email summary.")
         self.assertFalse(result["interrupted_previous"])
         self.assertFalse(status_process.terminated)
@@ -7172,6 +7256,29 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(result["status_text"], "Yes sir, checking your email now.")
         self.assertEqual(result["entities"]["selection"], "index:2")
 
+    def test_fast_chat_recovers_tool_call_missing_closing_parenthesis(self):
+        tool_specs = [{"tool": "voice.loop_simulation", "description": "Simulate voice loop.", "entities": ["transcript"]}]
+
+        result = jarvis_tools._parse_fast_chat_tool_request(
+            'Yes sir, simulating the voice loop now. \\tool({"tool":"voice.loop_simulation","entities":{"transcript":"Hey Jarvis status"}}',
+            tool_specs,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["selected_tool"], "voice.loop_simulation")
+        self.assertEqual(result["status_text"], "Yes sir, simulating the voice loop now.")
+        self.assertEqual(result["entities"]["transcript"], "Hey Jarvis status")
+
+    def test_spoken_sanitizer_removes_hidden_tool_fragments(self):
+        spoken = jarvis_tools._sanitize_spoken_text(
+            'Yes sir, simulating the voice loop now. \\tool({"tool":"voice.loop'
+        )
+        path_text = jarvis_tools._sanitize_spoken_text("Here is a path C:\\Users\\Leo.")
+
+        self.assertEqual(spoken, "Yes sir, simulating the voice loop now.")
+        self.assertNotIn("\\tool", spoken)
+        self.assertIn("C, \\Users\\Leo.", path_text)
+
     def test_fast_chat_system_prompt_explains_spoken_tool_contract(self):
         tool_specs = [
             {
@@ -7224,6 +7331,36 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(data["status_text"], "Yes sir, checking your email now.")
         self.assertEqual(data["entities"]["selection"], "index:2")
         self.assertIsNotNone(data["first_visible_token_seconds"])
+
+    def test_stream_fast_local_chat_fails_closed_for_malformed_hidden_tool_call(self):
+        class FakeStreamResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def __iter__(self):
+                chunks = [
+                    "Yes sir, simulating the voice loop now. ",
+                    "\\tool({\"tool\":\"voice.loop",
+                ]
+                for chunk in chunks:
+                    payload = {"choices": [{"delta": {"content": chunk}}]}
+                    yield f"data: {json.dumps(payload)}\n".encode("utf-8")
+                yield b"data: [DONE]\n"
+
+        tool_specs = [{"tool": "voice.loop_simulation", "description": "Simulate voice loop.", "entities": ["transcript"]}]
+        with patch("jarvis.tools.FAST_MODEL_BACKEND", "groq"), \
+             patch("jarvis.tools.GROQ_API_KEY", "test-groq-key"), \
+             patch("jarvis.tools.urllib.request.urlopen", return_value=FakeStreamResponse()):
+            events = list(stream_fast_local_chat_events("voice loop simulation", tool_specs=tool_specs))
+
+        data = events[-1]["data"]
+        self.assertEqual(data["status"], "malformed_tool_call")
+        self.assertFalse(data["executed"])
+        self.assertNotIn("\\tool", data["reply"])
+        self.assertNotIn("voice.loop", data["reply"])
 
     def test_stream_fast_local_chat_with_tool_specs_streams_plain_reply_early(self):
         class FakeStreamResponse:
@@ -7495,7 +7632,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(result["reply"], "Middle answer.")
         middle_mock.assert_called_once()
 
-    def test_fast_chat_rate_limit_uses_middle_model_first_when_retry_delay_is_not_tiny(self):
+    def test_fast_chat_rate_limit_retries_before_middle_when_retry_delay_is_not_tiny(self):
         primary_result = {
             "tool": "conversation.fast_local",
             "backend": "groq",
@@ -7508,6 +7645,18 @@ class RuntimeSurfaceTests(unittest.TestCase):
             "duration_human": "0.4s",
             "reply": "Groq fast chat returned an HTTP error.",
             "error": "Please try again in 600ms.",
+        }
+        retry_result = {
+            "tool": "conversation.fast_local",
+            "backend": "groq",
+            "model": "llama-3.3-70b-versatile",
+            "available": True,
+            "status": "http_error",
+            "http_status": 429,
+            "executed": True,
+            "duration_seconds": 0.5,
+            "duration_human": "0.5s",
+            "reply": "Groq fast chat returned an HTTP error.",
         }
         middle_result = {
             "tool": "conversation.fast_local",
@@ -7524,16 +7673,16 @@ class RuntimeSurfaceTests(unittest.TestCase):
              patch("jarvis.tools.FAST_MODEL_FALLBACK_BACKEND", "ollama"), \
              patch("jarvis.tools.MIDDLE_MODEL", "gpt-oss:120b-cloud"), \
              patch("jarvis.tools.time.sleep") as sleep_mock, \
-             patch("jarvis.tools._run_groq_fast_chat") as retry_mock, \
+             patch("jarvis.tools._run_groq_fast_chat", return_value=retry_result) as retry_mock, \
              patch("jarvis.tools._run_ollama_fast_chat", return_value=middle_result) as middle_mock:
             result = jarvis_tools._fast_chat_with_fallback("hello Jarvis", primary_result)
 
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["reply"], "Middle answer.")
-        self.assertFalse(result["retry_used"])
-        self.assertTrue(result["groq_retry_skipped"])
-        sleep_mock.assert_not_called()
-        retry_mock.assert_not_called()
+        self.assertTrue(result["retry_used"])
+        self.assertFalse(result["groq_retry_skipped"])
+        sleep_mock.assert_called_once_with(0.6)
+        retry_mock.assert_called_once()
         middle_mock.assert_called_once()
 
     def test_ollama_fast_chat_gives_middle_model_larger_token_budget(self):
@@ -7587,21 +7736,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(final["groq_retry_skipped"])
         self.assertIsNotNone(final["first_visible_token_seconds"])
 
-    def test_stream_fast_chat_uses_streaming_middle_fallback_on_groq_rate_limit(self):
-        class FakeOllamaResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def __iter__(self):
-                lines = [
-                    {"response": "Fallback", "done": False},
-                    {"response": " answer.", "done": True},
-                ]
-                return iter((json.dumps(line).encode("utf-8") + b"\n") for line in lines)
-
+    def test_stream_fast_chat_retries_groq_before_middle_fallback_on_rate_limit(self):
         http_error = urllib.error.HTTPError(
             "https://api.groq.com/openai/v1/chat/completions",
             429,
@@ -7609,23 +7744,35 @@ class RuntimeSurfaceTests(unittest.TestCase):
             hdrs=None,
             fp=io.BytesIO(b'{"error":"Please try again in 600ms."}'),
         )
+        retry_result = {
+            "tool": "conversation.fast_local",
+            "backend": "groq",
+            "model": "llama-3.3-70b-versatile",
+            "available": True,
+            "status": "completed",
+            "executed": True,
+            "duration_seconds": 0.4,
+            "duration_human": "0.4s",
+            "reply": "Retry answer.",
+        }
         with patch("jarvis.tools.FAST_MODEL_BACKEND", "groq"), \
              patch("jarvis.tools.GROQ_API_KEY", "test-key"), \
              patch("jarvis.tools.GROQ_FAST_MODEL", "llama-3.3-70b-versatile"), \
              patch("jarvis.tools.MIDDLE_MODEL", "gpt-oss:120b-cloud"), \
-             patch("jarvis.tools._find_executable", return_value="/usr/local/bin/ollama"), \
-             patch("jarvis.tools._ensure_ollama_server_running", return_value={"running": True, "status": "running"}), \
-             patch("jarvis.tools.urllib.request.urlopen", side_effect=[http_error, FakeOllamaResponse()]):
+             patch("jarvis.tools.time.sleep") as sleep_mock, \
+             patch("jarvis.tools._run_groq_fast_chat", return_value=retry_result) as retry_mock, \
+             patch("jarvis.tools.urllib.request.urlopen", side_effect=http_error):
             events = list(stream_fast_local_chat_events("hello Jarvis"))
 
         deltas = [event["data"]["text"] for event in events if event["event"] == "delta"]
         final = [event["data"] for event in events if event["event"] == "final_result"][-1]
-        self.assertEqual("".join(deltas), "Fallback answer.")
+        self.assertEqual("".join(deltas), "")
         self.assertEqual(final["status"], "completed")
-        self.assertEqual(final["backend"], "ollama")
-        self.assertEqual(final["model"], "gpt-oss:120b-cloud")
-        self.assertTrue(final["rate_limit_fallback_used"])
-        self.assertTrue(final["groq_retry_skipped"])
+        self.assertEqual(final["backend"], "groq")
+        self.assertEqual(final["model"], "llama-3.3-70b-versatile")
+        self.assertTrue(final["retry_used"])
+        sleep_mock.assert_called_once_with(0.6)
+        retry_mock.assert_called_once()
 
     def test_stream_fast_local_chat_falls_back_to_ollama_on_groq_error(self):
         fallback_result = {
@@ -8944,6 +9091,25 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(events[-1]["data"]["result"]["reply"], "Correct, x is 3.")
         self.assertEqual(stream_mock.call_args.kwargs["history"], history)
 
+    def test_arithmetic_followup_uses_local_history_check_without_fast_chat(self):
+        history = [
+            {"role": "user", "text": "Give me a simple arithmetic problem."},
+            {"role": "assistant", "text": "Sir, what is 14 divided by 2."},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = JarvisServer()
+            server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
+            with patch("jarvis.server.stream_fast_local_chat_events") as stream_mock, \
+                 patch("jarvis.server.speak_text_async", return_value={"spoken": True, "status": "queued", "reason": "final"}):
+                events = list(server.stream_command("the answer is 8", history=history))
+
+        stream_mock.assert_not_called()
+        self.assertEqual([event["event"] for event in events], ["status", "final"])
+        final = events[-1]["data"]
+        self.assertEqual(final["tool"], "conversation.math_check")
+        self.assertFalse(final["result"]["correct"])
+        self.assertEqual(final["result"]["reply"], "Not quite, sir. 14 / 2 is 7, not 8.")
+
     def test_streamed_fast_chat_final_speech_matches_final_reply(self):
         fake_events = [
             {"event": "delta", "data": {"text": "Hello, "}},
@@ -9220,16 +9386,18 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(result["speech"]["reason"], "final")
         speak_mock.assert_called_once_with("Device status: test Mac profile.", reason="final")
 
-    def test_other_diagnostics_do_not_auto_speak(self):
+    def test_tts_diagnostics_auto_speaks_concise_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             server = JarvisServer()
             server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
-            with patch("jarvis.server.speak_text_async") as speak_mock:
+            with patch("jarvis.server.speak_text_async", return_value={"spoken": True, "status": "queued", "reason": "final"}) as speak_mock:
                 result = server.command("tts status")
 
         self.assertEqual(result["tool"], "diagnostics.tts")
-        self.assertNotIn("speech", result)
-        speak_mock.assert_not_called()
+        self.assertEqual(result["speech"]["reason"], "final")
+        spoken_text = speak_mock.call_args.args[0]
+        self.assertIn("Jarvis voice is using", spoken_text)
+        self.assertLess(len(spoken_text), len(result["result"]["reply"]))
 
     def test_normal_tool_reply_auto_speaks_final_answer(self):
         fake_plan = PlannedResult(
@@ -10291,6 +10459,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             }
         )
         self.assertFalse(slow["ok"])
+        self.assertEqual(slow["max_first_visible_seconds"], 1.5)
 
         slow_after_first = latency_smoke_summary(
             {

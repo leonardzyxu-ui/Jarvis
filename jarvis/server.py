@@ -682,6 +682,7 @@ def _stream_status_text(preview: dict[str, Any]) -> str:
         "teams.assignment": "Yes sir, preparing the Teams assignment plan now.",
         "ui.overlay": "Yes sir, planning the Jarvis overlay now.",
         "quick.local_control": "Yes sir, handling that now.",
+        "conversation.math_check": "Yes sir, checking your answer now.",
         "system.status": "Yes sir, checking Jarvis status now.",
         "policy.block": "Checking safety policy.",
         "policy.confirmation": "Checking safety policy.",
@@ -746,7 +747,6 @@ def _should_auto_speak(data: dict[str, Any]) -> bool:
     if tool in {
         "voice.status_speech",
         "voice.stop_speaking",
-        "diagnostics.tts",
         "diagnostics.model_context",
         "diagnostics.tool_catalog",
         "tools.deep_catalog",
@@ -763,7 +763,7 @@ def _should_auto_speak(data: dict[str, Any]) -> bool:
 
 
 def _speech_text_from_result(result: dict[str, Any]) -> str:
-    for key in ("reply", "email_summary"):
+    for key in ("spoken_summary", "reply", "email_summary"):
         value = result.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()

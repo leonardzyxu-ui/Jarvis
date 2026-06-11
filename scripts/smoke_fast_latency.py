@@ -151,7 +151,14 @@ def smoke_prompt(prompt: str, *, base_url: str, timeout: float) -> dict[str, Any
     reply = "".join(deltas).strip()
     if not reply and isinstance(result_payload, dict):
         reply = str(result_payload.get("reply") or "").strip()
-    first_visible_seconds = round(first_visible_at - started, 3) if first_visible_at else model_first
+    if first_visible_at is not None:
+        first_visible_seconds = round(first_visible_at - started, 3)
+    elif model_first is not None:
+        first_visible_seconds = model_first
+    elif reply:
+        first_visible_seconds = round(total, 3)
+    else:
+        first_visible_seconds = None
     visible_chars = len(reply)
     if first_visible_seconds is not None:
         after_first_seconds = max(0.001, total - float(first_visible_seconds))
@@ -269,12 +276,24 @@ def render_markdown(report: dict[str, Any]) -> str:
     for result in report["results"]:
         reply = str(result.get("reply_preview") or result.get("error") or "").replace("\n", " ")[:160]
         lines.append(
-            f"| {result.get('status')} | {result.get('first_visible_seconds')}s | "
-            f"{result.get('total_seconds')}s | {result.get('chars_per_second_after_first_visible')} | "
+            f"| {result.get('status')} | {_format_seconds(result.get('first_visible_seconds'))} | "
+            f"{_format_seconds(result.get('total_seconds'))} | {_format_rate(result.get('chars_per_second_after_first_visible'))} | "
             f"{result.get('visible_chars') or 0} | {result.get('backend') or ''} | "
             f"`{result.get('model') or ''}` | {result.get('prompt')!r} | {reply} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def _format_seconds(value: Any) -> str:
+    if value is None:
+        return "-"
+    return f"{value}s"
+
+
+def _format_rate(value: Any) -> str:
+    if value is None:
+        return "-"
+    return str(value)
 
 
 if __name__ == "__main__":

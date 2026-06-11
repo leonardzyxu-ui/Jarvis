@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -702,6 +703,9 @@ class Planner:
             routed = self._handle_model_intent(text, assessment, _explicit_codex_intent(), execute=True, history=history)
             if routed is not None:
                 return routed
+        math_check = _math_followup_check(text, history)
+        if math_check is not None:
+            return self._result(text, "conversation.math_check", "Checked the arithmetic answer locally.", assessment, math_check, True)
         return self._first_model_result(text, assessment, history=history)
 
     def _first_model_result(
@@ -920,6 +924,9 @@ class Planner:
             routed = self._handle_model_intent(text, assessment, _explicit_codex_intent(), execute=False, history=history)
             if routed is not None:
                 return routed
+        math_check = _math_followup_check(text, history)
+        if math_check is not None:
+            return self._preview_result(text, "conversation.math_check", assessment, True, plan={**math_check, "planned_only": True})
         if use_model_router:
             intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
             routed = self._handle_model_intent(text, assessment, intent, execute=False, history=history)
@@ -2208,12 +2215,15 @@ def _extract_voice_loop_transcript(text: str) -> str | None:
     lower = stripped.lower()
     prefixes = (
         "voice loop:",
+        "voice loop simulation:",
         "wake loop:",
+        "wake loop simulation:",
         "simulate voice loop:",
         "simulate wake loop:",
         "test voice loop:",
         "test wake loop:",
         "jarvis voice loop:",
+        "jarvis voice loop simulation:",
     )
     for prefix in prefixes:
         if lower.startswith(prefix):
@@ -3171,6 +3181,141 @@ def _extract_exact_reply(text: str) -> str | None:
     if len(reply) >= 2 and reply[0] == reply[-1] and reply[0] in {"'", '"'}:
         reply = reply[1:-1].strip()
     return reply[:1200] if reply else None
+
+
+def _math_followup_check(text: str, history: list[dict[str, str]] | None) -> dict[str, Any] | None:
+    user_answer = _extract_numeric_answer(text)
+    if user_answer is None or not history:
+        return None
+    problem = _latest_arithmetic_problem(history)
+    if problem is None:
+        return None
+    expression, expected = problem
+    correct = abs(user_answer - expected) <= 1e-9
+    expected_label = _format_number(expected)
+    answer_label = _format_number(user_answer)
+    if correct:
+        reply = f"Correct, sir. {expression} is {expected_label}."
+    else:
+        reply = f"Not quite, sir. {expression} is {expected_label}, not {answer_label}."
+    return {
+        "tool": "conversation.math_check",
+        "status": "completed",
+        "executed": True,
+        "problem": expression,
+        "expected_answer": expected,
+        "user_answer": user_answer,
+        "correct": correct,
+        "reply": reply,
+    }
+
+
+def _latest_arithmetic_problem(history: list[dict[str, str]]) -> tuple[str, float] | None:
+    for item in reversed(history[-12:]):
+        role = str(item.get("role") or "").strip().lower()
+        if role not in {"assistant", "jarvis"}:
+            continue
+        content = str(item.get("text") or item.get("content") or "").strip()
+        expression = _extract_arithmetic_expression(content)
+        if not expression:
+            continue
+        expected = _safe_eval_arithmetic_expression(expression)
+        if expected is not None:
+            return expression, expected
+    return None
+
+
+def _extract_numeric_answer(text: str) -> float | None:
+    stripped = re.sub(r"\s+", " ", text.strip())
+    if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", stripped):
+        return float(stripped)
+    match = re.search(
+        r"(?i)(?:answer\s+is|it\s+is|it's|equals?|=)\s*([-+]?\d+(?:\.\d+)?)\b",
+        stripped,
+    )
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def _extract_arithmetic_expression(text: str) -> str | None:
+    cleaned = re.sub(r"\s+", " ", text.strip())
+    for pattern in (
+        r"(?i)\bwhat(?:'s| is)\s+([^?.!]+)",
+        r"(?i)\b(?:calculate|evaluate|work out)\s+([^?.!]+)",
+    ):
+        match = re.search(pattern, cleaned)
+        if match:
+            expression = _normalize_arithmetic_expression(match.group(1))
+            if expression:
+                return expression
+    candidates = re.findall(
+        r"[-+]?\d+(?:\.\d+)?(?:\s*(?:\+|-|\*|/|x|×|÷|plus|minus|times|multiplied by|divided by)\s*[-+]?\d+(?:\.\d+)?)+",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    for candidate in candidates:
+        expression = _normalize_arithmetic_expression(candidate)
+        if expression:
+            return expression
+    return None
+
+
+def _normalize_arithmetic_expression(text: str) -> str | None:
+    expression = text.lower()
+    replacements = (
+        (r"\bdivided\s+by\b", "/"),
+        (r"\bmultiplied\s+by\b", "*"),
+        (r"\btimes\b", "*"),
+        (r"\bplus\b", "+"),
+        (r"\bminus\b", "-"),
+    )
+    for pattern, replacement in replacements:
+        expression = re.sub(pattern, replacement, expression)
+    expression = expression.replace("×", "*").replace("÷", "/")
+    expression = re.sub(r"[^0-9+\-*/().\s]", " ", expression)
+    expression = re.sub(r"\s+", " ", expression).strip()
+    if not re.fullmatch(r"[0-9+\-*/().\s]+", expression):
+        return None
+    if not re.search(r"\d\s*[+\-*/]\s*\d", expression):
+        return None
+    return expression
+
+
+def _safe_eval_arithmetic_expression(expression: str) -> float | None:
+    try:
+        tree = ast.parse(expression, mode="eval")
+        value = _eval_arithmetic_node(tree.body)
+    except (SyntaxError, ValueError, ZeroDivisionError, TypeError):
+        return None
+    if not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _eval_arithmetic_node(node: ast.AST) -> float:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return float(node.value)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        value = _eval_arithmetic_node(node.operand)
+        return value if isinstance(node.op, ast.UAdd) else -value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)):
+        left = _eval_arithmetic_node(node.left)
+        right = _eval_arithmetic_node(node.right)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        return left / right
+    raise ValueError("unsupported arithmetic")
+
+
+def _format_number(value: float) -> str:
+    if abs(value - round(value)) <= 1e-9:
+        return str(int(round(value)))
+    return f"{value:.6g}"
 
 
 def _explicitly_asks_codex(lower: str) -> bool:

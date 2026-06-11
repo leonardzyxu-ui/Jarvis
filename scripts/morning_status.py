@@ -366,14 +366,14 @@ def latency_smoke_summary(data: dict[str, Any]) -> dict[str, Any]:
         total = numeric_value(result.get("total_seconds"))
         after_first_cps = numeric_value(result.get("chars_per_second_after_first_visible"))
         visible_chars = numeric_value(result.get("visible_chars")) or 0.0
+        if first is not None:
+            first_values.append(first)
         if first is None or first > max_first_allowed:
             ok = False
-        else:
-            first_values.append(first)
+        if total is not None:
+            total_values.append(total)
         if total is None or total > max_total_allowed:
             ok = False
-        else:
-            total_values.append(total)
         if after_first_cps is not None:
             after_first_cps_values.append(after_first_cps)
         if visible_chars >= min_rate_visible_chars and (after_first_cps is None or after_first_cps < min_after_first_cps):

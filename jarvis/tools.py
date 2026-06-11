@@ -106,7 +106,7 @@ SPEECH_PROCESS_REASON: str | None = None
 SPEECH_GENERATION = 0
 SPEECH_MUTED = False
 SPEECH_LOCK = threading.Lock()
-STATUS_TO_FINAL_QUEUE_TIMEOUT_SECONDS = 1.4
+STATUS_TO_FINAL_QUEUE_TIMEOUT_SECONDS = 0.55
 PIPER_WORKER_PROCESS: subprocess.Popen[str] | None = None
 PIPER_WORKER_LOCK = threading.RLock()
 PIPER_WORKER_READY = False
@@ -1054,14 +1054,14 @@ def latest_latency_status() -> dict[str, Any]:
         total = _float_or_none(result.get("total_seconds"))
         cps = _float_or_none(result.get("chars_per_second_after_first_visible"))
         visible_chars = int(_float_or_default(result.get("visible_chars"), 0.0))
+        if first is not None:
+            first_values.append(first)
         if first is None or first > max_first_allowed:
             ok = False
-        else:
-            first_values.append(first)
+        if total is not None:
+            total_values.append(total)
         if total is None or total > max_total_allowed:
             ok = False
-        else:
-            total_values.append(total)
         if cps is not None:
             after_first_cps_values.append(cps)
         if visible_chars >= min_rate_visible_chars and (cps is None or cps < min_after_first_cps):
@@ -1199,6 +1199,7 @@ def _say_voice_available(voice: str, voice_output: str = "") -> bool:
 
 def _sanitize_spoken_text(text: str) -> str:
     spoken = str(text or "").replace("\x00", " ")
+    spoken = _strip_fast_chat_hidden_call_fragments(spoken)
     spoken = re.sub(r"(?is)<think>.*?</think>", " ", spoken)
     spoken = re.sub(r"(?i)\bhttps?://\S+|\bwww\.\S+", "a link", spoken)
     spoken = re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "an email address", spoken)
@@ -1214,6 +1215,60 @@ def _sanitize_spoken_text(text: str) -> str:
     spoken = re.sub(r"\s+([,.!?])", r"\1", spoken)
     spoken = re.sub(r"\.{2,}", ".", spoken)
     return spoken.strip(" ,")[:TTS_MAX_CHARS]
+
+
+def _strip_fast_chat_hidden_call_fragments(text: str) -> str:
+    """Remove hidden Jarvis tool calls from user-facing text, including malformed tails."""
+    value = str(text or "").replace("\x00", " ")
+    output: list[str] = []
+    index = 0
+    while index < len(value):
+        if value[index] == "\\":
+            span = _fast_chat_hidden_call_span(value, index)
+            if span is not None:
+                index = span[1]
+                continue
+        output.append(value[index])
+        index += 1
+    cleaned = "".join(output)
+    cleaned = re.sub(r"\\\s*$", "", cleaned)
+    return re.sub(r"[ \t\f\v]+", " ", cleaned).strip()
+
+
+def _fast_chat_contains_hidden_call_fragment(text: str) -> bool:
+    value = str(text or "")
+    return bool(re.search(r"\\\s*(?:tool|email)\b", value, flags=re.IGNORECASE) or re.search(r"\\\s*$", value))
+
+
+def _fast_chat_hidden_call_span(text: str, start: int) -> tuple[int, int] | None:
+    match = re.match(r"\\\s*(tool|email)\b", text[start:], flags=re.IGNORECASE)
+    if not match:
+        return None
+    name = match.group(1).lower()
+    cursor = start + match.end()
+    while cursor < len(text) and text[cursor].isspace():
+        cursor += 1
+    if name == "tool":
+        if cursor < len(text) and text[cursor] == "(":
+            inner, end = _extract_parenthesized(text, cursor)
+            if inner is not None:
+                return start, end
+            parsed, end = _extract_json_object_after_open_paren(text, cursor)
+            if parsed is not None:
+                return start, end
+            return start, len(text)
+        if cursor < len(text) and text[cursor] == "{":
+            parsed, end = _extract_json_object_at(text, cursor)
+            if parsed is not None:
+                return start, end
+            return start, len(text)
+        return start, len(text)
+    if cursor < len(text) and text[cursor] == "(":
+        inner, end = _extract_parenthesized(text, cursor)
+        if inner is not None:
+            return start, end
+        return start, len(text)
+    return start, len(text)
 
 
 def _speech_text_diagnostics(spoken: str) -> dict[str, Any]:
@@ -1671,6 +1726,7 @@ def _queue_final_after_status_locked(
         "reason": reason,
         "interrupted_previous": False,
         "deferred_after": "status",
+        "max_defer_seconds": STATUS_TO_FINAL_QUEUE_TIMEOUT_SECONDS,
         **_speech_text_diagnostics(spoken),
         **_duration_fields(started_at),
     }
@@ -2137,6 +2193,19 @@ def tts_status() -> dict[str, Any]:
             reply += f" (examples: {', '.join(sample_voices[:5])})"
         reply += "."
     reply += " This did not play audio, record audio, or request microphone permission."
+    spoken_summary = (
+        f"Jarvis voice is using {provider}."
+        f" Automatic final replies are {'on' if TTS_AUTOMATIC_ENABLED else 'off'},"
+        f" and progress lines are {'on' if TTS_SPEAK_STATUS else 'off'}."
+    )
+    if provider == "macos" and macos_available:
+        voice_clause = " with the system default voice" if not TTS_VOICE else f" with {TTS_VOICE}"
+        spoken_summary = (
+            "Jarvis voice is using macOS say"
+            f"{voice_clause}."
+            f" Automatic final replies are {'on' if TTS_AUTOMATIC_ENABLED else 'off'},"
+            f" and progress lines are {'on' if TTS_SPEAK_STATUS else 'off'}."
+        )
     return {
         "tool": "diagnostics.tts",
         "executed": True,
@@ -2170,6 +2239,7 @@ def tts_status() -> dict[str, Any]:
         "max_chars": TTS_MAX_CHARS,
         "voice_count": len(voice_names),
         "sample_voices": sample_voices,
+        "spoken_summary": spoken_summary,
         "reply": reply,
     }
 
@@ -8750,6 +8820,13 @@ def _run_ollama_fast_chat(
             **duration,
             **tool_request,
         }
+    if tool_specs and _fast_chat_contains_hidden_call_fragment(reply):
+        return _fast_chat_malformed_tool_result(
+            backend="ollama",
+            model=selected_model,
+            started_at=started_at,
+            reply=reply,
+        )
     if not reply:
         return {
             "tool": "conversation.fast_local",
@@ -8763,7 +8840,7 @@ def _run_ollama_fast_chat(
             **duration,
             "reply": _fast_model_unavailable_reply(prompt),
         }
-    reply = reply[-1200:]
+    reply = _fast_chat_completed_reply(reply)
     return {
         "tool": "conversation.fast_local",
         "backend": "ollama",
@@ -8977,7 +9054,8 @@ def _groq_rate_limit_middle_fallback_model() -> str | None:
 
 
 def _groq_rate_limit_should_try_middle_first(delay_seconds: float) -> bool:
-    return delay_seconds > 0.2 and _groq_rate_limit_middle_fallback_model() is not None
+    del delay_seconds
+    return False
 
 
 def _groq_retry_delay_seconds(error_text: Any) -> float:
@@ -9151,6 +9229,13 @@ def _run_groq_fast_chat(
             **duration,
             **tool_request,
         }
+    if tool_specs and _fast_chat_contains_hidden_call_fragment(reply):
+        return _fast_chat_malformed_tool_result(
+            backend="groq",
+            model=selected_model,
+            started_at=started_at,
+            reply=reply,
+        )
     if not reply:
         return {
             "tool": "conversation.fast_local",
@@ -9174,7 +9259,7 @@ def _run_groq_fast_chat(
         "fallback_used": False,
         "timeout_seconds": FAST_MODEL_TIMEOUT_SECONDS,
         **duration,
-        "reply": reply[-1200:],
+        "reply": _fast_chat_completed_reply(reply),
     }
 
 
@@ -9391,6 +9476,18 @@ def stream_fast_local_chat_events(
         }
         yield {"event": "final_result", "data": result}
         return
+    if tool_specs and _fast_chat_contains_hidden_call_fragment(reply):
+        yield {
+            "event": "final_result",
+            "data": _fast_chat_malformed_tool_result(
+                backend="groq",
+                model=selected_model,
+                started_at=started_at,
+                reply=reply,
+                first_visible_token_at=first_visible_token_at,
+            ),
+        }
+        return
     if not reply:
         result = {
             "tool": "conversation.fast_local",
@@ -9426,7 +9523,7 @@ def stream_fast_local_chat_events(
         "first_visible_token_seconds": round(first_visible_token_at - started_at, 3) if first_visible_token_at else None,
         "first_token_seconds": round(first_visible_token_at - started_at, 3) if first_visible_token_at else None,
         **duration,
-        "reply": reply[-1200:],
+        "reply": _fast_chat_completed_reply(reply),
     }
     yield {"event": "final_result", "data": result}
 
@@ -9585,6 +9682,21 @@ def _stream_ollama_fast_chat_events(
     if tool_request is not None:
         yield {"event": "final_result", "data": {**base, "status": "tool_requested", **tool_request}}
         return
+    if tool_specs and _fast_chat_contains_hidden_call_fragment(reply):
+        yield {
+            "event": "final_result",
+            "data": _fast_chat_malformed_tool_result(
+                backend="ollama",
+                model=selected_model,
+                started_at=started_at,
+                reply=reply,
+                fallback_used=primary is not None,
+                primary=primary,
+                retry_status=retry_status,
+                first_visible_token_at=first_visible_token_at,
+            ),
+        }
+        return
     if not reply:
         yield {
             "event": "final_result",
@@ -9601,7 +9713,7 @@ def _stream_ollama_fast_chat_events(
         "data": {
             **base,
             "status": "completed",
-            "reply": reply[-1200:],
+            "reply": _fast_chat_completed_reply(reply),
         },
     }
 
@@ -9785,6 +9897,43 @@ def _parse_fast_chat_tool_request(text: str, tool_specs: list[dict[str, Any]]) -
     }
 
 
+def _fast_chat_malformed_tool_result(
+    *,
+    backend: str,
+    model: str,
+    started_at: float,
+    reply: str,
+    fallback_used: bool = False,
+    primary: dict[str, Any] | None = None,
+    retry_status: str | None = None,
+    first_visible_token_at: float | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "tool": "conversation.fast_local",
+        "backend": backend,
+        "model": model,
+        "available": True,
+        "status": "malformed_tool_call",
+        "executed": False,
+        "fallback_used": fallback_used,
+        "timeout_seconds": FAST_MODEL_TIMEOUT_SECONDS,
+        "hidden_tool_fragment_detected": True,
+        "visible_text_before_hidden_call": _strip_fast_chat_hidden_call_fragments(reply)[:240],
+        "reply": "I could not safely route that. Please try again.",
+        **_duration_fields(started_at),
+    }
+    if first_visible_token_at is not None:
+        result["first_visible_token_seconds"] = round(first_visible_token_at - started_at, 3)
+        result["first_token_seconds"] = result["first_visible_token_seconds"]
+    if primary is not None:
+        result.update(_rate_limit_fallback_metadata(primary, model, retry_status=retry_status))
+    return result
+
+
+def _fast_chat_completed_reply(reply: str) -> str:
+    return _strip_fast_chat_hidden_call_fragments(_strip_think_blocks(reply)).strip()[-1200:]
+
+
 def _extract_fast_chat_tool_call(text: str) -> tuple[dict[str, Any], str] | None:
     for match in re.finditer(r"\\([A-Za-z][A-Za-z0-9_.]*)", text):
         name = match.group(1)
@@ -9804,14 +9953,10 @@ def _extract_fast_chat_tool_call(text: str) -> tuple[dict[str, Any], str] | None
                             parsed = json.loads(inner)
                         except json.JSONDecodeError:
                             parsed = None
+                else:
+                    parsed, end = _extract_json_object_after_open_paren(text, cursor)
             elif cursor < len(text) and text[cursor] == "{":
-                try:
-                    parsed_object, offset = json.JSONDecoder().raw_decode(text[cursor:])
-                    end = cursor + offset
-                    if isinstance(parsed_object, dict):
-                        parsed = parsed_object
-                except json.JSONDecodeError:
-                    parsed = None
+                parsed, end = _extract_json_object_at(text, cursor)
         elif name.lower() == "email" and cursor < len(text) and text[cursor] == "(":
             inner, end = _extract_parenthesized(text, cursor)
             if inner is not None:
@@ -9821,6 +9966,25 @@ def _extract_fast_chat_tool_call(text: str) -> tuple[dict[str, Any], str] | None
         visible_text = (text[:start] + text[end:]).strip()
         return parsed, visible_text
     return None
+
+
+def _extract_json_object_after_open_paren(text: str, open_index: int) -> tuple[dict[str, Any] | None, int]:
+    if open_index >= len(text) or text[open_index] != "(":
+        return None, open_index
+    cursor = open_index + 1
+    while cursor < len(text) and text[cursor].isspace():
+        cursor += 1
+    return _extract_json_object_at(text, cursor)
+
+
+def _extract_json_object_at(text: str, cursor: int) -> tuple[dict[str, Any] | None, int]:
+    try:
+        parsed_object, offset = json.JSONDecoder().raw_decode(text[cursor:])
+    except json.JSONDecodeError:
+        return None, cursor
+    if not isinstance(parsed_object, dict):
+        return None, cursor
+    return parsed_object, cursor + offset
 
 
 def _extract_parenthesized(text: str, open_index: int) -> tuple[str | None, int]:
