@@ -81,6 +81,7 @@ from .config import (
     TTS_PIPER_WARM_WORKER,
     TTS_PIPER_WARMUP_TIMEOUT_SECONDS,
     TTS_PROVIDER,
+    TTS_PLAIN_SAY,
     TTS_RATE,
     TTS_SPEAK_STATUS,
     TTS_VOICE,
@@ -1714,8 +1715,7 @@ def _start_macos_speech_async(
     fallback_from: str | None = None,
     fallback_reason: str | None = None,
 ) -> dict[str, Any]:
-    say_path = _find_executable("say") or "/usr/bin/say"
-    command = [say_path, "-v", TTS_VOICE, "-r", str(TTS_RATE), spoken]
+    command = _macos_say_command(spoken)
     try:
         process = subprocess.Popen(
             command,
@@ -1747,8 +1747,10 @@ def _start_macos_speech_async(
         "status": "started",
         "reason": reason,
         "provider": "macos",
-        "voice": TTS_VOICE,
-        "rate": TTS_RATE,
+        "voice": TTS_VOICE or "system default",
+        "rate": TTS_RATE or None,
+        "uses_system_default_voice": not bool(TTS_VOICE),
+        "uses_system_default_rate": not bool(TTS_RATE),
         **_speech_text_diagnostics(spoken),
         **stop_status,
         **_duration_fields(started_at),
@@ -1757,6 +1759,16 @@ def _start_macos_speech_async(
         result["fallback_from"] = fallback_from
         result["fallback_reason"] = fallback_reason
     return result
+
+
+def _macos_say_command(spoken: str) -> list[str]:
+    command = [_find_executable("say") or "/usr/bin/say"]
+    if TTS_VOICE:
+        command.extend(["-v", TTS_VOICE])
+    if TTS_RATE:
+        command.extend(["-r", str(TTS_RATE)])
+    command.append(spoken)
+    return command
 
 
 def _start_piper_warm_speech_async(
@@ -2067,7 +2079,7 @@ def tts_status() -> dict[str, Any]:
             if name and name not in voice_names:
                 voice_names.append(name)
     macos_available = bool(say_path)
-    selected_voice_available = _say_voice_available(TTS_VOICE, voice_output)
+    selected_voice_available = True if not TTS_VOICE else _say_voice_available(TTS_VOICE, voice_output)
     sample_voices = voice_names[:8]
     preferred_available = bool(piper["ready"]) if provider == "piper" else macos_available
     fallback_available = macos_available if fallback_provider == "macos" else bool(piper["ready"])
@@ -2111,8 +2123,13 @@ def tts_status() -> dict[str, Any]:
     reply += " Speech interruption is available with `stop talking` or the voice.stop_speaking tool."
     if macos_available:
         voice_label = "macOS fallback voice" if provider == "piper" else "Voice"
-        reply += f" {voice_label}: {TTS_VOICE} at {TTS_RATE} words per minute."
-        if not selected_voice_available:
+        if not TTS_VOICE and not TTS_RATE:
+            reply += " macOS `say` uses the system default voice and rate, matching plain `say \"text\"`."
+        else:
+            voice_description = TTS_VOICE or "system default"
+            rate_description = f"{TTS_RATE} words per minute" if TTS_RATE else "system default rate"
+            reply += f" {voice_label}: {voice_description} at {rate_description}."
+        if TTS_VOICE and not selected_voice_available:
             reply += " The selected voice was not listed by `say -v ?`, so macOS may fall back to its default voice."
     if voice_names:
         reply += f" Detected {len(voice_names)} voices"
@@ -2143,9 +2160,13 @@ def tts_status() -> dict[str, Any]:
         "stop_speaking_tool": "voice.stop_speaking",
         "automatic_tts_enabled": TTS_AUTOMATIC_ENABLED,
         "spoken_status_enabled": TTS_SPEAK_STATUS,
-        "voice": TTS_VOICE,
+        "plain_say_enabled": TTS_PLAIN_SAY,
+        "voice": TTS_VOICE or "system default",
+        "configured_voice": TTS_VOICE or None,
         "voice_available": selected_voice_available,
-        "rate": TTS_RATE,
+        "rate": TTS_RATE or None,
+        "configured_rate": TTS_RATE or None,
+        "uses_system_say_defaults": not bool(TTS_VOICE or TTS_RATE),
         "max_chars": TTS_MAX_CHARS,
         "voice_count": len(voice_names),
         "sample_voices": sample_voices,
@@ -12094,10 +12115,9 @@ def _run_macos_say_text(
     fallback_from: str | None = None,
     fallback_reason: str | None = None,
 ) -> dict[str, Any]:
-    say_path = _find_executable("say") or "/usr/bin/say"
     try:
         completed = subprocess.run(
-            [say_path, "-v", TTS_VOICE, "-r", str(TTS_RATE), spoken],
+            _macos_say_command(spoken),
             shell=False,
             cwd=PROJECT_ROOT,
             text=True,
@@ -12117,8 +12137,10 @@ def _run_macos_say_text(
             "fallback_from": fallback_from,
             "fallback_reason": fallback_reason,
             "text_length": len(spoken),
-            "voice": TTS_VOICE,
-            "rate": TTS_RATE,
+            "voice": TTS_VOICE or "system default",
+            "rate": TTS_RATE or None,
+            "uses_system_default_voice": not bool(TTS_VOICE),
+            "uses_system_default_rate": not bool(TTS_RATE),
             **_duration_fields(started_at),
             "reply": "I started speaking, but the speech command ran too long.",
         }
@@ -12133,8 +12155,10 @@ def _run_macos_say_text(
             "fallback_from": fallback_from,
             "fallback_reason": fallback_reason,
             "text_length": len(spoken),
-            "voice": TTS_VOICE,
-            "rate": TTS_RATE,
+            "voice": TTS_VOICE or "system default",
+            "rate": TTS_RATE or None,
+            "uses_system_default_voice": not bool(TTS_VOICE),
+            "uses_system_default_rate": not bool(TTS_RATE),
             "error": str(error),
             **_duration_fields(started_at),
             "reply": "I could not start local speech.",
@@ -12149,8 +12173,10 @@ def _run_macos_say_text(
         "fallback_from": fallback_from,
         "fallback_reason": fallback_reason,
         "text_length": len(spoken),
-        "voice": TTS_VOICE,
-        "rate": TTS_RATE,
+        "voice": TTS_VOICE or "system default",
+        "rate": TTS_RATE or None,
+        "uses_system_default_voice": not bool(TTS_VOICE),
+        "uses_system_default_rate": not bool(TTS_RATE),
         "returncode": completed.returncode,
         "stderr": (completed.stderr or "").strip()[-500:],
         **_duration_fields(started_at),

@@ -19,6 +19,7 @@ for key in (
     "JARVIS_TTS_SPEAK_STATUS",
     "JARVIS_TTS_PROVIDER",
     "JARVIS_TTS_FALLBACK_PROVIDER",
+    "JARVIS_TTS_PLAIN_SAY",
     "JARVIS_TTS_VOICE",
     "JARVIS_TTS_RATE",
     "JARVIS_TTS_MAX_CHARS",
@@ -3088,9 +3089,14 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["stop_speaking_tool"], "voice.stop_speaking")
         self.assertFalse(result["automatic_tts_enabled"])
         self.assertFalse(result["spoken_status_enabled"])
-        self.assertEqual(result["voice"], "Samantha")
-        self.assertEqual(result["rate"], 152)
+        self.assertEqual(result["voice"], "system default")
+        self.assertIsNone(result["configured_voice"])
+        self.assertIsNone(result["rate"])
+        self.assertIsNone(result["configured_rate"])
+        self.assertTrue(result["plain_say_enabled"])
+        self.assertTrue(result["uses_system_say_defaults"])
         self.assertEqual(result["voice_count"], 2)
+        self.assertIn('matching plain `say "text"`', result["reply"])
         self.assertIn("stop talking", result["reply"])
         self.assertIn("did not play audio", result["reply"])
 
@@ -3102,17 +3108,21 @@ class PlannerTests(unittest.TestCase):
             "JARVIS_TTS_AUTOMATIC_ENABLED",
             "JARVIS_TTS_SPEAK_STATUS",
             "JARVIS_TTS_PROVIDER",
+            "JARVIS_TTS_PLAIN_SAY",
             "JARVIS_TTS_VOICE",
             "JARVIS_TTS_RATE",
         ):
             env.pop(key, None)
+        env["JARVIS_TTS_VOICE"] = "Samantha"
+        env["JARVIS_TTS_RATE"] = "152"
         completed = subprocess.run(
             [
                 sys.executable,
                 "-c",
                 (
-                    "from jarvis.config import TTS_AUTOMATIC_ENABLED, TTS_SPEAK_STATUS, TTS_PROVIDER, TTS_VOICE, TTS_RATE; "
-                    "print(f'{TTS_AUTOMATIC_ENABLED} {TTS_SPEAK_STATUS} {TTS_PROVIDER} {TTS_VOICE} {TTS_RATE}')"
+                    "import json; "
+                    "from jarvis.config import TTS_AUTOMATIC_ENABLED, TTS_SPEAK_STATUS, TTS_PROVIDER, TTS_PLAIN_SAY, TTS_VOICE, TTS_RATE; "
+                    "print(json.dumps({'automatic': TTS_AUTOMATIC_ENABLED, 'status': TTS_SPEAK_STATUS, 'provider': TTS_PROVIDER, 'plain': TTS_PLAIN_SAY, 'voice': TTS_VOICE, 'rate': TTS_RATE}))"
                 ),
             ],
             shell=False,
@@ -3126,9 +3136,13 @@ class PlannerTests(unittest.TestCase):
         )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.strip(), "True True macos Reed (English (UK)) 185")
+        output = json.loads(completed.stdout)
+        self.assertEqual(
+            output,
+            {"automatic": True, "status": True, "provider": "macos", "plain": True, "voice": "", "rate": 0},
+        )
 
-    def test_swift_worker_defaults_to_macos_say_voice(self):
+    def test_swift_worker_defaults_to_plain_macos_say(self):
         source = (
             PROJECT_ROOT
             / "swift-shell"
@@ -3139,8 +3153,9 @@ class PlannerTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn('environment["JARVIS_TTS_PROVIDER"] = "macos"', source)
-        self.assertIn('environment["JARVIS_TTS_VOICE"] = "Reed (English (UK))"', source)
-        self.assertIn('environment["JARVIS_TTS_RATE"] = "185"', source)
+        self.assertIn('environment["JARVIS_TTS_PLAIN_SAY"] = "1"', source)
+        self.assertIn('environment["JARVIS_TTS_VOICE"] = ""', source)
+        self.assertIn('environment["JARVIS_TTS_RATE"] = ""', source)
         self.assertNotIn('environment["JARVIS_TTS_PROVIDER"] = "piper"', source)
 
     def test_tts_status_reports_piper_when_configured(self):
@@ -6166,6 +6181,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
     def test_quick_speech_command_starts_async_speech_with_mocked_process(self):
         class FakeProcess:
             pid = 12345
+            terminated = False
+            killed = False
 
             def poll(self):
                 return None
@@ -6173,13 +6190,54 @@ class RuntimeSurfaceTests(unittest.TestCase):
             def wait(self, timeout=None):
                 return 0
 
+            def terminate(self):
+                self.terminated = True
+
+            def kill(self):
+                self.killed = True
+
         with patch("jarvis.tools._find_executable", return_value="/usr/bin/say"), \
              patch("jarvis.tools.subprocess.Popen", return_value=FakeProcess()) as popen_mock:
-            result = quick_local_control("say out loud hello")
+            try:
+                result = quick_local_control("say out loud hello")
+            finally:
+                jarvis_tools.SPEECH_PROCESS = None
+                jarvis_tools.SPEECH_PROCESS_REASON = None
 
         self.assertEqual(result["status"], "started")
         self.assertEqual(result["action"], "speech.say")
         self.assertEqual(result["speech"]["reason"], "explicit")
+        self.assertEqual(popen_mock.call_args.args[0], ["/usr/bin/say", "hello"])
+
+    def test_quick_speech_command_honors_explicit_macos_voice_override(self):
+        class FakeProcess:
+            pid = 12345
+            terminated = False
+            killed = False
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                return 0
+
+            def terminate(self):
+                self.terminated = True
+
+            def kill(self):
+                self.killed = True
+
+        with patch("jarvis.tools.TTS_VOICE", "Samantha"), \
+             patch("jarvis.tools.TTS_RATE", 152), \
+             patch("jarvis.tools._find_executable", return_value="/usr/bin/say"), \
+             patch("jarvis.tools.subprocess.Popen", return_value=FakeProcess()) as popen_mock:
+            try:
+                result = quick_local_control("say out loud hello")
+            finally:
+                jarvis_tools.SPEECH_PROCESS = None
+                jarvis_tools.SPEECH_PROCESS_REASON = None
+
+        self.assertEqual(result["status"], "started")
         self.assertEqual(popen_mock.call_args.args[0], ["/usr/bin/say", "-v", "Samantha", "-r", "152", "hello"])
 
     def test_auto_speech_interrupts_previous_process_before_starting_next(self):
