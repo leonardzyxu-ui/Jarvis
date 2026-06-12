@@ -110,10 +110,12 @@ def check_swift_source_contracts() -> str:
     verify_safe.require("installJarvisWakeAudioTap(on: input, request: request)" in listener_source, "audio tap helper call missing")
     verify_safe.require("input.installTap(onBus: 0, bufferSize: 1024, format: format) { [sink] buffer, _ in" in listener_source, "audio tap should capture sink explicitly")
     verify_safe.require("restartStormLimit = 2" in listener_source, "stricter wake restart storm limit missing")
-    verify_safe.require("maxRestartAttemptsPerActivation = 3" in listener_source, "wake activation restart cap missing")
+    verify_safe.require("recoveryRestartDelaySeconds" in listener_source, "wake recovery backoff delay missing")
+    verify_safe.require("Speech Recognition is recovering; Hey Jarvis is still listening" in listener_source, "wake recovery should keep listener active")
+    verify_safe.require("maxRestartAttemptsPerActivation" not in listener_source, "wake listener should not have a hard activation stop cap")
     verify_safe.require("shouldPauseAfterActivationRestartLimit" in listener_source, "wake activation restart decision missing")
     verify_safe.require("lastPublishedSnapshot" in listener_source, "duplicate wake snapshot guard missing")
-    return "Swift source keeps busy-submit guard, direct mute-first path, non-actor wake audio tap, and wake restart caps"
+    return "Swift source keeps busy-submit guard, direct mute-first path, non-actor wake audio tap, and wake recovery backoff"
 
 
 def check_swift_wake_preflight_contracts() -> str:

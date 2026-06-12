@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import JarvisClient
 #if canImport(Speech)
@@ -141,6 +142,12 @@ enum JarvisMenuBarSelfTest {
         guard JarvisAppDelegate.menuBarItemEnabled(environment: ["JARVIS_SHOW_MENU_BAR_ITEM": "on"]) else {
             throw SelfTestError.failed("Menu-bar item override should allow enabling the status item.")
         }
+        guard JarvisAppDelegate.statusItemTitle.isEmpty else {
+            throw SelfTestError.failed("Menu-bar status item should use the icon without a text title.")
+        }
+        guard JarvisAppDelegate.statusItemLength == NSStatusItem.squareLength else {
+            throw SelfTestError.failed("Menu-bar status item should reserve only icon-sized space.")
+        }
         guard JarvisAppDelegate.speechMuteMenuTitle(muted: false) == "Shut Up" else {
             throw SelfTestError.failed("Unmuted menu title should be Shut Up.")
         }
@@ -182,15 +189,15 @@ enum JarvisMenuBarSelfTest {
         }
         let restartStorm = JarvisWakeListener.testRestartStormDecision(priorRestartAges: [1, 2], now: now)
         guard restartStorm.count == 3, restartStorm.shouldPause else {
-            throw SelfTestError.failed("Wake restart guard should pause rapid microphone restart storms.")
+            throw SelfTestError.failed("Wake restart guard should detect rapid microphone restart storms for backoff.")
         }
         let thirdActivationRestart = JarvisWakeListener.testActivationRestartLimit(priorAttempts: 2)
         guard thirdActivationRestart.attempts == 3, !thirdActivationRestart.shouldPause else {
             throw SelfTestError.failed("Wake listener should tolerate three restarts during one activation.")
         }
         let fourthActivationRestart = JarvisWakeListener.testActivationRestartLimit(priorAttempts: 3)
-        guard fourthActivationRestart.attempts == 4, fourthActivationRestart.shouldPause else {
-            throw SelfTestError.failed("Wake listener should pause after the fourth restart during one activation.")
+        guard fourthActivationRestart.attempts == 4, !fourthActivationRestart.shouldPause else {
+            throw SelfTestError.failed("Wake listener should keep running after repeated restarts until Leo stops it.")
         }
         guard JarvisWakeListener.testRestartDelaySeconds(awaitingCommand: false) >= 2.5 else {
             throw SelfTestError.failed("Wake listener restart delay should avoid rapid menu-bar microphone flicker.")
@@ -206,7 +213,7 @@ enum JarvisMenuBarSelfTest {
             throw SelfTestError.failed("Wake listener should not publish duplicate snapshots.")
         }
         guard JarvisWakeListener.testSilentEndDecision(sessionAgeSeconds: 1, heardTranscript: false) else {
-            throw SelfTestError.failed("Wake listener should pause after immediate silent recognition endings.")
+            throw SelfTestError.failed("Wake listener should restart after immediate silent recognition endings.")
         }
         guard !JarvisWakeListener.testSilentEndDecision(sessionAgeSeconds: 12, heardTranscript: false) else {
             throw SelfTestError.failed("Wake listener should tolerate long stable silent recognition sessions.")
@@ -215,7 +222,7 @@ enum JarvisMenuBarSelfTest {
             throw SelfTestError.failed("Wake listener should not pause a session that already heard speech.")
         }
         guard JarvisWakeListener.testSilentEndDecision(sessionAgeSeconds: 1, heardTranscript: false, awaitingCommand: true) else {
-            throw SelfTestError.failed("Wake listener should pause immediate silent endings while waiting for a command.")
+            throw SelfTestError.failed("Wake listener should restart immediate silent endings while waiting for a command.")
         }
         guard !JarvisShellModel.shouldUseNativeVoiceStatus("tts status") else {
             throw SelfTestError.failed("TTS status should route to backend diagnostics.tts, not the native voice snapshot.")

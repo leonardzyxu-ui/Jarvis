@@ -3,8 +3,8 @@ import SwiftUI
 
 struct JarvisSummonOverlayView: View {
     @ObservedObject var model: JarvisShellModel
-    private let panelWidth: CGFloat = 386
-    private let panelHeight: CGFloat = 118
+    private let panelWidth: CGFloat = 326
+    private let panelHeight: CGFloat = 92
 
     var body: some View {
         let surface = model.summonSurface
@@ -15,14 +15,14 @@ struct JarvisSummonOverlayView: View {
                         .strokeBorder(borderGradient(for: surface.phase), lineWidth: 0.7)
                 )
 
-            HStack(spacing: 14) {
+            HStack(spacing: 11) {
                 JarvisSummonCore(phase: surface.phase)
-                    .frame(width: 54, height: 54)
+                    .frame(width: 43, height: 43)
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(surface.title.isEmpty ? phaseTitle(surface.phase) : surface.title)
-                            .font(.system(size: 17, weight: .semibold, design: .rounded))
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
@@ -31,17 +31,17 @@ struct JarvisSummonOverlayView: View {
                         Spacer(minLength: 6)
 
                         Text(phaseLabel(surface.phase))
-                            .font(.system(size: 8.5, weight: .bold, design: .rounded))
-                            .tracking(0.8)
+                            .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                            .tracking(0.7)
                             .foregroundStyle(accentColor(for: surface.phase))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
                             .background(Color.black.opacity(0.22), in: Capsule(style: .continuous))
                     }
 
                     if !surface.transcript.isEmpty {
                         Text(surface.transcript)
-                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
                             .foregroundStyle(.white.opacity(0.72))
                             .lineLimit(1)
                             .transition(.opacity.combined(with: .move(edge: .top)))
@@ -49,27 +49,27 @@ struct JarvisSummonOverlayView: View {
 
                     if !surface.response.isEmpty {
                         Text(surface.response)
-                            .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                            .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                             .foregroundStyle(.white)
                             .lineLimit(2)
                             .shadow(color: .black.opacity(0.22), radius: 2, x: 0, y: 1)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     } else {
                         Text(surface.detail.isEmpty ? phaseDetail(surface.phase) : surface.detail)
-                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
                             .foregroundStyle(.white.opacity(0.72))
                             .lineLimit(1)
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 11)
         }
         .frame(width: panelWidth, height: panelHeight)
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
-        .shadow(color: Color.black.opacity(0.26), radius: 22, x: 0, y: 12)
-        .shadow(color: accentColor(for: surface.phase).opacity(0.18), radius: 24, x: 0, y: 6)
+        .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 9)
+        .shadow(color: accentColor(for: surface.phase).opacity(0.16), radius: 18, x: 0, y: 5)
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: surface)
     }
 
@@ -78,7 +78,7 @@ struct JarvisSummonOverlayView: View {
         case .hidden:
             return ""
         case .listening:
-            return "Yes sir?"
+            return "Listening."
         case .transcribing:
             return "I heard you."
         case .thinking:
@@ -240,7 +240,7 @@ private struct JarvisSummonCore: View {
             ZStack {
                 Circle()
                     .fill(radialFill)
-                    .overlay(Circle().stroke(Color.white.opacity(0.24), lineWidth: 0.8))
+                    .overlay(Circle().stroke(Color.white.opacity(0.24), lineWidth: 0.7))
                     .scaleEffect(breath)
 
                 Circle()
@@ -256,24 +256,24 @@ private struct JarvisSummonCore: View {
                             ],
                             center: .center
                         ),
-                        style: StrokeStyle(lineWidth: 4.2, lineCap: .round)
+                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
                     )
                     .rotationEffect(spin)
 
                 Circle()
                     .trim(from: 0.62, to: 0.88)
-                    .stroke(Color.white.opacity(0.68), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
+                    .stroke(Color.white.opacity(0.68), style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
                     .rotationEffect(-spin * 0.72)
 
                 if phase == .speaking {
                     JarvisSpeakingWave(time: time, level: speakingLevel)
-                        .frame(width: 34, height: 24)
-                        .offset(y: 18)
+                        .frame(width: 28, height: 20)
+                        .offset(y: 14)
                         .transition(.opacity)
                 }
 
                 Image(systemName: iconName)
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.white)
                     .shadow(color: Color.black.opacity(0.20), radius: 4, x: 0, y: 2)

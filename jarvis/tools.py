@@ -139,6 +139,12 @@ APP_SEARCH_DIRS = [
     Path("/System/Applications/Utilities"),
     Path.home() / "Applications",
 ]
+LOCALOS_ROOT = PROJECT_ROOT.parent / "localOSroot"
+LOCALOS_MUSIC_MP3_DIR = LOCALOS_ROOT / "localOS" / "localFiles" / "mp3"
+LOCALOS_MUSIC_SNAPSHOT_PATH = RUNTIME_DIR / "integrations" / "localos_music_snapshot.json"
+LOCALOS_MUSIC_SNAPSHOT_MAX_TRACKS = 25
+LOCALOS_MUSIC_LIBRARY_MAX_TRACKS = 500
+LOCALOS_MUSIC_DEFAULT_LIMIT = 10
 JARVIS_BUILD_ARCHIVE_DIR = Path.home() / "Library" / "Application Support" / "Jarvis" / "Builds"
 APP_NAME_ALIASES = {
     "calendar": "Calendar",
@@ -192,7 +198,7 @@ FILE_SEARCH_EXCLUDED_DIRS = {
     "venv",
 }
 STT_REFERENCE_SENTENCES = [
-    "Yes sir, I found the newest Music assignment and I am checking the rubric now.",
+    "I found the newest Music assignment and I am checking the rubric now.",
     "Jarvis should answer quickly, show the text, and keep speaking only when it is useful.",
     "Open Teams, go to Music class, find the newest assignment, and tell me what it asks for.",
 ]
@@ -533,6 +539,30 @@ def tool_registry() -> dict[str, Any]:
                 "risk": "read_only",
                 "available": True,
                 "description": "Summarizes what Jarvis can do now, what is partial, and what is not active yet without reading private content.",
+            },
+            {
+                "id": "localos.music_recommendations",
+                "label": "Local OS Music Recommendations",
+                "mode": "read_only",
+                "risk": "local_music_metadata",
+                "available": LOCALOS_ROOT.exists() or LOCALOS_MUSIC_SNAPSHOT_PATH.exists(),
+                "description": "Reads the Local OS Music Player Your Pick recommendation snapshot that the Music page publishes to Jarvis on loopback.",
+            },
+            {
+                "id": "localos.music_search",
+                "label": "Local OS Music Search",
+                "mode": "read_only",
+                "risk": "local_music_metadata",
+                "available": LOCALOS_ROOT.exists() or LOCALOS_MUSIC_SNAPSHOT_PATH.exists(),
+                "description": "Searches the full Local OS Music library snapshot by title, artist, filename, or group; does not play audio yet.",
+            },
+            {
+                "id": "localos.music_choose_from_your_pick",
+                "label": "Choose From Your Pick",
+                "mode": "read_only_model_choice",
+                "risk": "local_music_metadata_to_configured_fast_model",
+                "available": LOCALOS_MUSIC_SNAPSHOT_PATH.exists(),
+                "description": "Gives the Local OS Music Your Pick candidate list to Jarvis's fast model so it can choose one track naturally.",
             },
             {
                 "id": "diagnostics.safety",
@@ -1203,6 +1233,7 @@ def _sanitize_spoken_text(text: str) -> str:
     spoken = re.sub(r"(?is)<think>.*?</think>", " ", spoken)
     spoken = re.sub(r"(?i)\bhttps?://\S+|\bwww\.\S+", "a link", spoken)
     spoken = re.sub(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "an email address", spoken)
+    spoken = _english_only_spoken_text(spoken)
     spoken = re.sub(r"(?m)^\s*(?:[-*]|\d+[.)])\s+", "", spoken)
     spoken = re.sub(r"(?im)^\s*(?:summary|action|actions|details?|link|subject|sender|from)\s*:\s*", "", spoken)
     spoken = re.sub(r"[*_`#>]+", "", spoken)
@@ -1215,6 +1246,29 @@ def _sanitize_spoken_text(text: str) -> str:
     spoken = re.sub(r"\s+([,.!?])", r"\1", spoken)
     spoken = re.sub(r"\.{2,}", ".", spoken)
     return spoken.strip(" ,")[:TTS_MAX_CHARS]
+
+
+def _english_only_spoken_text(text: str) -> str:
+    replacements = {
+        "少先队": "Young Pioneers",
+        "慈善义卖": "charity sale",
+    }
+    spoken = str(text or "")
+    for source, replacement in replacements.items():
+        spoken = spoken.replace(source, replacement)
+    spoken = (
+        spoken.replace("≈", " about ")
+        .replace("–", "-")
+        .replace("—", ", ")
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("…", ".")
+    )
+    spoken = re.sub(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+", " ", spoken)
+    spoken = spoken.encode("ascii", errors="ignore").decode("ascii", errors="ignore")
+    return spoken
 
 
 def _strip_fast_chat_hidden_call_fragments(text: str) -> str:
@@ -2412,6 +2466,566 @@ def terminal_command_plan(command: str) -> dict[str, Any]:
     }
 
 
+def store_localos_music_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
+    """Store a privacy-trimmed Local OS Music recommendation snapshot."""
+    if not isinstance(payload, dict):
+        raise TypeError("Local OS music snapshot must be a JSON object")
+    started_at = time.monotonic()
+    raw_tracks = _localos_music_snapshot_tracks(payload)
+    tracks = [
+        track
+        for track in (
+            _sanitize_localos_music_track(raw_track, rank=index + 1)
+            for index, raw_track in enumerate(raw_tracks[:LOCALOS_MUSIC_SNAPSHOT_MAX_TRACKS])
+        )
+        if track
+    ]
+    raw_library = _localos_music_snapshot_library(payload)
+    library = [
+        track
+        for track in (
+            _sanitize_localos_music_track(raw_track, rank=index + 1)
+            for index, raw_track in enumerate(raw_library[:LOCALOS_MUSIC_LIBRARY_MAX_TRACKS])
+        )
+        if track
+    ]
+    current_track = _sanitize_localos_music_track(
+        payload.get("currentTrack") or payload.get("current_track"),
+        rank=0,
+    )
+    snapshot = {
+        "schema": "jarvis.localos.music.snapshot.v1",
+        "source": _localos_clean_text(payload.get("source"), 80) or "localos-music-player",
+        "reason": _localos_clean_text(payload.get("reason"), 80) or "music-update",
+        "received_at": time.time(),
+        "generated_at_ms": _safe_float(payload.get("generatedAt") or payload.get("generated_at_ms")),
+        "page": _localos_clean_text(payload.get("page"), 120) or "Local OS Music Player",
+        "group": _localos_clean_text(payload.get("group"), 80),
+        "all_songs_count": _safe_int(payload.get("allSongsCount") or payload.get("all_songs_count")),
+        "taste_events_count": _safe_int(payload.get("tasteEventsCount") or payload.get("taste_events_count")),
+        "your_pick": tracks,
+        "your_pick_count": len(tracks),
+        "library": library,
+        "library_count": len(library),
+        "current_track": current_track,
+    }
+    LOCALOS_MUSIC_SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = LOCALOS_MUSIC_SNAPSHOT_PATH.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    temp_path.replace(LOCALOS_MUSIC_SNAPSHOT_PATH)
+    return {
+        "tool": "localos.music_snapshot_ingest",
+        "status": "stored",
+        "executed": True,
+        "snapshot_path": str(LOCALOS_MUSIC_SNAPSHOT_PATH),
+        "your_pick_count": len(tracks),
+        "library_count": len(library),
+        "all_songs_count": snapshot["all_songs_count"],
+        "taste_events_count": snapshot["taste_events_count"],
+        "stored_private_audio_or_artwork": False,
+        **_duration_fields(started_at),
+    }
+
+
+def localos_music_recommendations(limit: int | str | None = None) -> dict[str, Any]:
+    """Read the latest Local OS Music Your Pick snapshot for Jarvis."""
+    started_at = time.monotonic()
+    parsed_limit = _bounded_localos_music_limit(limit)
+    base = {
+        "tool": "localos.music_recommendations",
+        "executed": True,
+        "limit": parsed_limit,
+        "snapshot_path": str(LOCALOS_MUSIC_SNAPSHOT_PATH),
+        "localos_root": str(LOCALOS_ROOT),
+        "read_private_audio_or_artwork": False,
+    }
+    if not LOCALOS_MUSIC_SNAPSHOT_PATH.exists():
+        fallback = _localos_music_file_fallback(max_tracks=parsed_limit)
+        reply = (
+            "I do not have a synced Local OS Your Pick snapshot yet. "
+            "Open or refresh the Local OS Music Player once, then I can read its recommended songs."
+        )
+        if fallback["track_count"]:
+            reply += f" I can see {fallback['track_count']} local MP3 file(s), but that is not the Your Pick ranking."
+        return {
+            **base,
+            "status": "snapshot_missing",
+            "available": False,
+            "tracks": [],
+            "fallback_library": fallback,
+            "reply": reply,
+            **_duration_fields(started_at),
+        }
+    try:
+        snapshot = json.loads(LOCALOS_MUSIC_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return {
+            **base,
+            "status": "snapshot_unreadable",
+            "available": False,
+            "tracks": [],
+            "error": str(error),
+            "reply": "I found the Local OS music snapshot, but I could not read it cleanly.",
+            **_duration_fields(started_at),
+        }
+    if not isinstance(snapshot, dict):
+        return {
+            **base,
+            "status": "snapshot_invalid",
+            "available": False,
+            "tracks": [],
+            "reply": "The Local OS music snapshot is not in the expected format.",
+            **_duration_fields(started_at),
+        }
+    tracks = [
+        track
+        for track in (snapshot.get("your_pick") if isinstance(snapshot.get("your_pick"), list) else [])
+        if isinstance(track, dict)
+    ][:parsed_limit]
+    received_at = _safe_float(snapshot.get("received_at"))
+    age_seconds = max(0.0, time.time() - received_at) if received_at is not None else None
+    track_phrase = _localos_music_track_phrase(tracks)
+    if tracks:
+        reply = f"Your Pick has {len(tracks)} song{'s' if len(tracks) != 1 else ''}: {track_phrase}."
+    else:
+        reply = "Your Pick is synced, but it is currently empty."
+    return {
+        **base,
+        "status": "available",
+        "available": True,
+        "snapshot_age_seconds": round(age_seconds, 3) if age_seconds is not None else None,
+        "source": _localos_clean_text(snapshot.get("source"), 80),
+        "group": _localos_clean_text(snapshot.get("group"), 80),
+        "all_songs_count": _safe_int(snapshot.get("all_songs_count")),
+        "taste_events_count": _safe_int(snapshot.get("taste_events_count")),
+        "your_pick_count": _safe_int(snapshot.get("your_pick_count")) or len(tracks),
+        "current_track": snapshot.get("current_track") if isinstance(snapshot.get("current_track"), dict) else None,
+        "tracks": tracks,
+        "reply": reply,
+        **_duration_fields(started_at),
+    }
+
+
+def localos_music_search(query: str, limit: int | str | None = None) -> dict[str, Any]:
+    """Search the full Local OS Music library snapshot."""
+    started_at = time.monotonic()
+    parsed_limit = _bounded_localos_music_limit(limit)
+    clean_query = _localos_clean_text(query, 180)
+    base = {
+        "tool": "localos.music_search",
+        "executed": True,
+        "query": clean_query,
+        "limit": parsed_limit,
+        "snapshot_path": str(LOCALOS_MUSIC_SNAPSHOT_PATH),
+        "localos_root": str(LOCALOS_ROOT),
+        "read_private_audio_or_artwork": False,
+    }
+    if not clean_query:
+        return {
+            **base,
+            "status": "missing_query",
+            "available": False,
+            "matches": [],
+            "reply": "Tell me which song to look for.",
+            **_duration_fields(started_at),
+        }
+    snapshot_result = _read_localos_music_snapshot_for_tool()
+    if snapshot_result.get("error"):
+        fallback = _search_localos_music_files(clean_query, max_tracks=parsed_limit)
+        return {
+            **base,
+            "status": snapshot_result["status"],
+            "available": False,
+            "matches": fallback["matches"],
+            "fallback_library": fallback,
+            "reply": (
+                f"I could not read a synced Local OS library snapshot, but I found {len(fallback['matches'])} matching local file"
+                f"{'' if len(fallback['matches']) == 1 else 's'}."
+                if fallback["matches"]
+                else "I do not have a synced Local OS library snapshot yet. Open or refresh the Local OS Music Player once, then I can search the full library."
+            ),
+            **_duration_fields(started_at),
+        }
+    snapshot = snapshot_result["snapshot"]
+    library = _localos_music_snapshot_library(snapshot)
+    if not library:
+        library = _localos_music_snapshot_tracks(snapshot)
+    sanitized_library = [
+        track
+        for track in (
+            _sanitize_localos_music_track(raw_track, rank=index + 1)
+            for index, raw_track in enumerate(library[:LOCALOS_MUSIC_LIBRARY_MAX_TRACKS])
+        )
+        if track
+    ]
+    matches = _rank_localos_music_matches(clean_query, sanitized_library)[:parsed_limit]
+    if matches:
+        first = matches[0]
+        confidence = "strong" if first.get("score", 0) >= 85 else "possible"
+        reply = f"I found {confidence} match: {_localos_music_track_phrase([first])}."
+        if len(matches) > 1:
+            reply += f" I also found {len(matches) - 1} other possible match{'es' if len(matches) != 2 else ''}."
+    else:
+        reply = f"I could not find '{clean_query}' in the synced Local OS music library."
+    return {
+        **base,
+        "status": "matched" if matches else "no_match",
+        "available": True,
+        "library_count": _safe_int(snapshot.get("library_count")) or len(sanitized_library),
+        "all_songs_count": _safe_int(snapshot.get("all_songs_count")),
+        "matches": matches,
+        "match_count": len(matches),
+        "reply": reply,
+        **_duration_fields(started_at),
+    }
+
+
+def localos_music_choose_from_your_pick(user_request: str, limit: int | str | None = None) -> dict[str, Any]:
+    """Let Jarvis choose naturally from the published Your Pick candidates."""
+    started_at = time.monotonic()
+    parsed_limit = _bounded_localos_music_limit(limit)
+    base = {
+        "tool": "localos.music_choose_from_your_pick",
+        "executed": True,
+        "limit": parsed_limit,
+        "snapshot_path": str(LOCALOS_MUSIC_SNAPSHOT_PATH),
+        "localos_root": str(LOCALOS_ROOT),
+        "read_private_audio_or_artwork": False,
+    }
+    recommendations = localos_music_recommendations(limit=parsed_limit)
+    candidates = [
+        track
+        for track in (recommendations.get("tracks") if isinstance(recommendations.get("tracks"), list) else [])
+        if isinstance(track, dict)
+    ]
+    if not candidates:
+        return {
+            **base,
+            "status": "no_candidates",
+            "available": bool(recommendations.get("available")),
+            "candidate_count": 0,
+            "candidates": [],
+            "recommendations_status": recommendations.get("status"),
+            "reply": recommendations.get("reply") or "I do not have Your Pick candidates to choose from yet.",
+            **_duration_fields(started_at),
+        }
+    if len(candidates) == 1:
+        selected = candidates[0]
+        return {
+            **base,
+            "status": "chosen",
+            "available": True,
+            "candidate_count": 1,
+            "selected_rank": 1,
+            "selected_track": selected,
+            "candidates": candidates,
+            "called_fast_model": False,
+            "choice_reason": "Only one Your Pick candidate was available.",
+            "reply": f"I'd play {_localos_music_track_phrase([selected])}.",
+            **_duration_fields(started_at),
+        }
+
+    model_result = run_fast_local_chat(_localos_music_choice_prompt(user_request, candidates))
+    parsed_choice = _parse_localos_music_choice(str(model_result.get("reply") or ""), candidates)
+    if parsed_choice is None:
+        return {
+            **base,
+            "status": "choice_unavailable",
+            "available": True,
+            "candidate_count": len(candidates),
+            "candidates": candidates,
+            "called_fast_model": True,
+            "model_status": model_result.get("status"),
+            "backend": model_result.get("backend"),
+            "model": model_result.get("model"),
+            "reply": f"I found {len(candidates)} Your Pick candidates, but I could not choose cleanly yet.",
+            **_duration_fields(started_at),
+        }
+
+    selected = candidates[parsed_choice["rank"] - 1]
+    spoken_reply = _localos_clean_text(parsed_choice.get("spoken_reply"), 220)
+    if not spoken_reply:
+        spoken_reply = f"I'd play {_localos_music_track_phrase([selected])}."
+    return {
+        **base,
+        "status": "chosen",
+        "available": True,
+        "candidate_count": len(candidates),
+        "selected_rank": parsed_choice["rank"],
+        "selected_track": selected,
+        "candidates": candidates,
+        "called_fast_model": True,
+        "choice_reason": _localos_clean_text(parsed_choice.get("reason"), 180),
+        "model_status": model_result.get("status"),
+        "backend": model_result.get("backend"),
+        "model": model_result.get("model"),
+        "reply": spoken_reply,
+        **_duration_fields(started_at),
+    }
+
+
+def _read_localos_music_snapshot_for_tool() -> dict[str, Any]:
+    if not LOCALOS_MUSIC_SNAPSHOT_PATH.exists():
+        return {"status": "snapshot_missing", "error": "snapshot_missing"}
+    try:
+        snapshot = json.loads(LOCALOS_MUSIC_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return {"status": "snapshot_unreadable", "error": str(error)}
+    if not isinstance(snapshot, dict):
+        return {"status": "snapshot_invalid", "error": "snapshot_invalid"}
+    return {"status": "available", "snapshot": snapshot}
+
+
+def _localos_music_snapshot_tracks(payload: dict[str, Any]) -> list[Any]:
+    for key in ("your_pick", "yourPick", "recommendations"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _localos_music_snapshot_library(payload: dict[str, Any]) -> list[Any]:
+    for key in ("library", "libraryTracks", "allTracks", "tracks"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _sanitize_localos_music_track(raw_track: Any, *, rank: int) -> dict[str, Any] | None:
+    if not isinstance(raw_track, dict):
+        return None
+    title = _localos_clean_text(raw_track.get("title"), 160)
+    artist = _localos_clean_text(raw_track.get("artist"), 160)
+    track_id = _localos_clean_text(raw_track.get("id") or raw_track.get("trackId"), 120)
+    file_name = _localos_clean_text(raw_track.get("fileName") or raw_track.get("file_name"), 220)
+    relative_path = _localos_safe_track_path(raw_track.get("relativePath") or raw_track.get("relative_path"))
+    path = _localos_safe_track_path(raw_track.get("path"))
+    if not (title or artist or track_id or file_name or relative_path or path):
+        return None
+    track: dict[str, Any] = {
+        "rank": rank,
+        "id": track_id,
+        "title": title or file_name or "Unknown song",
+        "artist": artist or "Unknown artist",
+        "group": _localos_clean_text(raw_track.get("group"), 80),
+        "file_name": file_name,
+        "relative_path": relative_path,
+        "path": path,
+    }
+    duration = _safe_float(raw_track.get("durationSeconds") or raw_track.get("duration"))
+    if duration is not None:
+        track["duration_seconds"] = round(duration, 3)
+    score = _safe_float(raw_track.get("score"))
+    if score is not None:
+        track["score"] = round(score, 6)
+    return {key: value for key, value in track.items() if value not in {"", None}}
+
+
+def _localos_music_track_phrase(tracks: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for track in tracks:
+        title = _localos_clean_text(track.get("title"), 120) or "Unknown song"
+        artist = _localos_clean_text(track.get("artist"), 120)
+        parts.append(f"{title} by {artist}" if artist and artist != "Unknown artist" else title)
+    return "; ".join(parts)
+
+
+def _localos_music_choice_prompt(user_request: str, candidates: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for index, track in enumerate(candidates[:LOCALOS_MUSIC_SNAPSHOT_MAX_TRACKS], start=1):
+        title = _localos_clean_text(track.get("title"), 70) or "Unknown song"
+        artist = _localos_clean_text(track.get("artist"), 45) or "Unknown artist"
+        group = _localos_clean_text(track.get("group"), 35)
+        suffix = f" [{group}]" if group else ""
+        lines.append(f"{index}. {title} - {artist}{suffix}")
+    return (
+        "You are Jarvis choosing one song from Leo's Local OS Music Your Pick list.\n"
+        "Do not search outside this list. Do not choose by keyword alone; choose naturally from the candidates and Leo's request.\n"
+        "Return JSON only with this schema: {\"rank\":1,\"reason\":\"short reason\",\"spoken_reply\":\"short natural answer\"}.\n"
+        "The spoken_reply must be English, concise, and suitable for text-to-speech.\n\n"
+        f"Leo asked: {str(user_request or '').strip()[:220]}\n\n"
+        "Candidates:\n"
+        + "\n".join(lines)
+    )
+
+
+def _parse_localos_music_choice(response_text: str, candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    text = _strip_think_blocks(str(response_text or "")).strip()
+    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if match:
+        text = match.group(0)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    try:
+        rank = int(parsed.get("rank"))
+    except (TypeError, ValueError):
+        return None
+    if rank < 1 or rank > len(candidates):
+        return None
+    return {
+        "rank": rank,
+        "reason": _localos_clean_text(parsed.get("reason"), 180),
+        "spoken_reply": _localos_clean_text(parsed.get("spoken_reply"), 220),
+    }
+
+
+def _localos_music_file_fallback(*, max_tracks: int) -> dict[str, Any]:
+    if not LOCALOS_MUSIC_MP3_DIR.exists():
+        return {
+            "status": "missing",
+            "track_count": 0,
+            "tracks": [],
+            "mp3_dir": str(LOCALOS_MUSIC_MP3_DIR),
+        }
+    tracks: list[dict[str, Any]] = []
+    for path in sorted(LOCALOS_MUSIC_MP3_DIR.glob("*.mp3"))[:max_tracks]:
+        title, artist = _localos_title_artist_from_file(path.stem)
+        tracks.append(
+            {
+                "title": title,
+                "artist": artist,
+                "file_name": path.name,
+                "relative_path": f"localFiles/mp3/{path.name}",
+            }
+        )
+    return {
+        "status": "available_files_only",
+        "track_count": len(list(LOCALOS_MUSIC_MP3_DIR.glob("*.mp3"))),
+        "tracks": tracks,
+        "mp3_dir": str(LOCALOS_MUSIC_MP3_DIR),
+    }
+
+
+def _search_localos_music_files(query: str, *, max_tracks: int) -> dict[str, Any]:
+    fallback = _localos_music_file_fallback(max_tracks=LOCALOS_MUSIC_LIBRARY_MAX_TRACKS)
+    tracks = fallback.get("tracks") if isinstance(fallback.get("tracks"), list) else []
+    matches = _rank_localos_music_matches(query, [track for track in tracks if isinstance(track, dict)])[:max_tracks]
+    return {
+        "status": fallback.get("status"),
+        "track_count": fallback.get("track_count"),
+        "matches": matches,
+        "mp3_dir": fallback.get("mp3_dir"),
+    }
+
+
+def _rank_localos_music_matches(query: str, tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    query_norm = _normalize_music_match_text(query)
+    query_tokens = _music_match_tokens(query_norm)
+    scored: list[tuple[float, int, dict[str, Any]]] = []
+    for index, track in enumerate(tracks):
+        haystack = _localos_music_track_search_text(track)
+        haystack_norm = _normalize_music_match_text(haystack)
+        if not haystack_norm:
+            continue
+        score = _music_match_score(query_norm, query_tokens, haystack_norm)
+        if score <= 0:
+            continue
+        next_track = dict(track)
+        next_track["score"] = round(score, 3)
+        scored.append((score, index, next_track))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [item[2] for item in scored]
+
+
+def _localos_music_track_search_text(track: dict[str, Any]) -> str:
+    return " ".join(
+        _localos_clean_text(track.get(key), 260)
+        for key in ("title", "artist", "file_name", "group", "relative_path", "path")
+        if _localos_clean_text(track.get(key), 260)
+    )
+
+
+def _music_match_score(query_norm: str, query_tokens: list[str], haystack_norm: str) -> float:
+    if not query_norm:
+        return 0.0
+    if query_norm == haystack_norm:
+        return 120.0
+    if query_norm in haystack_norm:
+        return 100.0 + min(10.0, len(query_norm) / max(1, len(haystack_norm)) * 10.0)
+    if not query_tokens:
+        return 0.0
+    haystack_tokens = set(_music_match_tokens(haystack_norm))
+    if not haystack_tokens:
+        return 0.0
+    matched = [token for token in query_tokens if token in haystack_tokens or token in haystack_norm]
+    coverage = len(matched) / len(query_tokens)
+    if coverage <= 0:
+        return 0.0
+    ordered_bonus = 0.0
+    cursor = 0
+    ordered = True
+    for token in query_tokens:
+        position = haystack_norm.find(token, cursor)
+        if position < 0:
+            ordered = False
+            break
+        cursor = position + len(token)
+    if ordered:
+        ordered_bonus = 14.0
+    return coverage * 80.0 + ordered_bonus
+
+
+def _normalize_music_match_text(value: Any) -> str:
+    text = _localos_clean_text(value, 600).lower()
+    text = re.sub(r"\.(mp3|m4a|wav|aac|flac)$", "", text)
+    text = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", text)
+    return " ".join(text.split())
+
+
+def _music_match_tokens(value: str) -> list[str]:
+    return [token for token in value.split() if token and token not in {"the", "a", "an", "me", "my", "please", "for", "song", "track", "music", "play"}]
+
+
+def _localos_title_artist_from_file(stem: str) -> tuple[str, str]:
+    clean = _localos_clean_text(stem, 220)
+    if " - " in clean:
+        artist, title = clean.split(" - ", 1)
+        return title.strip() or clean, artist.strip()
+    return clean or "Unknown song", ""
+
+
+def _bounded_localos_music_limit(value: int | str | None) -> int:
+    parsed = _safe_int(value)
+    if parsed is None:
+        parsed = LOCALOS_MUSIC_DEFAULT_LIMIT
+    return max(1, min(parsed, LOCALOS_MUSIC_SNAPSHOT_MAX_TRACKS))
+
+
+def _localos_clean_text(value: Any, max_chars: int) -> str:
+    return _clean_local_field(value)[:max_chars]
+
+
+def _localos_safe_track_path(value: Any) -> str:
+    text = _localos_clean_text(value, 360)
+    if not text:
+        return ""
+    lower = text.lower()
+    if lower.startswith(("data:", "blob:", "http://", "https://", "file://")):
+        return ""
+    if Path(text).expanduser().is_absolute():
+        return ""
+    return text
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        parsed = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        parsed = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
 def more_tools_plan(prompt: str, *, history: list[dict[str, str]] | None = None, model: str | None = None) -> dict[str, Any]:
     """Ask the middle model for a broader tool plan without executing it."""
     selected_model = (model or MIDDLE_MODEL).strip() or MIDDLE_MODEL
@@ -2507,6 +3121,9 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "terminal.plan", "kind": "plan_only", "description": "Classify and explain a terminal command without running it."},
         {"id": "terminal.read_only", "kind": "safe_execute_if_allowlisted", "description": "Run only read-only allowlisted terminal commands."},
         {"id": "outlook.visible_summary", "kind": "private_read", "description": "Read and summarize local mailbox content."},
+        {"id": "localos.music_recommendations", "kind": "read_only", "description": "Read the Local OS Music Player Your Pick recommendation snapshot after the music page publishes it to Jarvis."},
+        {"id": "localos.music_choose_from_your_pick", "kind": "read_only_model_choice", "description": "Feed the Your Pick candidate list to Jarvis's fast model so it can choose one track naturally."},
+        {"id": "localos.music_search", "kind": "read_only", "description": "Search the full Local OS Music library snapshot by title, artist, group, or filename."},
         {"id": "browser.open_url", "kind": "plan_only", "description": "Prepare opening a browser URL."},
         {"id": "files.search", "kind": "read_only", "description": "Search project filenames."},
         {"id": "screenshot.capability", "kind": "read_only", "description": "Report screenshot/OCR readiness."},
@@ -3448,8 +4065,8 @@ def voice_session_plan(command: str | None = None) -> dict[str, Any]:
         {
             "id": "acknowledge",
             "status": "required_for_public_spaces",
-            "visible_text": "Yes sir, listening.",
-            "spoken_text": "Yes sir, listening.",
+            "visible_text": "Listening.",
+            "spoken_text": "Listening.",
             "target_ms": 300,
             "notes": "Visible text must update as soon as Jarvis accepts the wake phrase, because Leo may not hear the speaker.",
         },
@@ -3474,8 +4091,8 @@ def voice_session_plan(command: str | None = None) -> dict[str, Any]:
         {
             "id": "working_status",
             "status": "required",
-            "visible_text": "Yes sir, checking that now.",
-            "spoken_text": "Yes sir, checking that now.",
+            "visible_text": "Checking that now.",
+            "spoken_text": "Checking that now.",
             "notes": "Natural status appears before slower tools or models; internal implementation words stay hidden.",
         },
         {
@@ -3558,7 +4175,7 @@ def ui_overlay_plan(mode: str | None = None) -> dict[str, Any]:
         },
         {
             "id": "working_status",
-            "visible_text": "Yes sir, checking that now.",
+            "visible_text": "Checking that now.",
             "purpose": "Natural status line before slower tools or models, without internal implementation wording.",
             "normal_mode": True,
             "debug_mode": True,
@@ -4537,7 +5154,7 @@ def model_context_status(
         },
         "execution_gate": "Every selected tool is routed through Planner.handle_selected_tool and the safety policy before execution.",
         "safe_followthrough_limit": "The middle planner can only follow through automatically for explicitly requested safe app.open, app.focus, or allowlisted terminal.read_only routes.",
-        "user_visible_status_example": "Yes sir, checking your email now.",
+        "user_visible_status_example": "Checking your email now.",
         "machine_call_example": "\\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"unread_first\"}})",
     }
     input_source_policy = {
@@ -4601,7 +5218,7 @@ def model_context_status(
                 "Removes the hidden call before display and speech.",
                 "Routes every selected tool through Planner.handle_selected_tool and policy gates.",
             ],
-            "user_visible_effect": "Leo sees and hears only the natural visible text, such as 'Yes sir, checking your email now.'",
+            "user_visible_effect": "Leo sees and hears only the natural visible text, such as 'Checking your email now.'",
         },
         {
             "layer": "middle_planner",
@@ -6166,6 +6783,7 @@ def capabilities_status() -> dict[str, Any]:
     stt_candidates = stt_candidate_status()
     tts = tts_status()
     email = email_backend_status()
+    music = localos_music_recommendations(limit=3)
     source_access = source_access_status()
     status = system_status()
     fast_model = status.get("fast_model", {})
@@ -6212,6 +6830,19 @@ def capabilities_status() -> dict[str, Any]:
             "test_prompt": "email backend status",
             "needs_leo": True,
             "available_route_ids": email.get("available_route_ids", []),
+        },
+        {
+            "id": "localos_music",
+            "status": "working" if music.get("available") else "partial",
+            "summary": (
+                "Local OS Music can publish its Your Pick recommendations to Jarvis."
+                if music.get("available")
+                else "Local OS Music integration is wired, but the Music page has not synced a Your Pick snapshot yet."
+            ),
+            "test_prompt": "what are my Your Pick songs?",
+            "needs_leo": not bool(music.get("available")),
+            "tool": "localos.music_recommendations",
+            "your_pick_count": music.get("your_pick_count"),
         },
         {
             "id": "codex",
@@ -9787,7 +10418,7 @@ def _fast_chat_fallback_status_event() -> dict[str, Any]:
     return {
         "event": "status",
         "data": {
-            "text": "Yes sir, one moment.",
+            "text": "One moment.",
             "tool": "conversation.fast_local",
             "transient": True,
             "speech": {"spoken": False, "status": "not_requested", "reason": "fallback_status"},
@@ -9828,11 +10459,11 @@ def _rate_limit_fallback_metadata(
 def _fast_chat_system_prompt(tool_specs: list[dict[str, Any]] | None = None) -> str:
     prompt = (
         "You are Jarvis, Leo's local Mac assistant prototype. "
-        "Leo is the user's real name for profile context. In brief work/status messages, address him as sir naturally. "
+        "Leo is the user's real name for profile context. Do not add routine 'Yes sir' acknowledgements. "
         f"Current local date/time: {_current_local_datetime_label()}. "
         "Answer directly and briefly unless he asks for more. "
         "Follow Leo's requested output format, including exact text or bullet counts. "
-        "Your visible words may be displayed in the Jarvis chat and spoken aloud, so keep them natural, voice-friendly, and concise. "
+        "Your visible words may be displayed in the Jarvis chat and spoken aloud, so keep them natural, English-first, voice-friendly, and concise. "
         "Avoid raw URLs, opaque IDs, markdown-heavy formatting, and internal routing words unless Leo explicitly asks for technical detail. "
         "Leo's latest message may be raw speech dictation with missing punctuation, missing capitalization, or mild homophone errors; infer the intended punctuation and wording from context without adding new meaning. "
         "Be useful and natural. Do not claim you performed computer actions unless a tool result is given to you. "
@@ -9851,9 +10482,9 @@ def _fast_chat_system_prompt(tool_specs: list[dict[str, Any]] | None = None) -> 
             "Do not use internal implementation labels in visible text. Do not explain that you are choosing tools. "
             "For email, useful selections are latest, unread_first, index:N, and range:A-B; index:2 means the second newest inbox email. "
             "Examples:\n"
-            "Yes sir, checking your email now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"unread_first\"}})\n"
-            "Yes sir, checking your second email now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"index:2\"}})\n"
-            "Yes sir, checking the newest email from Sharpay now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"sender_query\":\"Sharpay\",\"selection\":\"latest\"}})\n"
+            "Checking your email now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"unread_first\"}})\n"
+            "Checking your second email now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"index:2\"}})\n"
+            "Checking the newest email from Sharpay now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"sender_query\":\"Sharpay\",\"selection\":\"latest\"}})\n"
             "If no real tool is needed, answer directly and do not mention tools.\n"
             "Available tools:\n"
             f"{_fast_chat_tool_catalog(tool_specs)}"
@@ -9980,7 +10611,7 @@ def _parse_fast_chat_tool_request(text: str, tool_specs: list[dict[str, Any]]) -
     if visible_status:
         status_text = visible_status
     if not status_text:
-        status_text = f"Yes sir, checking {selected_tool} now."
+        status_text = f"Checking {selected_tool} now."
     return {
         "selected_tool": selected_tool,
         "status_text": status_text[:160],

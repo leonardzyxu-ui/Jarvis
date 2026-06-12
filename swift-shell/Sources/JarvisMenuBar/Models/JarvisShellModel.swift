@@ -47,12 +47,16 @@ final class JarvisShellModel: ObservableObject {
     private var codexActivityTask: Task<Void, Never>?
     private var activeTimerTasks: [String: Task<Void, Never>] = [:]
     private var wakeEventLog: [[String: String]] = []
-    private var lastWakePauseStatus: String = ""
+    private var lastWakeRecoveryStatus: String = ""
     private var activeTurnID: UUID?
     private var activeProgressNudgeIDs: Set<UUID> = []
     private var pendingWakeSummonCommand = false
     private var summonHideTask: Task<Void, Never>?
     private var summonGeneration = 0
+    private var latestSpeechLikelyActiveUntil: Date?
+    private var latestSpeechPreview: String = ""
+    private var lastBargeInTranscript: String = ""
+    private var lastBargeInAt: Date?
     var onSpeechMuteStateChanged: (() -> Void)?
     private static let busyReplyText = "I am still finishing the current task. Send that again in a moment."
     private static let smokeTestPrompts = [
@@ -256,6 +260,9 @@ final class JarvisShellModel: ObservableObject {
 
     private func applySpeechMuteState(muted: Bool) {
         isSpeechMuted = muted
+        if muted {
+            clearSpeechPlaybackWindow()
+        }
         speechMuteText = Self.speechMuteText(muted: muted)
         onSpeechMuteStateChanged?()
     }
@@ -313,20 +320,14 @@ final class JarvisShellModel: ObservableObject {
             wakeModeText = "Wake \(snapshot.phase)"
             wakeDetailText = "\(snapshot.status) via \(snapshot.engine)"
             wakeTranscriptText = snapshot.transcript
-            if Self.isWakePausedStatus(snapshot.status) {
-                if lastWakePauseStatus != snapshot.status {
-                    lastWakePauseStatus = snapshot.status
-                    recordWakeEvent("listener_paused", detail: snapshot.status, transcript: snapshot.transcript)
-                    messages.append(
-                        ChatMessage(
-                            role: .jarvis,
-                            text: Self.wakePauseMessage(snapshot.status),
-                            detail: "Wake paused"
-                        )
-                    )
+            handleSpeechBargeInIfNeeded(transcript: snapshot.transcript)
+            if Self.isWakeRecoveringStatus(snapshot.status) {
+                if lastWakeRecoveryStatus != snapshot.status {
+                    lastWakeRecoveryStatus = snapshot.status
+                    recordWakeEvent("listener_recovering", detail: snapshot.status, transcript: snapshot.transcript)
                 }
             } else if snapshot.running {
-                lastWakePauseStatus = ""
+                lastWakeRecoveryStatus = ""
             }
         }
         wakeListener.onWakeDetected = { [weak self] transcript in
@@ -337,23 +338,13 @@ final class JarvisShellModel: ObservableObject {
             turnPhaseText = "Awake"
             wakeTranscriptText = transcript
             recordWakeEvent("wake_detected", detail: "Wake callback fired.", transcript: transcript)
-            let greeting = "Yes sir?"
-            messages.append(ChatMessage(role: .jarvis, text: greeting, detail: "Wake detected."))
             updateSummonSurface(
                 phase: .listening,
-                title: greeting,
+                title: "Listening.",
                 transcript: transcript,
                 detail: "Listening for your command.",
                 autoHideAfter: 5
             )
-            if !isSpeechMuted {
-                Task { [weak self, greeting] in
-                    guard let self else {
-                        return
-                    }
-                    _ = try? await self.client.speakStatus(greeting)
-                }
-            }
         }
         wakeListener.onCommandCaptured = { [weak self] command, transcript in
             guard let self else {
@@ -445,18 +436,80 @@ final class JarvisShellModel: ObservableObject {
         }
     }
 
-    private static func isWakePausedStatus(_ status: String) -> Bool {
-        status.lowercased().contains("wake listener paused")
+    private func notePotentialSpeech(from finalSpeech: Any?, fallbackText: String = "") {
+        guard !isSpeechMuted else {
+            clearSpeechPlaybackWindow()
+            return
+        }
+        var preview = ""
+        var status = "missing"
+        if let finalSpeech {
+            preview = Self.speechTextPreview(from: finalSpeech)
+            status = Self.speechStatus(from: finalSpeech)
+        }
+        if preview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            preview = fallbackText
+        }
+        let blockedStatuses = ["missing", "muted", "suppressed", "suppressed_for_stop_speaking", "empty", "disabled", "failed"]
+        guard !blockedStatuses.contains(status), !preview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        notePotentialSpeech(text: preview)
     }
 
-    private static func wakePauseMessage(_ status: String) -> String {
-        if status.lowercased().contains("ended before hearing speech") {
-            return "Hey Jarvis paused because speech recognition reset before hearing you. Try Start Hey Jarvis again when you are ready."
+    private func notePotentialSpeech(text: String) {
+        guard !isSpeechMuted else {
+            clearSpeechPlaybackWindow()
+            return
         }
-        if status.lowercased().contains("not available") {
-            return "Hey Jarvis paused because Speech Recognition is not available right now."
+        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanText.isEmpty else {
+            return
         }
-        return "Hey Jarvis paused to avoid an unstable listening loop."
+        latestSpeechPreview = cleanText
+        latestSpeechLikelyActiveUntil = Date().addingTimeInterval(Self.estimatedSpeechPlaybackSeconds(for: cleanText))
+    }
+
+    private func clearSpeechPlaybackWindow() {
+        latestSpeechLikelyActiveUntil = nil
+        latestSpeechPreview = ""
+    }
+
+    private func handleSpeechBargeInIfNeeded(transcript: String) {
+        let cleanTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTranscript.isEmpty else {
+            return
+        }
+        guard let activeUntil = latestSpeechLikelyActiveUntil, Date() < activeUntil else {
+            return
+        }
+        guard !Self.looksLikeCurrentJarvisSpeechEcho(cleanTranscript, spokenText: latestSpeechPreview) else {
+            return
+        }
+        let now = Date()
+        if let lastBargeInAt,
+           now.timeIntervalSince(lastBargeInAt) < 1.5,
+           Self.normalizeSpeechCheckText(cleanTranscript) == Self.normalizeSpeechCheckText(lastBargeInTranscript) {
+            return
+        }
+        lastBargeInAt = now
+        lastBargeInTranscript = cleanTranscript
+        clearSpeechPlaybackWindow()
+        recordWakeEvent(
+            "speech_barge_in",
+            detail: "Stopped current Jarvis speech because Leo started speaking.",
+            transcript: cleanTranscript
+        )
+        Task { [client] in
+            _ = try? await client.stopSpeaking()
+        }
+    }
+
+    private static func isWakeRecoveringStatus(_ status: String) -> Bool {
+        let lowered = status.lowercased()
+        return lowered.contains("restarting")
+            || lowered.contains("recovering")
+            || lowered.contains("keeping hey jarvis active")
     }
 
     func submitCurrentCommand() {
@@ -488,7 +541,7 @@ final class JarvisShellModel: ObservableObject {
         if drivesSummonSurface {
             updateSummonSurface(
                 phase: .thinking,
-                title: "Yes sir.",
+                title: "Working on it.",
                 transcript: trimmed,
                 detail: "Working on it."
             )
@@ -592,7 +645,7 @@ final class JarvisShellModel: ObservableObject {
     func previewSummonSurface() {
         updateSummonSurface(
             phase: .listening,
-            title: "Yes sir?",
+            title: "Listening.",
             transcript: "Hey Jarvis",
             detail: "Listening for your command."
         )
@@ -601,7 +654,7 @@ final class JarvisShellModel: ObservableObject {
             await MainActor.run {
                 self?.updateSummonSurface(
                     phase: .thinking,
-                    title: "Yes sir, checking that now.",
+                    title: "Checking that now.",
                     transcript: "Show me the Jarvis popout",
                     detail: "Choosing the best route."
                 )
@@ -643,6 +696,14 @@ final class JarvisShellModel: ObservableObject {
         }
         let estimatedSpeechSeconds = Double(trimmed.count) / 14.0
         return min(28, max(5, estimatedSpeechSeconds + 5))
+    }
+
+    private static func estimatedSpeechPlaybackSeconds(for text: String) -> TimeInterval {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return 0
+        }
+        return min(24, max(2, Double(trimmed.count) / 14.0 + 1.2))
     }
 
     private func schedulePostTurnRefresh() {
@@ -929,12 +990,13 @@ final class JarvisShellModel: ObservableObject {
             recordTurnPhase("Working", detail: "Worker is ready.")
             let response: CommandResponse
             if Self.shouldUseNativeOutlookRead(commandText) {
-                let statusText = "Yes sir, checking what Outlook is showing now."
+                let statusText = "Checking what Outlook is showing now."
                 _ = appendJarvisMessage(text: statusText, detail: "Working")
                 visibleStatusLines.append(statusText)
                 updateSummonThinking(statusText)
                 if !isSpeechMuted {
                     _ = try? await client.speakStatus(statusText)
+                    notePotentialSpeech(text: statusText)
                 }
                 recordTurnPhase("Working", detail: statusText)
                 response = try await runNativeOutlookRead(commandText)
@@ -975,6 +1037,7 @@ final class JarvisShellModel: ObservableObject {
                         if progressTask == nil {
                             progressTask = self.startProgressNudges(for: commandText, turnID: turnID)
                         }
+                        self.notePotentialSpeech(text: statusText)
                     },
                     onDelta: { delta in
                         stopProgressNudges()
@@ -1006,6 +1069,7 @@ final class JarvisShellModel: ObservableObject {
             let finalText = assistantReply(for: response)
             finalVisibleText = finalText
             let finalDetail = chatDetail(for: response)
+            notePotentialSpeech(from: response.speech?.anyValue, fallbackText: finalText)
             stopProgressNudges()
             recordTurnPhase("Answering", detail: "Final visible answer displayed.")
             if let placeholderId {
@@ -2119,6 +2183,20 @@ final class JarvisShellModel: ObservableObject {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+
+    private static func looksLikeCurrentJarvisSpeechEcho(_ transcript: String, spokenText: String) -> Bool {
+        let heard = normalizeSpeechCheckText(transcript)
+        let spoken = normalizeSpeechCheckText(spokenText)
+        guard heard.count >= 8, spoken.count >= 8 else {
+            return false
+        }
+        if spoken.contains(heard) {
+            return true
+        }
+        let prefixLength = min(80, spoken.count)
+        let spokenPrefix = String(spoken.prefix(prefixLength))
+        return heard.contains(spokenPrefix) && spokenPrefix.count >= 12
     }
 
     private static func speechPreviewMatchesVisibleText(

@@ -82,6 +82,9 @@ from jarvis.tools import (
     git_remote_status,
     latest_latency_status,
     launch_status,
+    localos_music_choose_from_your_pick,
+    localos_music_recommendations,
+    localos_music_search,
     memory_status,
     model_context_status,
     overnight_work_status,
@@ -104,6 +107,7 @@ from jarvis.tools import (
     stt_session_plan,
     stt_score_transcript,
     stop_speaking,
+    store_localos_music_snapshot,
     teams_assignment_workflow_plan,
     tool_catalog_status,
     tool_handoff_plan,
@@ -390,7 +394,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         local_stt.assert_called_once()
 
     def test_voice_loop_qa_detects_internal_speech_leaks(self):
-        safe = voice_loop_qa.detect_internal_speech_leaks("Yes sir, checking your email now.")
+        safe = voice_loop_qa.detect_internal_speech_leaks("Checking your email now.")
         leaky = voice_loop_qa.detect_internal_speech_leaks(
             'Yes sir. \\tool({"tool":"outlook.visible_summary","selected_tool":"x"})'
         )
@@ -407,12 +411,12 @@ class VerifySafeScriptTests(unittest.TestCase):
             {
                 "event": "status",
                 "data": {
-                    "text": "Yes sir, checking your email now.",
+                    "text": "Checking your email now.",
                     "tool": "outlook.visible_summary",
                     "speech": {
                         "status": "suppressed_by_request",
                         "reason": "status",
-                        "text_preview": "Yes sir, checking your email now.",
+                        "text_preview": "Checking your email now.",
                     },
                 },
             },
@@ -432,12 +436,12 @@ class VerifySafeScriptTests(unittest.TestCase):
         payloads = voice_loop_qa.speech_payloads_from_stream_events(events)
 
         self.assertEqual([item["source"] for item in payloads], ["status", "final"])
-        self.assertEqual(payloads[0]["text"], "Yes sir, checking your email now.")
+        self.assertEqual(payloads[0]["text"], "Checking your email now.")
         self.assertEqual(payloads[1]["text"], "There is a form you may need to fill in.")
 
     def test_voice_loop_qa_audits_payloads_and_transcripts_for_leaks(self):
         payloads = [
-            {"source": "status", "reason": "status", "tool": "outlook.visible_summary", "text": "Yes sir, checking your email now."},
+            {"source": "status", "reason": "status", "tool": "outlook.visible_summary", "text": "Checking your email now."},
             {"source": "final", "reason": "final", "tool": "outlook.visible_summary", "text": 'Done. \\tool({"tool":"quick.local_control"})'},
         ]
         transcripts = [
@@ -1211,6 +1215,184 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.tool, "system.status")
         self.assertTrue(result.executed)
 
+    def test_model_selected_localos_music_recommendations_routes_to_tool(self):
+        fake_result = {
+            "tool": "localos.music_recommendations",
+            "status": "available",
+            "executed": True,
+            "tracks": [{"title": "Closer", "artist": "The Chainsmokers"}],
+            "reply": "Your Pick has 1 song: Closer by The Chainsmokers.",
+        }
+        with patch("jarvis.planner.localos_music_recommendations", return_value=fake_result) as music_mock:
+            result = Planner().handle_selected_tool(
+                "what is in my Your Pick music list?",
+                "localos.music_recommendations",
+                {"limit": 2},
+            )
+
+        self.assertEqual(result.tool, "localos.music_recommendations")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["reply"], fake_result["reply"])
+        music_mock.assert_called_once_with(limit=2)
+
+    def test_named_music_request_searches_library_not_first_pick(self):
+        fake_result = {
+            "tool": "localos.music_search",
+            "status": "matched",
+            "executed": True,
+            "matches": [{"title": "Waving Through A Window", "artist": "Dear Evan Hansen"}],
+            "reply": "I found strong match: Waving Through A Window by Dear Evan Hansen.",
+        }
+        with patch("jarvis.planner.localos_music_search", return_value=fake_result) as search_mock, \
+             patch("jarvis.planner.localos_music_recommendations") as rec_mock:
+            result = Planner().handle_selected_tool(
+                "could you play me Waving Through A Window",
+                "localos.music_recommendations",
+                {"limit": 1},
+            )
+
+        self.assertEqual(result.tool, "localos.music_search")
+        self.assertEqual(result.result["reply"], fake_result["reply"])
+        search_mock.assert_called_once_with(query="Waving Through A Window", limit=1)
+        rec_mock.assert_not_called()
+
+    def test_localos_music_snapshot_sanitizes_and_reports_your_pick(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            payload = {
+                "source": "localos-music-player",
+                "allSongsCount": 12,
+                "tasteEventsCount": 3,
+                "yourPick": [
+                    {
+                        "id": "track-1",
+                        "title": "Closer",
+                        "artist": "The Chainsmokers",
+                        "group": "Focus",
+                        "fileName": "The Chainsmokers - Closer.mp3",
+                        "relativePath": "localFiles/mp3/The Chainsmokers - Closer.mp3",
+                        "url": "blob:http://example",
+                        "artwork": "data:image/png;base64,AAAA",
+                        "blob": "raw-audio",
+                    }
+                ],
+                "library": [
+                    {
+                        "id": "track-1",
+                        "title": "Closer",
+                        "artist": "The Chainsmokers",
+                        "relativePath": "localFiles/mp3/The Chainsmokers - Closer.mp3",
+                    },
+                    {
+                        "id": "track-2",
+                        "title": "Waving Through A Window",
+                        "artist": "Dear Evan Hansen",
+                        "relativePath": "localFiles/mp3/Dear Evan Hansen - Waving Through A Window.mp3",
+                    },
+                ],
+            }
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path):
+                stored = store_localos_music_snapshot(payload)
+                result = localos_music_recommendations(limit=5)
+                search = localos_music_search("Waving Through A Window", limit=5)
+
+            raw_snapshot = snapshot_path.read_text(encoding="utf-8")
+            self.assertEqual(stored["status"], "stored")
+            self.assertEqual(stored["your_pick_count"], 1)
+            self.assertEqual(stored["library_count"], 2)
+            self.assertEqual(result["status"], "available")
+            self.assertEqual(result["tracks"][0]["title"], "Closer")
+            self.assertEqual(search["status"], "matched")
+            self.assertEqual(search["matches"][0]["title"], "Waving Through A Window")
+            self.assertNotIn("blob:http://example", raw_snapshot)
+            self.assertNotIn("data:image", raw_snapshot)
+            self.assertNotIn("raw-audio", raw_snapshot)
+            self.assertIn("Closer by The Chainsmokers", result["reply"])
+
+    def test_your_pick_choice_uses_model_over_candidate_list(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            payload = {
+                "source": "localos-music-player",
+                "yourPick": [
+                    {"id": "track-1", "title": "For Forever", "artist": "Dear Evan Hansen", "group": "Musical"},
+                    {"id": "track-2", "title": "Beauty And A Beat", "artist": "Justin Bieber", "group": "Pop"},
+                ],
+            }
+            fake_reply = {
+                "tool": "conversation.fast_local",
+                "status": "completed",
+                "backend": "test",
+                "model": "fake-choice-model",
+                "reply": '{"rank":2,"reason":"It has more energy.","spoken_reply":"I would play Beauty And A Beat."}',
+            }
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
+                 patch("jarvis.tools.run_fast_local_chat", return_value=fake_reply) as model_mock:
+                store_localos_music_snapshot(payload)
+                result = localos_music_choose_from_your_pick("play me something from Your Pick", limit=5)
+
+            model_mock.assert_called_once()
+            self.assertEqual(result["status"], "chosen")
+            self.assertTrue(result["called_fast_model"])
+            self.assertEqual(result["selected_rank"], 2)
+            self.assertEqual(result["selected_track"]["title"], "Beauty And A Beat")
+            self.assertEqual(result["backend"], "test")
+            self.assertEqual(result["reply"], "I would play Beauty And A Beat.")
+
+    def test_your_pick_choice_route_does_not_search_generic_pick_request(self):
+        fake_choice = {
+            "tool": "localos.music_choose_from_your_pick",
+            "status": "chosen",
+            "reply": "I would play Beauty And A Beat.",
+        }
+        intent = {
+            "status": "completed",
+            "selected_tool": "localos.music_search",
+            "entities": {"query": "something from Your Pick", "limit": 8},
+        }
+        with patch("jarvis.planner.localos_music_choose_from_your_pick", return_value=fake_choice) as choice_mock, \
+             patch("jarvis.planner.localos_music_search") as search_mock:
+            result = Planner().handle_selected_tool(
+                "play me something from Your Pick",
+                "localos.music_search",
+                intent["entities"],
+            )
+        self.assertEqual(result.tool, "localos.music_choose_from_your_pick")
+        choice_mock.assert_called_once()
+        search_mock.assert_not_called()
+
+    def test_your_pick_listing_reroutes_from_overeager_choice(self):
+        fake_result = {
+            "tool": "localos.music_recommendations",
+            "status": "available",
+            "tracks": [{"title": "For Forever", "artist": "Dear Evan Hansen"}],
+            "reply": "Your Pick has 1 song: For Forever by Dear Evan Hansen.",
+        }
+        with patch("jarvis.planner.localos_music_recommendations", return_value=fake_result) as rec_mock, \
+             patch("jarvis.planner.localos_music_choose_from_your_pick") as choice_mock:
+            result = Planner().handle_selected_tool(
+                "what is in my Your Pick music list?",
+                "localos.music_choose_from_your_pick",
+                {"limit": 2},
+            )
+        self.assertEqual(result.tool, "localos.music_recommendations")
+        rec_mock.assert_called_once_with(limit=2)
+        choice_mock.assert_not_called()
+
+    def test_localos_music_stream_status_text_is_natural(self):
+        self.assertEqual(
+            _stream_status_text({"tool": "localos.music_recommendations"}),
+            "Checking your music picks now.",
+        )
+        self.assertEqual(
+            _stream_status_text({"tool": "localos.music_choose_from_your_pick"}),
+            "Choosing from Your Pick now.",
+        )
+        self.assertEqual(
+            _stream_status_text({"tool": "localos.music_search"}),
+            "Looking through your music library now.",
+        )
+
     def test_shell_like_status_command_routes_to_shell(self):
         result = Planner().handle("git status")
         self.assertEqual(result.tool, "shell.read_only")
@@ -1393,7 +1575,7 @@ class PlannerTests(unittest.TestCase):
             "tool": "conversation.fast_local",
             "status": "tool_requested",
             "selected_tool": "app.open",
-            "status_text": "Yes sir, opening Outlook now.",
+            "status_text": "Opening Outlook now.",
             "entities": {"app_name": "Microsoft Outlook"},
             "executed": True,
         }
@@ -1599,7 +1781,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "app.open",
             "entities": {"app_name": "Microsoft Teams"},
-            "reply": "Yes sir, checking Teams now.",
+            "reply": "Checking Teams now.",
         }
         fake_app_preview = {
             "tool": "app.open",
@@ -1629,7 +1811,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "outlook.visible_summary",
             "entities": {},
-            "reply": "Yes sir, checking your email now.",
+            "reply": "Checking your email now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("check my second email and summarize it", "tools.more", {})
@@ -1640,7 +1822,7 @@ class PlannerTests(unittest.TestCase):
         preview = result.result["next_tool_preview"]["preview"]
         self.assertEqual(preview["selection"], "index:2")
         self.assertEqual(preview["selection_source"], "original_prompt")
-        self.assertEqual(preview["spoken_status"], "Yes sir, checking your second email now.")
+        self.assertEqual(preview["spoken_status"], "Checking your second email now.")
         self.assertFalse(preview["executed"])
 
     def test_tools_more_low_confidence_asks_clarification_without_preview_or_followup(self):
@@ -1651,7 +1833,7 @@ class PlannerTests(unittest.TestCase):
             "recommended_tool": "app.open",
             "confidence": 0.31,
             "entities": {"app_name": "Microsoft Teams"},
-            "reply": "Yes sir, checking Teams now.",
+            "reply": "Checking Teams now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan), \
              patch("jarvis.planner.app_open") as open_mock:
@@ -1692,7 +1874,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "terminal.read_only",
             "entities": {"command": "git status"},
-            "reply": "Yes sir, checking the repository status.",
+            "reply": "Checking the repository status.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan), \
              patch("jarvis.planner.run_read_only_shell") as shell_mock:
@@ -1712,7 +1894,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "app.open",
             "entities": {"app_name": "Microsoft Teams"},
-            "reply": "Yes sir, opening Teams now.",
+            "reply": "Opening Teams now.",
         }
         fake_preview = {
             "tool": "app.open",
@@ -1756,7 +1938,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "app.focus",
             "entities": {"app_name": "Microsoft Teams"},
-            "reply": "Yes sir, focusing Teams now.",
+            "reply": "Focusing Teams now.",
         }
         fake_preview = {
             "tool": "app.focus",
@@ -1800,7 +1982,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "terminal.read_only",
             "entities": {"command": "git status"},
-            "reply": "Yes sir, checking that locally now.",
+            "reply": "Checking that locally now.",
         }
         fake_shell = {
             "tool": "shell.read_only",
@@ -1832,7 +2014,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "app.quit",
             "entities": {"app_name": "Safari"},
-            "reply": "Yes sir, I can prepare that, but quitting Safari needs confirmation.",
+            "reply": "I can prepare that, but quitting Safari needs confirmation.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool(
@@ -1855,7 +2037,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "app.list",
             "entities": {},
-            "reply": "Yes sir, checking which apps I can use.",
+            "reply": "Checking which apps I can use.",
         }
         fake_list = {
             "tool": "app.list",
@@ -1885,7 +2067,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "app.status",
             "entities": {"app_name": "Microsoft Teams"},
-            "reply": "Yes sir, checking Teams now.",
+            "reply": "Checking Teams now.",
         }
         fake_status = {
             "tool": "app.status",
@@ -1920,7 +2102,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "app.running",
             "entities": {},
-            "reply": "Yes sir, checking which apps are running now.",
+            "reply": "Checking which apps are running now.",
         }
         fake_running = {
             "tool": "app.running",
@@ -1956,7 +2138,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "app.quit",
             "entities": {"app_name": "Safari"},
-            "reply": "Yes sir, I can prepare that, but quitting Safari needs confirmation.",
+            "reply": "I can prepare that, but quitting Safari needs confirmation.",
         }
         fake_quit = {
             "tool": "app.quit",
@@ -1988,7 +2170,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "voice.stt_candidates",
             "entities": {},
-            "reply": "Yes sir, checking speech recognition options now.",
+            "reply": "Checking speech recognition options now.",
         }
         fake_candidates = {
             "tool": "voice.stt_candidates",
@@ -2018,7 +2200,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "ui.overlay",
             "entities": {"mode": "normal"},
-            "reply": "Yes sir, planning the Jarvis overlay now.",
+            "reply": "Planning the Jarvis overlay now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Plan the Jarvis overlay UI.", "tools.more", {})
@@ -2047,7 +2229,7 @@ class PlannerTests(unittest.TestCase):
                 "candidate_id": "chrome-web-speech",
                 "reference_sentence": "Hey Jarvis, check my email.",
             },
-            "reply": "Yes sir, preparing the speech recognition test plan now.",
+            "reply": "Preparing the speech recognition test plan now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Plan a speech recognition test.", "tools.more", {})
@@ -2072,7 +2254,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "voice.session_plan",
             "entities": {"command": "check my email"},
-            "reply": "Yes sir, planning the voice session now.",
+            "reply": "Planning the voice session now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Plan the full voice session.", "tools.more", {})
@@ -2101,7 +2283,7 @@ class PlannerTests(unittest.TestCase):
                 "transcript": "Hey Jarvis check email",
                 "candidate_id": "chrome-web-speech",
             },
-            "reply": "Yes sir, scoring that transcript now.",
+            "reply": "Scoring that transcript now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Compare this speech transcript.", "tools.more", {})
@@ -2137,7 +2319,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "voice.stt_recommendation",
             "entities": {"export_json": json.dumps(export)},
-            "reply": "Yes sir, ranking the speech recognition results now.",
+            "reply": "Ranking the speech recognition results now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Rank these STT results.", "tools.more", {})
@@ -2159,7 +2341,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "voice.loop_simulation",
             "entities": {"transcript": "Hey Jarvis status"},
-            "reply": "Yes sir, testing the voice loop now.",
+            "reply": "Testing the voice loop now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Test the voice loop.", "tools.more", {})
@@ -2187,7 +2369,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "diagnostics.model_context",
             "entities": {},
-            "reply": "Yes sir, checking the model context now.",
+            "reply": "Checking the model context now.",
         }
         fake_context = {
             "tool": "diagnostics.model_context",
@@ -2240,7 +2422,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "memory.daily_summary",
             "entities": {},
-            "reply": "Yes sir, checking today's memory summary now.",
+            "reply": "Checking today's memory summary now.",
         }
         fake_memory = {
             "tool": "memory.daily_summary",
@@ -2272,7 +2454,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "codex.chat_plan",
             "entities": {"goal": "finish the newest Teams Music poster assignment"},
-            "reply": "Yes sir, choosing the Codex chat now.",
+            "reply": "Choosing the Codex chat now.",
         }
         fake_chat_plan = {
             "tool": "codex.chat_plan",
@@ -2308,7 +2490,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "diagnostics.tool_catalog",
             "entities": {},
-            "reply": "Yes sir, checking the tool catalog now.",
+            "reply": "Checking the tool catalog now.",
         }
         fake_catalog = {
             "tool": "diagnostics.tool_catalog",
@@ -2339,7 +2521,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "tools.deep_catalog",
             "entities": {},
-            "reply": "Yes sir, checking the deeper tool catalog now.",
+            "reply": "Checking the deeper tool catalog now.",
         }
         fake_catalog = {
             "tool": "tools.deep_catalog",
@@ -2375,7 +2557,7 @@ class PlannerTests(unittest.TestCase):
                 "entities": {"app_name": "Safari"},
                 "user_goal": "Open Safari",
             },
-            "reply": "Yes sir, checking how to handle that now.",
+            "reply": "Checking how to handle that now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan), \
              patch("jarvis.planner.app_open") as open_mock:
@@ -2399,7 +2581,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "diagnostics.permissions",
             "entities": {},
-            "reply": "Yes sir, checking permissions readiness now.",
+            "reply": "Checking permissions readiness now.",
         }
         fake_permissions = {
             "tool": "diagnostics.permissions",
@@ -2432,7 +2614,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "diagnostics.final_qa",
             "entities": {},
-            "reply": "Yes sir, checking the final QA plan now.",
+            "reply": "Checking the final QA plan now.",
         }
         fake_final_qa = {
             "tool": "diagnostics.final_qa",
@@ -2469,7 +2651,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "teams.assignment",
             "entities": {"goal": "Go to Teams and finish the newest Music assignment."},
-            "reply": "Yes sir, checking what would be needed for Teams.",
+            "reply": "Checking what would be needed for Teams.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Go to Teams and finish the newest Music assignment.", "tools.more", {})
@@ -2497,7 +2679,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "ui.automation",
             "entities": {"target_app": "Microsoft Teams"},
-            "reply": "Yes sir, preparing the app-control plan now.",
+            "reply": "Preparing the app-control plan now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Click through Teams to find the newest assignment.", "tools.more", {})
@@ -2526,7 +2708,7 @@ class PlannerTests(unittest.TestCase):
                 "goal": "Go to Teams, open Music class, and find the newest assignment.",
                 "target_app": "Microsoft Teams",
             },
-            "reply": "Yes sir, preparing the app workflow plan now.",
+            "reply": "Preparing the app workflow plan now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Plan the Teams assignment workflow.", "tools.more", {})
@@ -2559,7 +2741,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "screen.ocr",
             "entities": {"target_app": "Microsoft Teams"},
-            "reply": "Yes sir, preparing the screen check now.",
+            "reply": "Preparing the screen check now.",
         }
         with patch("jarvis.planner.more_tools_plan", return_value=fake_plan):
             result = Planner().handle_selected_tool("Read the newest Teams assignment on screen.", "tools.more", {})
@@ -2584,7 +2766,7 @@ class PlannerTests(unittest.TestCase):
             "executed": False,
             "recommended_tool": "codex.activity",
             "entities": {},
-            "reply": "Yes sir, checking Codex activity now.",
+            "reply": "Checking Codex activity now.",
         }
         fake_activity = {
             "tool": "codex.activity",
@@ -2868,7 +3050,7 @@ class PlannerTests(unittest.TestCase):
             "tool": "conversation.fast_local",
             "status": "tool_requested",
             "selected_tool": "outlook.visible_summary",
-            "status_text": "Yes sir, checking your email now.",
+            "status_text": "Checking your email now.",
             "entities": {},
             "executed": True,
         }
@@ -2899,7 +3081,7 @@ class PlannerTests(unittest.TestCase):
             "tool": "conversation.fast_local",
             "status": "tool_requested",
             "selected_tool": "outlook.visible_summary",
-            "status_text": "Yes sir, checking your email now.",
+            "status_text": "Checking your email now.",
             "entities": {"sender_query": "Sharpay", "selection": "latest"},
             "executed": True,
         }
@@ -2920,7 +3102,7 @@ class PlannerTests(unittest.TestCase):
             "tool": "conversation.fast_local",
             "status": "tool_requested",
             "selected_tool": "outlook.visible_summary",
-            "status_text": "Yes sir, checking your email now.",
+            "status_text": "Checking your email now.",
             "entities": {},
             "executed": True,
         }
@@ -2938,7 +3120,7 @@ class PlannerTests(unittest.TestCase):
             "tool": "conversation.fast_local",
             "status": "tool_requested",
             "selected_tool": "outlook.visible_summary",
-            "status_text": "Yes sir, checking your email now.",
+            "status_text": "Checking your email now.",
             "entities": {},
             "executed": True,
         }
@@ -2965,7 +3147,7 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result.executed)
         self.assertEqual(result.result["selection"], "index:2")
         self.assertEqual(result.result["selection_source"], "original_prompt")
-        self.assertEqual(result.result["spoken_status"], "Yes sir, checking your second email now.")
+        self.assertEqual(result.result["spoken_status"], "Checking your second email now.")
         self.assertEqual(result.result["plan"]["selection"], "index:2")
         self.assertFalse(result.result["plan"]["executed"])
         mail_mock.assert_not_called()
@@ -3065,7 +3247,7 @@ class PlannerTests(unittest.TestCase):
             "tool": "conversation.fast_local",
             "status": "tool_requested",
             "selected_tool": "diagnostics.device",
-            "status_text": "Yes sir, checking this Mac now.",
+            "status_text": "Checking this Mac now.",
             "entities": {},
             "executed": True,
         }
@@ -3800,7 +3982,7 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result["changed_state"])
         phase_ids = [phase["id"] for phase in result["phases"]]
         self.assertEqual(phase_ids, ["wake", "acknowledge", "speech_to_text", "route_command", "working_status", "execute_or_preview", "respond"])
-        self.assertEqual(result["phases"][1]["visible_text"], "Yes sir, listening.")
+        self.assertEqual(result["phases"][1]["visible_text"], "Listening.")
         self.assertIn("voice.loop_simulation", result["current_working_surfaces"]["typed_wake_simulation"])
         self.assertIn("execute_safe_recommendation", result["phases"][3]["safe_follow_through"])
 
@@ -3961,7 +4143,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.result["status"], "command_previewed")
         self.assertEqual(result.result["command"], "status")
         self.assertEqual(result.result["spoken_sequence"][0], "Hello sir.")
-        self.assertIn("Yes sir", result.result["spoken_sequence"][1])
+        self.assertEqual(result.result["spoken_sequence"][1], "Checking Jarvis status now.")
         self.assertFalse(result.result["recorded_audio"])
         self.assertFalse(result.result["played_audio"])
         self.assertFalse(result.result["opened_app"])
@@ -4935,7 +5117,7 @@ class PlannerTests(unittest.TestCase):
             "tool": "conversation.fast_local",
             "status": "tool_requested",
             "selected_tool": "outlook.visible_summary",
-            "status_text": "Yes sir, checking your email now.",
+            "status_text": "Checking your email now.",
             "entities": {},
             "executed": True,
         }
@@ -5257,7 +5439,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("styleMask: [.borderless, .nonactivatingPanel]", window_source)
         self.assertIn("panel.level = .statusBar", window_source)
         self.assertIn("panel.ignoresMouseEvents = true", window_source)
-        self.assertIn("NSSize(width: 386, height: 118)", window_source)
+        self.assertIn("NSSize(width: 326, height: 92)", window_source)
         self.assertIn("layer?.backgroundColor = NSColor.clear.cgColor", window_source)
         self.assertIn("visibleFrame.maxX - size.width - edgeInset", window_source)
         self.assertIn("visibleFrame.maxY - size.height - edgeInset", window_source)
@@ -5331,10 +5513,24 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('"Open Wake Test"', app_source)
         self.assertIn('"Start Hey Jarvis"', app_source)
         self.assertIn('"Stop Hey Jarvis"', app_source)
+        self.assertIn("NSStatusItem.squareLength", app_source)
+        self.assertIn("item.button?.title = Self.statusItemTitle", app_source)
+        self.assertIn("item.button?.imagePosition = .imageOnly", app_source)
+        self.assertIn('item.button?.toolTip = "Jarvis"', app_source)
+        self.assertNotIn('item.button?.title = "Jarvis"', app_source)
         self.assertIn("toggleWakeListener", app_source)
         self.assertIn("wakeAuditionURL", model_source)
         self.assertIn("setSpeechMuted", client_source)
         self.assertIn('appendingPathComponent("mute")', client_source)
+        self.assertIn("func stopSpeaking()", client_source)
+        self.assertIn('"suppress_speech": true', client_source)
+        self.assertIn("latestSpeechLikelyActiveUntil", model_source)
+        self.assertIn("handleSpeechBargeInIfNeeded(transcript:", model_source)
+        self.assertIn("looksLikeCurrentJarvisSpeechEcho", model_source)
+        self.assertIn('"speech_barge_in"', model_source)
+        self.assertIn("client.stopSpeaking()", model_source)
+        self.assertIn("clearSpeechPlaybackWindow()", model_source)
+        self.assertNotIn("toggleSpeechMuted()", model_source[model_source.index("handleSpeechBargeInIfNeeded"):])
 
     def test_swift_menu_bar_icon_left_click_opens_panel(self):
         app_source = (
@@ -5498,26 +5694,25 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("testWakeScore", listener_source)
         self.assertIn("restartStormLimit", listener_source)
         self.assertIn("restartStormLimit = 2", listener_source)
-        self.assertIn("maxRestartAttemptsPerActivation = 3", listener_source)
         self.assertIn("restartAttemptsSinceActivation", listener_source)
         self.assertIn("shouldPauseAfterActivationRestartLimit", listener_source)
         self.assertIn("wakeRestartDelaySeconds", listener_source)
+        self.assertIn("recoveryRestartDelaySeconds", listener_source)
         self.assertIn("lastPublishedSnapshot", listener_source)
         self.assertIn("testDuplicatePublishCount", listener_source)
-        self.assertIn("pauseIfRestartStorm", listener_source)
-        self.assertIn("Wake listener paused after repeated microphone restarts", listener_source)
+        self.assertIn("Speech Recognition is recovering; Hey Jarvis is still listening", listener_source)
         self.assertIn("minimumStableRecognitionSeconds", listener_source)
-        self.assertIn("pauseAfterUnstableRecognition", listener_source)
-        self.assertIn("Wake listener paused because Speech Recognition ended before hearing speech", listener_source)
-        self.assertIn("lastWakePauseStatus", model_source)
-        self.assertIn("listener_paused", model_source)
-        self.assertIn("Wake paused", model_source)
-        self.assertIn("Hey Jarvis paused because speech recognition reset before hearing you", model_source)
+        self.assertIn("recoverAfterRecognitionIssue", listener_source)
+        self.assertIn("Speech Recognition ended before hearing speech; restarting Hey Jarvis", listener_source)
+        self.assertIn("lastWakeRecoveryStatus", model_source)
+        self.assertIn("listener_recovering", model_source)
+        self.assertNotIn("Wake listener paused after repeated microphone restarts", listener_source)
+        self.assertNotIn("Hey Jarvis paused because speech recognition reset before hearing you", model_source)
         self.assertIn("testSilentEndDecision", listener_source)
         self.assertIn("testRestartStormDecision", listener_source)
         self.assertIn("testActivationRestartLimit", listener_source)
         self.assertIn("restartStorm.shouldPause", self_test_source)
-        self.assertIn("fourthActivationRestart.shouldPause", self_test_source)
+        self.assertIn("!fourthActivationRestart.shouldPause", self_test_source)
         self.assertIn("testSilentEndDecision(sessionAgeSeconds: 1, heardTranscript: false)", self_test_source)
         self.assertIn("testSilentEndDecision(sessionAgeSeconds: 12, heardTranscript: false)", self_test_source)
         self.assertIn("awaitingCommand: true", self_test_source)
@@ -5543,9 +5738,10 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('onCommandIgnored?("wake_greeting_echo"', listener_source)
         self.assertIn("wakeListener.start()", model_source)
         self.assertIn("wakeListener.stop()", model_source)
-        self.assertIn("let greeting = \"Yes sir?\"", model_source)
-        self.assertIn("text: greeting", model_source)
-        self.assertIn("client.speakStatus(greeting)", model_source)
+        self.assertNotIn("let greeting = \"Yes sir?\"", model_source)
+        self.assertNotIn("text: greeting", model_source)
+        self.assertNotIn("client.speakStatus(greeting)", model_source)
+        self.assertIn('title: "Listening."', model_source)
         self.assertIn("if !isSpeechMuted", model_source)
         self.assertIn("testCleanCommand", listener_source)
         self.assertIn('^(yes\\s+sir\\s+)+', listener_source)
@@ -6875,6 +7071,17 @@ class RuntimeSurfaceTests(unittest.TestCase):
             "HQ Young Pioneer Teams asks you to fill in a short form. a link",
         )
 
+    def test_auto_speech_sanitizer_keeps_english_after_chinese_text(self):
+        spoken = jarvis_tools._sanitize_spoken_text(
+            "少先队 gave a link to a form about a 慈善义卖 that you may need to fill in."
+        )
+
+        self.assertEqual(
+            spoken,
+            "Young Pioneers gave a link to a form about a charity sale that you may need to fill in.",
+        )
+        self.assertTrue(spoken.isascii())
+
     def test_auto_speech_uses_piper_provider_without_shell(self):
         class FakeStdin:
             def __init__(self):
@@ -7132,7 +7339,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("0.85", command)
 
     def test_warm_piper_worker_keeps_normal_speech_in_one_chunk(self):
-        text = "Yes sir, checking your email now."
+        text = "Checking your email now."
 
         chunks = piper_warm_worker._chunk_text(text)
 
@@ -7311,7 +7518,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             def read(self):
                 return (
                     b'{"choices":[{"message":{"content":"\\\\tool '
-                    b'{\\"tool\\":\\"outlook.visible_summary\\",\\"status\\":\\"Yes sir, checking your email now.\\",'
+                    b'{\\"tool\\":\\"outlook.visible_summary\\",\\"status\\":\\"Checking your email now.\\",'
                     b'\\"entities\\":{\\"selection\\":\\"latest\\"}}"}}]}'
                 )
 
@@ -7323,42 +7530,42 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "tool_requested")
         self.assertEqual(result["selected_tool"], "outlook.visible_summary")
-        self.assertEqual(result["status_text"], "Yes sir, checking your email now.")
+        self.assertEqual(result["status_text"], "Checking your email now.")
         self.assertNotIn("skill", result["status_text"].lower())
 
     def test_fast_chat_tool_call_can_be_embedded_inside_visible_words(self):
         tool_specs = [{"tool": "outlook.visible_summary", "description": "Read email.", "entities": ["selection"]}]
 
         result = jarvis_tools._parse_fast_chat_tool_request(
-            "Yes sir, checking your em\\Email(1, 2, 2, False)ail now.",
+            "Checking your em\\Email(1, 2, 2, False)ail now.",
             tool_specs,
         )
 
         self.assertIsNotNone(result)
         self.assertEqual(result["selected_tool"], "outlook.visible_summary")
-        self.assertEqual(result["status_text"], "Yes sir, checking your email now.")
+        self.assertEqual(result["status_text"], "Checking your email now.")
         self.assertEqual(result["entities"]["selection"], "index:2")
 
     def test_fast_chat_recovers_tool_call_missing_closing_parenthesis(self):
         tool_specs = [{"tool": "voice.loop_simulation", "description": "Simulate voice loop.", "entities": ["transcript"]}]
 
         result = jarvis_tools._parse_fast_chat_tool_request(
-            'Yes sir, simulating the voice loop now. \\tool({"tool":"voice.loop_simulation","entities":{"transcript":"Hey Jarvis status"}}',
+            'Simulating the voice loop now. \\tool({"tool":"voice.loop_simulation","entities":{"transcript":"Hey Jarvis status"}}',
             tool_specs,
         )
 
         self.assertIsNotNone(result)
         self.assertEqual(result["selected_tool"], "voice.loop_simulation")
-        self.assertEqual(result["status_text"], "Yes sir, simulating the voice loop now.")
+        self.assertEqual(result["status_text"], "Simulating the voice loop now.")
         self.assertEqual(result["entities"]["transcript"], "Hey Jarvis status")
 
     def test_spoken_sanitizer_removes_hidden_tool_fragments(self):
         spoken = jarvis_tools._sanitize_spoken_text(
-            'Yes sir, simulating the voice loop now. \\tool({"tool":"voice.loop'
+            'Simulating the voice loop now. \\tool({"tool":"voice.loop'
         )
         path_text = jarvis_tools._sanitize_spoken_text("Here is a path C:\\Users\\Leo.")
 
-        self.assertEqual(spoken, "Yes sir, simulating the voice loop now.")
+        self.assertEqual(spoken, "Simulating the voice loop now.")
         self.assertNotIn("\\tool", spoken)
         self.assertIn("C, \\Users\\Leo.", path_text)
 
@@ -7375,7 +7582,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         prompt = jarvis_tools._fast_chat_system_prompt(tool_specs)
 
         self.assertIn("spoken aloud", prompt)
-        self.assertIn("Yes sir", prompt)
+        self.assertIn("Do not add routine 'Yes sir' acknowledgements", prompt)
         self.assertIn("index:2", prompt)
         self.assertIn("\\tool", prompt)
         self.assertNotIn("Looking for", prompt)
@@ -7407,7 +7614,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
             def __iter__(self):
                 chunks = [
-                    "Yes sir, checking your em",
+                    "Checking your em",
                     "\\Email(1, 2, 2, False)",
                     "ail now.",
                 ]
@@ -7423,12 +7630,12 @@ class RuntimeSurfaceTests(unittest.TestCase):
             events = list(stream_fast_local_chat_events("check my second email", tool_specs=tool_specs))
 
         self.assertEqual([event["event"] for event in events], ["meta", "delta", "final_result"])
-        self.assertEqual(events[1]["data"]["text"], "Yes sir, checking your em")
+        self.assertEqual(events[1]["data"]["text"], "Checking your em")
         self.assertNotIn("\\Email", events[1]["data"]["text"])
         data = events[-1]["data"]
         self.assertEqual(data["status"], "tool_requested")
         self.assertEqual(data["selected_tool"], "outlook.visible_summary")
-        self.assertEqual(data["status_text"], "Yes sir, checking your email now.")
+        self.assertEqual(data["status_text"], "Checking your email now.")
         self.assertEqual(data["entities"]["selection"], "index:2")
         self.assertIsNotNone(data["first_visible_token_seconds"])
 
@@ -7442,7 +7649,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
             def __iter__(self):
                 chunks = [
-                    "Yes sir, simulating the voice loop now. ",
+                    "Simulating the voice loop now. ",
                     "\\tool({\"tool\":\"voice.loop",
                 ]
                 for chunk in chunks:
@@ -8218,7 +8425,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                             "recommended_tool": "app.open",
                             "confidence": 0.82,
                             "entities": {"app_name": "Microsoft Teams"},
-                            "user_status": "Yes sir, checking Teams now.",
+                            "user_status": "Checking Teams now.",
                             "reason": "The user asked for a Teams workflow.",
                             "safety": "Plan only.",
                         }
@@ -9115,7 +9322,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     "tool": "conversation.fast_local",
                     "status": "tool_requested",
                     "selected_tool": "outlook.visible_summary",
-                    "status_text": "Yes sir, checking your second email now.",
+                    "status_text": "Checking your second email now.",
                     "entities": {"selection": "index:2"},
                     "executed": True,
                 },
@@ -9130,14 +9337,14 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 events = list(server.stream_command("please check my email"))
 
         self.assertEqual([event["event"] for event in events], ["status", "final"])
-        self.assertEqual(events[0]["data"]["text"], "Yes sir, checking your second email now.")
+        self.assertEqual(events[0]["data"]["text"], "Checking your second email now.")
         self.assertEqual(events[0]["data"]["tool"], "outlook.visible_summary")
         self.assertTrue(events[0]["data"]["speech"]["spoken"])
         self.assertEqual(events[-1]["data"]["tool"], "outlook.visible_summary")
         self.assertEqual(events[-1]["data"]["result"]["status"], "checked")
         self.assertEqual(events[-1]["data"]["speech"]["reason"], "final")
         self.assertEqual(mail_mock.call_args.kwargs["selection"], "index:2")
-        speak_mock.assert_any_call("Yes sir, checking your second email now.", reason="status")
+        speak_mock.assert_any_call("Checking your second email now.", reason="status")
         speak_mock.assert_any_call("Checked email without reading a real mailbox in this test.", reason="final")
 
     def test_stream_command_refines_generic_email_status_from_original_prompt(self):
@@ -9156,7 +9363,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     "tool": "conversation.fast_local",
                     "status": "tool_requested",
                     "selected_tool": "outlook.visible_summary",
-                    "status_text": "Yes sir, checking your email now.",
+                    "status_text": "Checking your email now.",
                     "entities": {},
                     "executed": True,
                 },
@@ -9171,10 +9378,10 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 events = list(server.stream_command("please check my second email"))
 
         self.assertEqual(events[0]["event"], "status")
-        self.assertEqual(events[0]["data"]["text"], "Yes sir, checking your second email now.")
-        self.assertEqual(events[0]["data"]["speech"]["text_preview"], "Yes sir, checking your second email now.")
+        self.assertEqual(events[0]["data"]["text"], "Checking your second email now.")
+        self.assertEqual(events[0]["data"]["speech"]["text_preview"], "Checking your second email now.")
         self.assertEqual(mail_mock.call_args.kwargs["selection"], "index:2")
-        speak_mock.assert_any_call("Yes sir, checking your second email now.", reason="status")
+        speak_mock.assert_any_call("Checking your second email now.", reason="status")
 
     def test_stream_command_suppressed_speech_includes_auditable_text_preview(self):
         fake_result = {
@@ -9192,7 +9399,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     "tool": "conversation.fast_local",
                     "status": "tool_requested",
                     "selected_tool": "outlook.visible_summary",
-                    "status_text": "Yes sir, checking your email now.",
+                    "status_text": "Checking your email now.",
                     "entities": {},
                     "executed": True,
                 },
@@ -9208,7 +9415,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertEqual([event["event"] for event in events], ["status", "final"])
         self.assertEqual(events[0]["data"]["speech"]["status"], "suppressed_by_request")
-        self.assertEqual(events[0]["data"]["speech"]["text_preview"], "Yes sir, checking your email now.")
+        self.assertEqual(events[0]["data"]["speech"]["text_preview"], "Checking your email now.")
         self.assertEqual(events[-1]["data"]["speech"]["status"], "suppressed_by_request")
         self.assertEqual(
             events[-1]["data"]["speech"]["text_preview"],
@@ -9259,12 +9466,12 @@ class RuntimeSurfaceTests(unittest.TestCase):
     def test_status_speech_endpoint_uses_status_reason(self):
         server = JarvisServer()
         with patch("jarvis.server.speak_text_async", return_value={"spoken": True, "status": "queued", "reason": "status"}) as speak_mock:
-            response = server.speak_status("Yes sir, checking your email now.")
+            response = server.speak_status("Checking your email now.")
 
         self.assertEqual(response["tool"], "voice.status_speech")
         self.assertTrue(response["executed"])
         self.assertEqual(response["speech"]["reason"], "status")
-        speak_mock.assert_called_once_with("Yes sir, checking your email now.", reason="status")
+        speak_mock.assert_called_once_with("Checking your email now.", reason="status")
 
     def test_speech_mute_api_updates_runtime_state(self):
         server = JarvisServer()
@@ -9380,7 +9587,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     "tool": "conversation.fast_local",
                     "status": "tool_requested",
                     "selected_tool": "tools.more",
-                    "status_text": "Yes sir, checking that now.",
+                    "status_text": "Checking that now.",
                     "entities": {},
                     "executed": True,
                 },
@@ -9409,7 +9616,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         more_mock.assert_called_once()
         self.assertEqual(more_mock.call_args.kwargs["history"], history)
         self.assertEqual([event["event"] for event in events], ["status", "final"])
-        self.assertEqual(events[0]["data"]["text"], "Yes sir, checking that now.")
+        self.assertEqual(events[0]["data"]["text"], "Checking that now.")
         self.assertEqual(events[-1]["data"]["tool"], "tools.more")
         self.assertFalse(events[-1]["data"]["executed"])
 
@@ -9553,15 +9760,15 @@ class RuntimeSurfaceTests(unittest.TestCase):
     def test_stream_status_text_uses_app_name_when_preview_has_one(self):
         self.assertEqual(
             _stream_status_text({"tool": "app.status", "result": {"plan": {"app_name": "Safari"}}}),
-            "Yes sir, checking Safari now.",
+            "Checking Safari now.",
         )
         self.assertEqual(
             _stream_status_text({"tool": "app.open", "result": {"plan": {"app": "Microsoft Outlook"}}}),
-            "Yes sir, opening Microsoft Outlook now.",
+            "Opening Microsoft Outlook now.",
         )
         self.assertEqual(
             _stream_status_text({"tool": "app.focus", "result": {"plan": {"requested_app": "Teams"}}}),
-            "Yes sir, focusing Teams now.",
+            "Focusing Teams now.",
         )
 
     def test_streamed_overnight_status_uses_report_wording(self):
@@ -9572,7 +9779,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 events = list(server.stream_command("overnight status"))
 
         self.assertEqual([event["event"] for event in events], ["status", "final"])
-        self.assertEqual(events[0]["data"]["text"], "Yes sir, checking the overnight report now.")
+        self.assertEqual(events[0]["data"]["text"], "Checking the overnight report now.")
         self.assertIn("Overnight report is ready", events[-1]["data"]["result"]["reply"])
         self.assertEqual(speak_mock.call_args_list[0].kwargs["reason"], "status")
         self.assertNotIn("workboard", speak_mock.call_args_list[0].args[0].lower())
@@ -9595,7 +9802,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 "tool": "conversation.fast_local",
                 "status": "tool_requested",
                 "selected_tool": "diagnostics.device",
-                "status_text": "Yes sir, checking this Mac now.",
+                "status_text": "Checking this Mac now.",
                 "entities": {},
                 "executed": True,
             }
@@ -10459,6 +10666,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("GET /overnight-workboard/", readiness["mode"]["allowed_while_paused"])
         self.assertIn("HEAD /overnight-report/", readiness["mode"]["allowed_while_paused"])
         self.assertIn("HEAD /overnight-workboard/", readiness["mode"]["allowed_while_paused"])
+        self.assertIn("POST /api/integrations/localos/music/snapshot", readiness["mode"]["allowed_while_paused"])
         self.assertTrue(readiness["mode"]["paused"])
         self.assertGreaterEqual(readiness["tools"]["total"], readiness["tools"]["available"])
         self.assertGreater(readiness["self_check"]["total"], 0)

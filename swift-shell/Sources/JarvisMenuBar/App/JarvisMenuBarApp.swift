@@ -336,10 +336,12 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func configureStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Jarvis"
+        let item = NSStatusBar.system.statusItem(withLength: Self.statusItemLength)
+        item.button?.title = Self.statusItemTitle
         item.button?.image = Self.statusItemImage()
-        item.button?.imagePosition = .imageLeading
+        item.button?.imagePosition = .imageOnly
+        item.button?.toolTip = "Jarvis"
+        item.button?.setAccessibilityLabel("Jarvis")
         item.button?.target = self
         item.button?.action = #selector(statusItemClicked(_:))
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -386,6 +388,14 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     static func wakeListenerMenuTitle(listening: Bool) -> String {
         listening ? "Stop Hey Jarvis" : "Start Hey Jarvis"
+    }
+
+    static var statusItemLength: CGFloat {
+        NSStatusItem.squareLength
+    }
+
+    static var statusItemTitle: String {
+        ""
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

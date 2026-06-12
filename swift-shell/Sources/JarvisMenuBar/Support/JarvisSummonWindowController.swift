@@ -5,8 +5,8 @@ import SwiftUI
 @MainActor
 final class JarvisSummonWindowController {
     private let window: NSPanel
-    private let size = NSSize(width: 386, height: 118)
-    private let edgeInset: CGFloat = 18
+    private let size = NSSize(width: 326, height: 92)
+    private let edgeInset: CGFloat = 12
 
     init(model: JarvisShellModel) {
         let hostingController = NSHostingController(rootView: JarvisSummonOverlayView(model: model))

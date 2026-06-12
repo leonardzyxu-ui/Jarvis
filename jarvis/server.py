@@ -33,6 +33,7 @@ from .safety import classify_command, policy_summary
 from .self_check import run_self_checks
 from .tools import (
     codex_activity_snapshot,
+    store_localos_music_snapshot,
     outlook_visible_text_summary,
     prewarm_tts_async,
     set_speech_muted,
@@ -50,6 +51,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 OVERNIGHT_STATUS_DIR = PROJECT_ROOT / "runtime" / "overnight_status"
 MAX_VERIFICATION_AGE_SECONDS = 12 * 60 * 60
 MAX_WAKE_SAMPLE_BYTES = 8 * 1024 * 1024
+MAX_LOCALOS_MUSIC_SNAPSHOT_BYTES = 256 * 1024
 
 
 class JarvisServer:
@@ -383,6 +385,7 @@ class JarvisServer:
                     "POST /api/mode",
                     "POST /api/plan",
                     "POST /api/speech/mute",
+                    "POST /api/integrations/localos/music/snapshot",
                 ],
             }
 
@@ -639,68 +642,71 @@ def _stream_status_text(preview: dict[str, Any]) -> str:
     app_name = _preview_app_name(preview)
     if app_name:
         if tool == "app.open":
-            return f"Yes sir, opening {app_name} now."
+            return f"Opening {app_name} now."
         if tool == "app.focus":
-            return f"Yes sir, focusing {app_name} now."
+            return f"Focusing {app_name} now."
         if tool == "app.status":
-            return f"Yes sir, checking {app_name} now."
+            return f"Checking {app_name} now."
     labels = {
-        "outlook.visible_summary": "Yes sir, checking your email now.",
-        "diagnostics.email": "Yes sir, checking the email setup now.",
-        "screenshot.capability": "Yes sir, checking the screen setup now.",
-        "screen.ocr": "Yes sir, preparing the screen-reading plan now.",
-        "browser.open_url": "Yes sir, opening that now.",
-        "codex.job": "Yes sir, checking with Codex now.",
-        "codex.delegate": "Yes sir, checking with Codex now.",
-        "diagnostics.codex_chats": "Yes sir, checking the Codex chats now.",
-        "codex.chat_plan": "Yes sir, choosing the Codex chat now.",
-        "codex.activity": "Yes sir, checking Codex activity now.",
-        "diagnostics.codex_speed": "Yes sir, checking Codex timing now.",
-        "diagnostics.remote_worker": "Yes sir, checking the MacBook Air now.",
-        "diagnostics.git": "Yes sir, checking the GitHub branch state now.",
-        "diagnostics.app_identity": "Yes sir, checking app identity now.",
-        "diagnostics.fast_model": "Yes sir, checking the model setup now.",
-        "diagnostics.device": "Yes sir, checking this Mac now.",
-        "diagnostics.memory": "Yes sir, checking Jarvis memory now.",
-        "memory.daily_summary": "Yes sir, checking today's memory summary now.",
-        "diagnostics.model_context": "Yes sir, checking the model context now.",
+        "outlook.visible_summary": "Checking your email now.",
+        "localos.music_recommendations": "Checking your music picks now.",
+        "localos.music_choose_from_your_pick": "Choosing from Your Pick now.",
+        "localos.music_search": "Looking through your music library now.",
+        "diagnostics.email": "Checking the email setup now.",
+        "screenshot.capability": "Checking the screen setup now.",
+        "screen.ocr": "Preparing the screen-reading plan now.",
+        "browser.open_url": "Opening that now.",
+        "codex.job": "Checking with Codex now.",
+        "codex.delegate": "Checking with Codex now.",
+        "diagnostics.codex_chats": "Checking the Codex chats now.",
+        "codex.chat_plan": "Choosing the Codex chat now.",
+        "codex.activity": "Checking Codex activity now.",
+        "diagnostics.codex_speed": "Checking Codex timing now.",
+        "diagnostics.remote_worker": "Checking the MacBook Air now.",
+        "diagnostics.git": "Checking the GitHub branch state now.",
+        "diagnostics.app_identity": "Checking app identity now.",
+        "diagnostics.fast_model": "Checking the model setup now.",
+        "diagnostics.device": "Checking this Mac now.",
+        "diagnostics.memory": "Checking Jarvis memory now.",
+        "memory.daily_summary": "Checking today's memory summary now.",
+        "diagnostics.model_context": "Checking the model context now.",
         "voice.stop_speaking": "Stopping my voice now.",
-        "diagnostics.tool_catalog": "Yes sir, checking the tool catalog now.",
-        "tools.deep_catalog": "Yes sir, checking the deeper tool catalog now.",
-        "tools.handoff_plan": "Yes sir, checking how to handle that now.",
-        "diagnostics.permissions": "Yes sir, checking permissions readiness now.",
-        "diagnostics.overnight": "Yes sir, checking the overnight report now.",
-        "diagnostics.final_qa": "Yes sir, checking the final QA plan now.",
-        "diagnostics.tts": "Yes sir, checking the voice setup now.",
-        "voice.stt_candidates": "Yes sir, checking speech recognition options now.",
-        "voice.stt_session_plan": "Yes sir, preparing the speech recognition test plan now.",
-        "voice.session_plan": "Yes sir, planning the voice session now.",
-        "voice.stt_score": "Yes sir, scoring that transcript now.",
-        "voice.stt_recommendation": "Yes sir, ranking the speech recognition results now.",
-        "voice.loop_simulation": "Yes sir, testing the voice loop now.",
-        "voice.wake_audition": "Yes sir, checking the wake test page now.",
-        "voice.wake_debug": "Yes sir, analyzing the wake debug log now.",
-        "files.search": "Yes sir, searching your files now.",
-        "app.list": "Yes sir, checking which apps I can open now.",
-        "app.status": "Yes sir, checking that app now.",
-        "app.running": "Yes sir, checking which apps are running now.",
-        "app.frontmost": "Yes sir, checking the current app now.",
-        "app.focus": "Yes sir, focusing that app now.",
-        "app.quit": "Yes sir, preparing the quit confirmation now.",
-        "ui.automation": "Yes sir, preparing the app-control plan now.",
-        "shell.read_only": "Yes sir, checking that locally now.",
-        "terminal.read_only": "Yes sir, checking that locally now.",
-        "workflow.app_task_plan": "Yes sir, preparing the app workflow plan now.",
-        "teams.assignment": "Yes sir, preparing the Teams assignment plan now.",
-        "ui.overlay": "Yes sir, planning the Jarvis overlay now.",
-        "quick.local_control": "Yes sir, handling that now.",
-        "conversation.math_check": "Yes sir, checking your answer now.",
-        "system.status": "Yes sir, checking Jarvis status now.",
+        "diagnostics.tool_catalog": "Checking the tool catalog now.",
+        "tools.deep_catalog": "Checking the deeper tool catalog now.",
+        "tools.handoff_plan": "Checking how to handle that now.",
+        "diagnostics.permissions": "Checking permissions readiness now.",
+        "diagnostics.overnight": "Checking the overnight report now.",
+        "diagnostics.final_qa": "Checking the final QA plan now.",
+        "diagnostics.tts": "Checking the voice setup now.",
+        "voice.stt_candidates": "Checking speech recognition options now.",
+        "voice.stt_session_plan": "Preparing the speech recognition test plan now.",
+        "voice.session_plan": "Planning the voice session now.",
+        "voice.stt_score": "Scoring that transcript now.",
+        "voice.stt_recommendation": "Ranking the speech recognition results now.",
+        "voice.loop_simulation": "Testing the voice loop now.",
+        "voice.wake_audition": "Checking the wake test page now.",
+        "voice.wake_debug": "Analyzing the wake debug log now.",
+        "files.search": "Searching your files now.",
+        "app.list": "Checking which apps I can open now.",
+        "app.status": "Checking that app now.",
+        "app.running": "Checking which apps are running now.",
+        "app.frontmost": "Checking the current app now.",
+        "app.focus": "Focusing that app now.",
+        "app.quit": "Preparing the quit confirmation now.",
+        "ui.automation": "Preparing the app-control plan now.",
+        "shell.read_only": "Checking that locally now.",
+        "terminal.read_only": "Checking that locally now.",
+        "workflow.app_task_plan": "Preparing the app workflow plan now.",
+        "teams.assignment": "Preparing the Teams assignment plan now.",
+        "ui.overlay": "Planning the Jarvis overlay now.",
+        "quick.local_control": "Handling that now.",
+        "conversation.math_check": "Checking your answer now.",
+        "system.status": "Checking Jarvis status now.",
         "policy.block": "Checking safety policy.",
         "policy.confirmation": "Checking safety policy.",
         "policy.strong_confirmation": "Checking safety policy.",
     }
-    return labels.get(tool, "Yes sir, checking this now.")
+    return labels.get(tool, "Checking this now.")
 
 
 def _preview_app_name(preview: dict[str, Any]) -> str:
@@ -977,6 +983,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             except OSError as exc:
                 self._send_json({"error": f"Could not save wake sample: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if route.path == "/api/integrations/localos/music/snapshot":
+            try:
+                payload = self._read_json_or_text_payload(max_bytes=MAX_LOCALOS_MUSIC_SNAPSHOT_BYTES)
+                self._send_json(store_localos_music_snapshot(payload))
+            except RequestBodyTooLarge:
+                self._send_json({"error": "Local OS music snapshot body too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            except UnsupportedContentType:
+                self._send_json({"error": "Content-Type must be application/json or text/plain"}, status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+            except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                self._send_json({"error": f"Invalid Local OS music snapshot: {exc}"}, status=HTTPStatus.BAD_REQUEST)
+            except OSError as exc:
+                self._send_json({"error": f"Could not save Local OS music snapshot: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if route.path == "/api/command/stream":
             try:
                 payload = self._read_json_payload()
@@ -1095,6 +1114,21 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _read_json_payload(self, *, max_bytes: int = MAX_REQUEST_BYTES) -> dict[str, Any]:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/json":
+            raise UnsupportedContentType()
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length < 0:
+            raise ValueError("Content-Length must be non-negative")
+        if content_length > max_bytes:
+            raise RequestBodyTooLarge()
+        body = self.rfile.read(content_length)
+        payload = json.loads(body.decode("utf-8") or "{}")
+        if not isinstance(payload, dict):
+            raise TypeError("JSON body must be an object")
+        return payload
+
+    def _read_json_or_text_payload(self, *, max_bytes: int = MAX_REQUEST_BYTES) -> dict[str, Any]:
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type not in {"application/json", "text/plain"}:
             raise UnsupportedContentType()
         content_length = int(self.headers.get("Content-Length", "0"))
         if content_length < 0:
@@ -1386,6 +1420,36 @@ def _audit_safe_result(tool: str, result: dict[str, Any]) -> dict[str, Any]:
             if key not in {"stdout", "stderr", "reply"}
         }
         safe["model_output_omitted"] = True
+        return safe
+
+    if tool == "localos.music_recommendations":
+        safe = {
+            key: value
+            for key, value in result.items()
+            if key not in {"tracks", "reply", "current_track", "fallback_library"}
+        }
+        safe["music_track_details_omitted"] = True
+        safe["track_count"] = len(result.get("tracks") or []) if isinstance(result.get("tracks"), list) else 0
+        return safe
+
+    if tool == "localos.music_search":
+        safe = {
+            key: value
+            for key, value in result.items()
+            if key not in {"matches", "reply", "fallback_library"}
+        }
+        safe["music_match_details_omitted"] = True
+        safe["match_count"] = len(result.get("matches") or []) if isinstance(result.get("matches"), list) else 0
+        return safe
+
+    if tool == "localos.music_choose_from_your_pick":
+        safe = {
+            key: value
+            for key, value in result.items()
+            if key not in {"candidates", "selected_track", "reply"}
+        }
+        safe["music_choice_details_omitted"] = True
+        safe["candidate_count"] = len(result.get("candidates") or []) if isinstance(result.get("candidates"), list) else 0
         return safe
 
     if tool != "outlook.visible_summary":

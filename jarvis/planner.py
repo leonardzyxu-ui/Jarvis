@@ -39,7 +39,10 @@ from .tools import (
     find_files,
     git_remote_status,
     launch_status,
+    localos_music_choose_from_your_pick,
     latest_latency_status,
+    localos_music_recommendations,
+    localos_music_search,
     memory_status,
     model_context_status,
     more_tools_plan,
@@ -98,8 +101,8 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
             "unread_only": "True only when the user asks specifically for unread mail.",
         },
         "examples": [
-            'Yes sir, checking your second email now. \\tool({"tool":"outlook.visible_summary","entities":{"selection":"index:2"}})',
-            'Yes sir, checking your unread email now. \\tool({"tool":"outlook.visible_summary","entities":{"selection":"unread_first"}})',
+            'Checking your second email now. \\tool({"tool":"outlook.visible_summary","entities":{"selection":"index:2"}})',
+            'Checking your unread email now. \\tool({"tool":"outlook.visible_summary","entities":{"selection":"unread_first"}})',
         ],
     },
     {
@@ -108,11 +111,46 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": [],
     },
     {
+        "tool": "localos.music_recommendations",
+        "description": "Read Leo's Local OS Music Player Your Pick recommended songs snapshot. Use only when the user asks for Recommended Songs, Your Pick, music picks, or local music recommendations. Do not use this for a named song request.",
+        "entities": ["limit"],
+        "entity_details": {
+            "limit": "Optional number of recommended songs to return, default 10.",
+        },
+        "examples": [
+            'Checking your music picks now. \\tool({"tool":"localos.music_recommendations","entities":{"limit":10}})',
+        ],
+    },
+    {
+        "tool": "localos.music_choose_from_your_pick",
+        "description": "Choose one song from Leo's Local OS Music Player Your Pick candidate list. Use when the user asks Jarvis to play, choose, recommend, or pick something from Your Pick without naming a specific song.",
+        "entities": ["limit", "preference"],
+        "entity_details": {
+            "limit": "Optional number of Your Pick candidates to show the choosing model, default 10.",
+            "preference": "Optional listening preference from the user, such as energy, calm, musical, or focus.",
+        },
+        "examples": [
+            'Choosing from Your Pick now. \\tool({"tool":"localos.music_choose_from_your_pick","entities":{"limit":12}})',
+        ],
+    },
+    {
+        "tool": "localos.music_search",
+        "description": "Search Leo's full Local OS Music library snapshot by title, artist, filename, or group. Use only when the user asks Jarvis to find, search for, play, queue, or look up a named song or piece of music.",
+        "entities": ["query", "limit"],
+        "entity_details": {
+            "query": "Song title, artist, or phrase to search for. For 'play Waving Through A Window', query should be 'Waving Through A Window'.",
+            "limit": "Optional number of matches to return, default 10.",
+        },
+        "examples": [
+            'Looking through your music library now. \\tool({"tool":"localos.music_search","entities":{"query":"Waving Through A Window","limit":5}})',
+        ],
+    },
+    {
         "tool": "diagnostics.device",
         "description": "Report the local Mac and Jarvis runtime profile: Mac model, chip, memory, storage, battery, bundle, and worker source. Use when the user asks what computer Jarvis is running on or asks for device/computer/Mac hardware status.",
         "entities": [],
         "examples": [
-            'Yes sir, checking this Mac now. \\tool({"tool":"diagnostics.device","entities":{}})',
+            'Checking this Mac now. \\tool({"tool":"diagnostics.device","entities":{}})',
         ],
     },
     {
@@ -153,7 +191,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Explain how a chosen tool ID would be previewed, executed through policy, confirmation-gated, unavailable, or refused without running that tool.",
         "entities": ["recommended_tool", "entities", "user_goal"],
         "examples": [
-            'Yes sir, checking how to handle that now. \\tool({"tool":"tools.handoff_plan","entities":{"recommended_tool":"app.open","entities":{"app_name":"Microsoft Teams"},"user_goal":"Open Teams"}})',
+            'Checking how to handle that now. \\tool({"tool":"tools.handoff_plan","entities":{"recommended_tool":"app.open","entities":{"app_name":"Microsoft Teams"},"user_goal":"Open Teams"}})',
         ],
     },
     {
@@ -176,7 +214,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Analyze pasted Copy Chat JSON wake events, detector scores, ignored wake echoes, and captured commands without recording audio.",
         "entities": ["export_json"],
         "examples": [
-            'Yes sir, analyzing the wake debug log now. \\tool({"tool":"voice.wake_debug","entities":{"export_json":"{... pasted Copy Chat JSON ...}"}})',
+            'Analyzing the wake debug log now. \\tool({"tool":"voice.wake_debug","entities":{"export_json":"{... pasted Copy Chat JSON ...}"}})',
         ],
     },
     {
@@ -189,7 +227,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Plan the full Hey Jarvis voice session from wake phrase to visible acknowledgement, STT, command routing, safe tool execution, final visible text, and optional speech without recording audio or playing sound.",
         "entities": ["command"],
         "examples": [
-            'Yes sir, planning the voice session now. \\tool({"tool":"voice.session_plan","entities":{"command":"check my email"}})',
+            'Planning the voice session now. \\tool({"tool":"voice.session_plan","entities":{"command":"check my email"}})',
         ],
     },
     {
@@ -197,7 +235,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Score a provided or pasted speech-recognition transcript against a reference sentence without recording audio.",
         "entities": ["reference", "transcript", "candidate_id", "first_result_ms", "final_result_ms", "human_score"],
         "examples": [
-            'Yes sir, scoring that transcript now. \\tool({"tool":"voice.stt_score","entities":{"reference":"Hey Jarvis, check my email.","transcript":"hey jarvis check my email"}})',
+            'Scoring that transcript now. \\tool({"tool":"voice.stt_score","entities":{"reference":"Hey Jarvis, check my email.","transcript":"hey jarvis check my email"}})',
         ],
     },
     {
@@ -205,7 +243,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Rank pasted JSON exported from the STT audition page and recommend the strongest recognizer without recording audio, opening the browser, or calling a model.",
         "entities": ["export_json"],
         "examples": [
-            'Yes sir, ranking the speech recognition results now. \\tool({"tool":"voice.stt_recommendation","entities":{"export_json":"{... pasted audition export ...}"}})',
+            'Ranking the speech recognition results now. \\tool({"tool":"voice.stt_recommendation","entities":{"export_json":"{... pasted audition export ...}"}})',
         ],
     },
     {
@@ -213,7 +251,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Simulate a typed Hey Jarvis wake loop, greeting, command capture, and safe command preview without recording audio, playing audio, opening apps, or capturing the screen.",
         "entities": ["transcript"],
         "examples": [
-            'Yes sir, testing the voice loop now. \\tool({"tool":"voice.loop_simulation","entities":{"transcript":"Hey Jarvis status"}})',
+            'Testing the voice loop now. \\tool({"tool":"voice.loop_simulation","entities":{"transcript":"Hey Jarvis status"}})',
         ],
     },
     {
@@ -221,7 +259,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Prepare a plan for the future compact visible Jarvis overlay/popup UI without opening windows, changing UI, recording audio, or capturing the screen.",
         "entities": ["mode"],
         "examples": [
-            'Yes sir, planning the Jarvis overlay now. \\tool({"tool":"ui.overlay","entities":{"mode":"normal"}})',
+            'Planning the Jarvis overlay now. \\tool({"tool":"ui.overlay","entities":{"mode":"normal"}})',
         ],
     },
     {
@@ -242,8 +280,8 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
             "app_name": "The user-facing app name, such as Microsoft Outlook, Google Chrome, Microsoft Teams, Word, PowerPoint, Excel, Safari, Mail, Finder, or Codex.",
         },
         "examples": [
-            'Yes sir, opening Outlook now. \\tool({"tool":"app.open","entities":{"app_name":"Microsoft Outlook"}})',
-            'Yes sir, opening Teams now. \\tool({"tool":"app.open","entities":{"app_name":"Microsoft Teams"}})',
+            'Opening Outlook now. \\tool({"tool":"app.open","entities":{"app_name":"Microsoft Outlook"}})',
+            'Opening Teams now. \\tool({"tool":"app.open","entities":{"app_name":"Microsoft Teams"}})',
         ],
     },
     {
@@ -254,8 +292,8 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
             "app_name": "The user-facing app name, such as Microsoft Outlook, Google Chrome, Microsoft Teams, Word, PowerPoint, Excel, Safari, Mail, Finder, or Codex.",
         },
         "examples": [
-            'Yes sir, switching to Outlook now. \\tool({"tool":"app.focus","entities":{"app_name":"Microsoft Outlook"}})',
-            'Yes sir, focusing Teams now. \\tool({"tool":"app.focus","entities":{"app_name":"Microsoft Teams"}})',
+            'Switching to Outlook now. \\tool({"tool":"app.focus","entities":{"app_name":"Microsoft Outlook"}})',
+            'Focusing Teams now. \\tool({"tool":"app.focus","entities":{"app_name":"Microsoft Teams"}})',
         ],
     },
     {
@@ -266,7 +304,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
             "app_name": "The user-facing app name, such as Safari, Microsoft Outlook, Google Chrome, Microsoft Teams, Mail, Finder, or Codex.",
         },
         "examples": [
-            'Yes sir, I can prepare that, but quitting Safari needs confirmation. \\tool({"tool":"app.quit","entities":{"app_name":"Safari"}})',
+            'I can prepare that, but quitting Safari needs confirmation. \\tool({"tool":"app.quit","entities":{"app_name":"Safari"}})',
         ],
     },
     {
@@ -274,7 +312,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "List local macOS apps Jarvis knows how to open, without launching or inspecting them.",
         "entities": [],
         "examples": [
-            'Yes sir, checking which apps I can open now. \\tool({"tool":"app.list","entities":{}})',
+            'Checking which apps I can open now. \\tool({"tool":"app.list","entities":{}})',
         ],
     },
     {
@@ -285,8 +323,8 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
             "app_name": "The user-facing app name, such as Microsoft Outlook, Google Chrome, Microsoft Teams, Word, PowerPoint, Excel, Safari, Mail, Finder, or Codex.",
         },
         "examples": [
-            'Yes sir, checking Outlook now. \\tool({"tool":"app.status","entities":{"app_name":"Microsoft Outlook"}})',
-            'Yes sir, checking whether Teams is running now. \\tool({"tool":"app.status","entities":{"app_name":"Microsoft Teams"}})',
+            'Checking Outlook now. \\tool({"tool":"app.status","entities":{"app_name":"Microsoft Outlook"}})',
+            'Checking whether Teams is running now. \\tool({"tool":"app.status","entities":{"app_name":"Microsoft Teams"}})',
         ],
     },
     {
@@ -294,7 +332,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "List known local macOS apps and whether each appears to be running, without launching, focusing, screenshotting, or inspecting app content.",
         "entities": [],
         "examples": [
-            'Yes sir, checking which apps are running now. \\tool({"tool":"app.running","entities":{}})',
+            'Checking which apps are running now. \\tool({"tool":"app.running","entities":{}})',
         ],
     },
     {
@@ -302,7 +340,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Report which macOS app is currently frontmost, without reading window titles, screenshots, or UI text.",
         "entities": [],
         "examples": [
-            'Yes sir, checking the current app now. \\tool({"tool":"app.frontmost","entities":{}})',
+            'Checking the current app now. \\tool({"tool":"app.frontmost","entities":{}})',
         ],
     },
     {
@@ -328,7 +366,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Prepare a safe structured plan for a multi-step app task, including app opening, screen/OCR, UI automation, Codex delegation, and confirmation gates, without executing the workflow.",
         "entities": ["goal", "target_app"],
         "examples": [
-            'Yes sir, preparing the app workflow plan now. \\tool({"tool":"workflow.app_task_plan","entities":{"goal":"Go to Teams, open Music class, and find the newest assignment.","target_app":"Microsoft Teams"}})',
+            'Preparing the app workflow plan now. \\tool({"tool":"workflow.app_task_plan","entities":{"goal":"Go to Teams, open Music class, and find the newest assignment.","target_app":"Microsoft Teams"}})',
         ],
     },
     {
@@ -336,7 +374,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Prepare a safe Microsoft Teams assignment workflow plan without opening Teams, reading the screen, clicking, typing, downloading, submitting, calling Codex, or changing schoolwork.",
         "entities": ["goal"],
         "examples": [
-            'Yes sir, preparing the Teams assignment plan now. \\tool({"tool":"teams.assignment","entities":{"goal":"Go to Teams, open Music class, and find the newest assignment."}})',
+            'Preparing the Teams assignment plan now. \\tool({"tool":"teams.assignment","entities":{"goal":"Go to Teams, open Music class, and find the newest assignment."}})',
         ],
     },
     {
@@ -349,7 +387,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Choose which configured Codex chat Jarvis would use for a request without starting Codex or exposing session IDs.",
         "entities": ["goal"],
         "examples": [
-            'Yes sir, choosing the Codex chat now. \\tool({"tool":"codex.chat_plan","entities":{"goal":"inspect the newest Teams Music assignment and make the poster"}})',
+            'Choosing the Codex chat now. \\tool({"tool":"codex.chat_plan","entities":{"goal":"inspect the newest Teams Music assignment and make the poster"}})',
         ],
     },
     {
@@ -367,7 +405,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Report duplicate macOS app bundle identifiers for Jarvis or another named app without launching apps or changing files.",
         "entities": ["app_name"],
         "examples": [
-            'Yes sir, checking the app identity now. \\tool({"tool":"diagnostics.app_identity","entities":{"app_name":"Jarvis"}})',
+            'Checking the app identity now. \\tool({"tool":"diagnostics.app_identity","entities":{"app_name":"Jarvis"}})',
         ],
     },
     {
@@ -953,6 +991,129 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "diagnostics.email", assessment, True, plan={"intent": intent})
             return self._result(text, "diagnostics.email", "Read local email backend status without reading email content.", assessment, email_backend_status(), True)
+        if selected_tool == "localos.music_recommendations":
+            if _looks_like_your_pick_choice(text):
+                selected_tool = "localos.music_choose_from_your_pick"
+                intent = {
+                    **intent,
+                    "selected_tool": selected_tool,
+                    "rerouted_from": "localos.music_recommendations",
+                    "reroute_reason": "Generic Your Pick listening requests should be chosen from candidates by the model.",
+                }
+                entities = intent["entities"] if isinstance(intent.get("entities"), dict) else entities
+            else:
+                search_query = _extract_music_search_query(text)
+                if search_query:
+                    selected_tool = "localos.music_search"
+                    intent = {
+                        **intent,
+                        "selected_tool": selected_tool,
+                        "entities": {
+                            **entities,
+                            "query": search_query,
+                        },
+                        "rerouted_from": "localos.music_recommendations",
+                        "reroute_reason": "Named song/music requests should search the library, not summarize Your Pick.",
+                    }
+                    entities = intent["entities"]
+                else:
+                    limit = _positive_entity_int(entities.get("limit"))
+                    if not execute:
+                        return self._preview_result(
+                            text,
+                            "localos.music_recommendations",
+                            assessment,
+                            True,
+                            plan={"intent": intent, "limit": limit},
+                        )
+                    return self._result(
+                        text,
+                        "localos.music_recommendations",
+                        "Read Local OS Music recommendations.",
+                        assessment,
+                        localos_music_recommendations(limit=limit),
+                        True,
+                    )
+        if selected_tool == "localos.music_choose_from_your_pick":
+            limit = _positive_entity_int(entities.get("limit"))
+            if not _looks_like_your_pick_choice(text):
+                if not execute:
+                    return self._preview_result(
+                        text,
+                        "localos.music_recommendations",
+                        assessment,
+                        True,
+                        plan={
+                            "intent": {
+                                **intent,
+                                "selected_tool": "localos.music_recommendations",
+                                "rerouted_from": "localos.music_choose_from_your_pick",
+                                "reroute_reason": "The user asked to inspect Your Pick, not choose a track.",
+                            },
+                            "limit": limit,
+                        },
+                    )
+                return self._result(
+                    text,
+                    "localos.music_recommendations",
+                    "Read Local OS Music recommendations.",
+                    assessment,
+                    localos_music_recommendations(limit=limit),
+                    True,
+                )
+            if not execute:
+                return self._preview_result(
+                    text,
+                    "localos.music_choose_from_your_pick",
+                    assessment,
+                    True,
+                    plan={"intent": intent, "limit": limit},
+                )
+            return self._result(
+                text,
+                "localos.music_choose_from_your_pick",
+                "Chose from Local OS Music Your Pick candidates.",
+                assessment,
+                localos_music_choose_from_your_pick(text, limit=limit),
+                True,
+            )
+        if selected_tool == "localos.music_search":
+            query = _clean_optional_entity(entities.get("query")) or _extract_music_search_query(text) or text
+            if _looks_like_your_pick_choice(query) or _looks_like_your_pick_choice(text):
+                limit = _positive_entity_int(entities.get("limit"))
+                if not execute:
+                    return self._preview_result(
+                        text,
+                        "localos.music_choose_from_your_pick",
+                        assessment,
+                        True,
+                        plan={"intent": intent, "limit": limit},
+                    )
+                return self._result(
+                    text,
+                    "localos.music_choose_from_your_pick",
+                    "Chose from Local OS Music Your Pick candidates.",
+                    assessment,
+                    localos_music_choose_from_your_pick(text, limit=limit),
+                    True,
+                )
+            limit = _positive_entity_int(entities.get("limit"))
+            if not execute:
+                return self._preview_result(
+                    text,
+                    "localos.music_search",
+                    assessment,
+                    True,
+                    plan={"intent": intent, "query": query, "limit": limit},
+                )
+            return self._result(
+                text,
+                "localos.music_search",
+                "Searched Local OS Music library.",
+                assessment,
+                localos_music_search(query=query, limit=limit),
+                True,
+            )
         if selected_tool == "diagnostics.device":
             if not execute:
                 return self._preview_result(text, "diagnostics.device", assessment, True, plan={"intent": intent})
@@ -1755,6 +1916,49 @@ def _extract_url(text: str) -> str:
     return match.group(0).rstrip(".,)") if match else ""
 
 
+def _extract_music_search_query(text: str) -> str | None:
+    cleaned = re.sub(r"\s+", " ", text.strip()).strip(" .?!")
+    patterns = [
+        r"(?i)^(?:could you|can you|please|jarvis)?\s*(?:play|queue|find|search(?: for)?|look up)\s+(?:me\s+|my\s+|the\s+)?(.+?)(?:\s+(?:for me|please|in my music library|from my music library|in music|from music))?$",
+        r"(?i)^(?:could you|can you|please|jarvis)?\s*(?:play|queue)\s+(?:the\s+)?(?:song|track|piece)\s+(.+?)(?:\s+(?:for me|please))?$",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, cleaned)
+        if match:
+            query = re.sub(r"\s+", " ", match.group(1)).strip(" .?!\"'")
+            lowered = query.lower()
+            generic_choice_terms = {
+                "song",
+                "track",
+                "music",
+                "something",
+                "anything",
+                "some music",
+                "something from your pick",
+                "something from recommended songs",
+                "something from recommendations",
+            }
+            if (
+                query
+                and lowered not in generic_choice_terms
+                and "your pick" not in lowered
+                and "recommended" not in lowered
+                and "recommendation" not in lowered
+            ):
+                return query[:120]
+    return None
+
+
+def _looks_like_your_pick_choice(text: str) -> bool:
+    lowered = re.sub(r"\s+", " ", str(text or "").lower())
+    mentions_pick = any(phrase in lowered for phrase in ("your pick", "recommended songs", "recommendations", "music picks"))
+    action_text = lowered
+    for phrase in ("your pick", "recommended songs", "recommendations", "music picks"):
+        action_text = action_text.replace(phrase, " ")
+    asks_choice = bool(re.search(r"\b(?:play|choose|pick|recommend|queue|listen to|something|anything)\b", action_text))
+    return mentions_pick and asks_choice
+
+
 def _looks_like_browser_url_request(text: str) -> bool:
     if not _extract_url(text):
         return False
@@ -1772,7 +1976,7 @@ def _clean_optional_entity(value: Any) -> str | None:
 
 def _extract_handoff_tool_id(text: str) -> str:
     for match in re.finditer(
-        r"\b(?:app|browser|codex|conversation|diagnostics|files|memory|outlook|planner|policy|quick|safety|screen|screenshot|shell|system|teams|terminal|tools|ui|voice|workflow)\.[a-z0-9_]+",
+        r"\b(?:app|browser|codex|conversation|diagnostics|files|localos|memory|outlook|planner|policy|quick|safety|screen|screenshot|shell|system|teams|terminal|tools|ui|voice|workflow)\.[a-z0-9_]+",
         text,
         flags=re.IGNORECASE,
     ):
@@ -1988,23 +2192,23 @@ def email_request_status_text(text: str, entities: dict[str, Any] | None = None)
     if selection:
         lowered = selection.lower()
         if lowered == "latest":
-            return "Yes sir, checking your newest email now."
+            return "Checking your newest email now."
         if lowered == "unread_first":
-            return "Yes sir, checking your unread email now."
+            return "Checking your unread email now."
         index_match = re.fullmatch(r"index:(\d{1,2})", lowered)
         if index_match:
             index = int(index_match.group(1))
             ordinal = _email_ordinal_label(index)
-            return f"Yes sir, checking your {ordinal} email now."
+            return f"Checking your {ordinal} email now."
         range_match = re.fullmatch(r"range:(\d{1,2})-(\d{1,2})", lowered)
         if range_match:
             start = int(range_match.group(1))
             end = int(range_match.group(2))
-            return f"Yes sir, checking emails {start} through {end} now."
+            return f"Checking emails {start} through {end} now."
     sender_query = _clean_optional_entity(safe_entities.get("sender_query")) or _extract_email_sender_constraint(text)
     if sender_query:
-        return f"Yes sir, checking your email from {sender_query} now."
-    return "Yes sir, checking your email now."
+        return f"Checking your email from {sender_query} now."
+    return "Checking your email now."
 
 
 def _email_ordinal_label(value: int) -> str:
@@ -2340,40 +2544,40 @@ def _extract_voice_session_command(text: str) -> str:
 
 def _voice_loop_status_text_for_tool(tool: str) -> str:
     labels = {
-        "outlook.visible_summary": "Yes sir, checking your email now.",
-        "diagnostics.email": "Yes sir, checking the email setup now.",
-        "diagnostics.device": "Yes sir, checking this Mac now.",
-        "diagnostics.overnight": "Yes sir, checking the overnight report now.",
-        "diagnostics.final_qa": "Yes sir, checking the final QA plan now.",
-        "diagnostics.model_context": "Yes sir, checking the model context now.",
+        "outlook.visible_summary": "Checking your email now.",
+        "diagnostics.email": "Checking the email setup now.",
+        "diagnostics.device": "Checking this Mac now.",
+        "diagnostics.overnight": "Checking the overnight report now.",
+        "diagnostics.final_qa": "Checking the final QA plan now.",
+        "diagnostics.model_context": "Checking the model context now.",
         "voice.stop_speaking": "Stopping my voice now.",
-        "diagnostics.tool_catalog": "Yes sir, checking the tool catalog now.",
-        "tools.deep_catalog": "Yes sir, checking the deeper tool catalog now.",
-        "tools.handoff_plan": "Yes sir, checking how to handle that now.",
-        "diagnostics.permissions": "Yes sir, checking permissions readiness now.",
-        "voice.stt_candidates": "Yes sir, checking speech recognition options now.",
-        "voice.stt_session_plan": "Yes sir, preparing the speech recognition test plan now.",
-        "voice.session_plan": "Yes sir, planning the voice session now.",
-        "voice.stt_score": "Yes sir, scoring that transcript now.",
-        "voice.stt_recommendation": "Yes sir, ranking the speech recognition results now.",
-        "screenshot.capability": "Yes sir, checking the screen setup now.",
-        "app.list": "Yes sir, checking which apps I can open now.",
-        "app.status": "Yes sir, checking that app now.",
-        "app.running": "Yes sir, checking which apps are running now.",
-        "app.open": "Yes sir, preparing the app open preview now.",
-        "app.focus": "Yes sir, focusing that app now.",
-        "app.quit": "Yes sir, preparing the quit confirmation now.",
-        "browser.open_url": "Yes sir, preparing that browser action now.",
-        "terminal.read_only": "Yes sir, checking that locally now.",
-        "shell.read_only": "Yes sir, checking that locally now.",
-        "teams.assignment": "Yes sir, preparing the Teams assignment plan now.",
-        "ui.overlay": "Yes sir, planning the Jarvis overlay now.",
-        "codex.chat_plan": "Yes sir, choosing the Codex chat now.",
-        "quick.local_control": "Yes sir, handling that now.",
-        "system.status": "Yes sir, checking Jarvis status now.",
-        "conversation.fast_local": "Yes sir, preparing a direct answer now.",
+        "diagnostics.tool_catalog": "Checking the tool catalog now.",
+        "tools.deep_catalog": "Checking the deeper tool catalog now.",
+        "tools.handoff_plan": "Checking how to handle that now.",
+        "diagnostics.permissions": "Checking permissions readiness now.",
+        "voice.stt_candidates": "Checking speech recognition options now.",
+        "voice.stt_session_plan": "Preparing the speech recognition test plan now.",
+        "voice.session_plan": "Planning the voice session now.",
+        "voice.stt_score": "Scoring that transcript now.",
+        "voice.stt_recommendation": "Ranking the speech recognition results now.",
+        "screenshot.capability": "Checking the screen setup now.",
+        "app.list": "Checking which apps I can open now.",
+        "app.status": "Checking that app now.",
+        "app.running": "Checking which apps are running now.",
+        "app.open": "Preparing the app open preview now.",
+        "app.focus": "Focusing that app now.",
+        "app.quit": "Preparing the quit confirmation now.",
+        "browser.open_url": "Preparing that browser action now.",
+        "terminal.read_only": "Checking that locally now.",
+        "shell.read_only": "Checking that locally now.",
+        "teams.assignment": "Preparing the Teams assignment plan now.",
+        "ui.overlay": "Planning the Jarvis overlay now.",
+        "codex.chat_plan": "Choosing the Codex chat now.",
+        "quick.local_control": "Handling that now.",
+        "system.status": "Checking Jarvis status now.",
+        "conversation.fast_local": "Preparing a direct answer now.",
     }
-    return labels.get(tool, "Yes sir, checking this now.")
+    return labels.get(tool, "Checking this now.")
 
 
 def _extract_injection_scan_text(text: str) -> str | None:
