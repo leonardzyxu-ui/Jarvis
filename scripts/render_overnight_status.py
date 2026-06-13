@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.346 lets actual email execution try contact-alias inference from recent Mail sender metadata before searching message bodies, while `/api/plan` stays preview-only and does not read Mail metadata.",
     "Jarvis 0.1.345 resolves `today` for Calendar preview plans before execution, so `Check my calendar for my schedule today` no longer shows a vague `date_iso: null` plan.",
     "Jarvis 0.1.344 makes the Chrome-login handoff explicit in the app: authenticated sites still open in Leo's signed-in Chrome, the Jarvis browser panel stays visible for supervision, and the status now says `Opened in signed-in Chrome` instead of implying cookies were migrated.",
     "Jarvis 0.1.343 connects email sender planning to local contact memory: known aliases resolve before mailbox search, and unknown aliases such as Ms. Sharpay surface a safe `contacts.infer` next step without reading email bodies.",
@@ -107,7 +108,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Current verification: Python safety suite passed 537/537, Swift self-test passed, and Jarvis 0.1.345 build 345 launched from bundled app resources.",
+    "Current verification: Python safety suite passed 538/538, Swift self-test passed, and Jarvis 0.1.346 build 346 launched from bundled app resources.",
     "Overnight no-permission voice suite passed for Teams assignment planning, Waving Through a Window recovery, Activity Monitor RAM, Codex strong-confirmation, Gemma 3 4B model-test planning, and Chrome-session migration.",
     "Live closed-loop voice QA now passes for the safe example prompts: natural Teams Music assignment planning, Activity Monitor RAM, Codex strong-confirmation, Teams bookmark, browser session strategy, and Gemma 3 4B model-test planning.",
     "The Gemma model-test voice loop now survives local STT hearing `Gemma 3-4 B-model`, repairs the visible reply to `Gemma 3 4B`, routes to `models.test_plan`, and matches spoken output with 1.0 similarity.",
@@ -122,9 +123,9 @@ PROOF_ITEMS = [
     "Jarvis's own GPT-OSS 120B Cloud adapter produced the 少先队 email-style spoken summary in 3.9s after the visible-output budget change.",
     "Voice-loop QA passed for natural Teams assignment planning, RAM usage, model-test planning, browser session strategy, and Calendar fast-fail behavior with speech suppressed.",
     "Chrome bookmark snapshot has 23 imported links from 3 profiles, including `teams.microsoft.com`.",
-    "Sharpay-style email previews now include `contact_alias_lookup`, `resolved_sender_query`, and `recommended_tool: contacts.infer` when the alias is not known, while remaining planned-only until the email tool actually runs.",
+    "Sharpay-style email previews now include `contact_alias_lookup`, `resolved_sender_query`, and `recommended_tool: contacts.infer` when the alias is not known, while remaining planned-only; actual email execution can now infer a confident alias from recent sender metadata before searching messages.",
     "Latest local checkpoint commits record the browser/session, music-recovery, model-scoring, report-proof, voice-loop routing, LocalOS stale-bridge hardening, and contact-aware email planning; the branch has not been pushed while Leo is asleep.",
-    "Python safety suite: 537/537 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, muted-latency, local-STT repair, overlapping-turn, crash-monitor, fallback-hardening, quiet-command, summon-popout, hidden-tool-call sanitization, model-scoring, browser-session, music-bridge, contact-memory, calendar-preview, and voice-QA work.",
+    "Python safety suite: 538/538 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, muted-latency, local-STT repair, overlapping-turn, crash-monitor, fallback-hardening, quiet-command, summon-popout, hidden-tool-call sanitization, model-scoring, browser-session, music-bridge, contact-memory, contact-inference, calendar-preview, and voice-QA work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Swift permission-readiness self-test passed without requesting permissions; it currently reports Microphone ready and Speech Recognition not requested.",
@@ -200,7 +201,7 @@ TRY_ITEMS = [
 ]
 
 RISK_ITEMS = [
-    "Jarvis 0.1.345 cannot yet read Calendar from the live app identity; it now fails fast, but Leo may need to grant the current Jarvis/Python app identity Calendar or Full Disk access for actual schedules.",
+    "Jarvis 0.1.346 cannot yet read Calendar from the live app identity; it now fails fast, but Leo may need to grant the current Jarvis/Python app identity Calendar or Full Disk access for actual schedules.",
     "The LocalOS music page likely needs a reload to pick up the new playback-state bridge; Jarvis now reports that honestly as `bridge_not_polling`, but live audible playback was not triggered while Leo was asleep.",
     "MacBook Air remote-worker probing currently reaches the SSH target but does not return the expected worker response, so Jarvis should ask before running model tests locally.",
     "Groq works as Jarvis's fast conversation model, but the scored middle-model comparison showed it should not be trusted for safety-sensitive planning without stronger prompting or a safer model layer.",

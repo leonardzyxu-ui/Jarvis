@@ -1545,7 +1545,7 @@ class Planner:
             transcript = _clean_optional_entity(entities.get("transcript")) or _extract_voice_loop_transcript(text) or text
             return self._voice_loop_result(text, assessment, transcript)
         if selected_tool == "outlook.visible_summary":
-            email_request = email_request_metadata(text, entities)
+            email_request = email_request_metadata(text, entities, infer_unknown_alias=execute)
             sender_query = email_request.get("sender_query")
             selection = email_request.get("selection")
             if not execute:
@@ -1570,6 +1570,10 @@ class Planner:
                 selection=selection,
                 original_prompt=text,
             )
+            if isinstance(result, dict):
+                result.setdefault("sender_query", sender_query)
+                result["resolved_sender_query"] = email_request.get("resolved_sender_query")
+                result["contact_alias_lookup"] = email_request.get("contact_alias_lookup")
             summary = "Checked read-only email summary." if result.get("status") == "checked" else "Tried read-only email summary."
             return self._result(text, "outlook.visible_summary", summary, assessment, result, True)
         if selected_tool == "screenshot.capability":
@@ -2898,7 +2902,12 @@ def _extract_email_sender_constraint(text: str) -> str | None:
     return sender[:120]
 
 
-def email_request_metadata(text: str, entities: dict[str, Any] | None = None) -> dict[str, Any]:
+def email_request_metadata(
+    text: str,
+    entities: dict[str, Any] | None = None,
+    *,
+    infer_unknown_alias: bool = False,
+) -> dict[str, Any]:
     """Resolve email details after a model has already selected the email tool."""
     safe_entities = entities if isinstance(entities, dict) else {}
     entity_selection = _clean_optional_entity(safe_entities.get("selection"))
@@ -2919,12 +2928,26 @@ def email_request_metadata(text: str, entities: dict[str, Any] | None = None) ->
                 "source": lookup.get("source"),
             }
         else:
-            contact_alias_lookup = {
-                "status": "not_found",
-                "alias": sender_query,
-                "recommended_tool": "contacts.infer",
-                "read_email_content": False,
-            }
+            inferred = contact_data_infer_from_email(sender_query) if infer_unknown_alias else None
+            if isinstance(inferred, dict) and inferred.get("status") in {"inferred_and_stored", "inferred_not_stored", "known_alias"}:
+                resolved_sender_query = _clean_optional_entity(inferred.get("display_name")) or sender_query
+                contact_alias_lookup = {
+                    "status": inferred.get("status"),
+                    "alias": inferred.get("alias") or sender_query,
+                    "display_name": resolved_sender_query,
+                    "source": "recent_mail_metadata",
+                    "read_email_content": False,
+                    "read_private_metadata": bool(inferred.get("read_private_content")),
+                }
+            else:
+                contact_alias_lookup = {
+                    "status": inferred.get("status") if isinstance(inferred, dict) else "not_found",
+                    "alias": sender_query,
+                    "recommended_tool": "contacts.infer",
+                    "read_email_content": False,
+                    "read_private_metadata": bool(inferred.get("read_private_content")) if isinstance(inferred, dict) else False,
+                    "candidates": inferred.get("candidates", [])[:5] if isinstance(inferred, dict) else [],
+                }
     return {
         "sender_query": sender_query,
         "resolved_sender_query": resolved_sender_query,
@@ -2943,7 +2966,7 @@ def email_request_metadata(text: str, entities: dict[str, Any] | None = None) ->
 
 
 def email_request_preview_plan(text: str, entities: dict[str, Any] | None = None) -> dict[str, Any]:
-    metadata = email_request_metadata(text, entities)
+    metadata = email_request_metadata(text, entities, infer_unknown_alias=False)
     plan = outlook_read_only_plan()
     plan.update(
         {

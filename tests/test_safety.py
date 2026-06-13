@@ -3780,6 +3780,7 @@ class PlannerTests(unittest.TestCase):
         }
         with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request), \
              patch("jarvis.planner.contact_data_lookup", return_value={"status": "not_found", "alias": "Sharpay"}), \
+             patch("jarvis.planner.contact_data_infer_from_email", return_value={"status": "needs_confirmation", "alias": "Sharpay", "read_private_content": True, "candidates": []}), \
              patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
             result = Planner().handle("Could you specifically check my email for the newest mail from Sharpay?")
 
@@ -3802,6 +3803,7 @@ class PlannerTests(unittest.TestCase):
         }
         with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request), \
              patch("jarvis.planner.contact_data_lookup", return_value={"status": "not_found", "alias": "Sharpay"}), \
+             patch("jarvis.planner.contact_data_infer_from_email", return_value={"status": "needs_confirmation", "alias": "Sharpay", "read_private_content": True, "candidates": []}), \
              patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
             Planner().handle("Could you specifically check my email for the newest mail from Sharpay?")
 
@@ -3835,6 +3837,35 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(preview.result["plan"]["sender_query"], "Ms Sharpay")
         self.assertEqual(preview.result["plan"]["resolved_sender_query"], "Ms Darbus")
         self.assertEqual(preview.result["plan"]["contact_alias_lookup"]["status"], "found")
+
+    def test_email_sender_alias_infers_before_mail_search_when_unknown(self):
+        fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
+        inferred = {
+            "tool": "contacts.infer",
+            "status": "inferred_and_stored",
+            "alias": "Ms Sharpay",
+            "display_name": "Ms Darbus",
+            "read_private_content": True,
+            "read_email_content": False,
+            "candidates": [{"display_name": "Ms Darbus", "score": 0.88}],
+        }
+        with patch("jarvis.planner.contact_data_lookup", return_value={"status": "not_found", "alias": "Ms Sharpay"}), \
+             patch("jarvis.planner.contact_data_infer_from_email", return_value=inferred) as infer_mock, \
+             patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
+            result = Planner().handle_selected_tool(
+                "Summarize all the emails from Ms Sharpay in the past month.",
+                "outlook.visible_summary",
+                {"sender_query": "Ms Sharpay", "selection": "latest"},
+            )
+
+        self.assertEqual(result.tool, "outlook.visible_summary")
+        infer_mock.assert_called_once_with("Ms Sharpay")
+        kwargs = mail_mock.call_args.kwargs
+        self.assertEqual(kwargs["sender_query"], "Ms Darbus")
+        self.assertEqual(result.result["resolved_sender_query"], "Ms Darbus")
+        self.assertEqual(result.result["contact_alias_lookup"]["status"], "inferred_and_stored")
+        self.assertFalse(result.result["contact_alias_lookup"]["read_email_content"])
+        self.assertTrue(result.result["contact_alias_lookup"]["read_private_metadata"])
 
     def test_email_selection_falls_back_to_original_prompt_for_second_email(self):
         fake_result = {"status": "checked", "messages": [], "message_count": 0}
