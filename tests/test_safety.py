@@ -3998,6 +3998,19 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(preview.result["plan"]["resolved_sender_query"], "Ms Darbus")
         self.assertEqual(preview.result["plan"]["contact_alias_lookup"]["status"], "found")
 
+    def test_email_preview_exposes_past_month_date_range_without_reading_mail(self):
+        with patch("jarvis.planner.contact_data_lookup", return_value={"status": "not_found", "alias": "Ms Sharpay"}), \
+             patch("jarvis.planner.contact_data_infer_from_email") as infer_mock, \
+             patch("jarvis.planner.outlook_read_only_check") as mail_mock:
+            preview = Planner().preview("Summarize all the emails from Ms Sharpay in the past month.")
+
+        self.assertEqual(preview.tool, "outlook.visible_summary")
+        self.assertEqual(preview.result["date_range"], "past_month")
+        self.assertEqual(preview.result["date_range_source"], "original_prompt")
+        self.assertEqual(preview.result["plan"]["date_range"], "past_month")
+        infer_mock.assert_not_called()
+        mail_mock.assert_not_called()
+
     def test_email_sender_alias_infers_before_mail_search_when_unknown(self):
         fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
         inferred = {
@@ -4026,6 +4039,23 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.result["contact_alias_lookup"]["status"], "inferred_and_stored")
         self.assertFalse(result.result["contact_alias_lookup"]["read_email_content"])
         self.assertTrue(result.result["contact_alias_lookup"]["read_private_metadata"])
+
+    def test_email_past_month_constraint_is_forwarded_to_mail_reader(self):
+        fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
+        with patch("jarvis.planner.contact_data_lookup", return_value={"status": "not_found", "alias": "Ms Sharpay"}), \
+             patch("jarvis.planner.contact_data_infer_from_email", return_value={"status": "needs_confirmation", "alias": "Ms Sharpay"}), \
+             patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
+            result = Planner().handle_selected_tool(
+                "Summarize all the emails from Ms Sharpay in the past month.",
+                "outlook.visible_summary",
+                {"sender_query": "Ms Sharpay"},
+            )
+
+        self.assertEqual(result.tool, "outlook.visible_summary")
+        kwargs = mail_mock.call_args.kwargs
+        self.assertEqual(kwargs["sender_query"], "Ms Sharpay")
+        self.assertEqual(kwargs["date_range"], "past_month")
+        self.assertIn("Ms Sharpay", kwargs["original_prompt"])
 
     def test_email_selection_falls_back_to_original_prompt_for_second_email(self):
         fake_result = {"status": "checked", "messages": [], "message_count": 0}
@@ -10196,6 +10226,19 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('set selectionMode to "sender_latest"', script)
         self.assertIn("MATCHES", script)
         self.assertIn("senderCandidate contains senderFilter", script)
+
+    def test_apple_mail_script_can_filter_past_month_requests(self):
+        script = jarvis_tools._apple_mail_newest_applescript(
+            5,
+            250,
+            sender_query="Sharpay",
+            date_range="past_month",
+        )
+
+        self.assertIn('set dateRangeFilter to "past_month"', script)
+        self.assertIn("set sinceDate to (current date) - (30 * 24 * 60 * 60)", script)
+        self.assertIn("if (date received of currentMessage) < sinceDate then set countMessage to false", script)
+        self.assertIn("if (date received of currentMessage) < sinceDate then set includeMessage to false", script)
 
     def test_apple_mail_messages_parse_source_body_for_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:

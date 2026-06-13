@@ -10619,6 +10619,7 @@ def outlook_read_only_check(
     *,
     sender_query: str | None = None,
     selection: str | None = None,
+    date_range: str | None = None,
     original_prompt: str | None = None,
 ) -> dict[str, Any]:
     """Try a bounded read-only unread-first inbox summary, preferring Apple Mail."""
@@ -10633,6 +10634,7 @@ def outlook_read_only_check(
     scan_limit = max(safe_limit, OUTLOOK_MAX_SCAN_MESSAGES)
     clean_sender_query = _clean_email_filter_query(sender_query)
     clean_selection = _clean_email_filter_query(selection)
+    clean_date_range = _clean_email_date_range(date_range)
     selection_request = _email_selection_request(clean_selection)
     mail_limit = _email_fetch_limit_for_selection(safe_limit, selection_request)
     mail_selection = _email_source_selection_hint(clean_selection, selection_request)
@@ -10654,11 +10656,19 @@ def outlook_read_only_check(
         "selection_rule": "unread_first_then_newest_if_none_unread",
         "original_prompt_used": bool(original_prompt and original_prompt.strip()),
         "sender_query": clean_sender_query,
+        "date_range": clean_date_range,
         "audit_note": "Audit stores status and counts only; sender, subject, and snippet details are omitted from audit details.",
         "safety_note": "Read-only summary only. Attachments, drafts, deletes, forwards, sends, downloads, and exports require confirmation.",
     }
     mail_result = (
-        _apple_mail_messages(mail_limit, scan_limit, osascript, sender_query=clean_sender_query, selection=mail_selection)
+        _apple_mail_messages(
+            mail_limit,
+            scan_limit,
+            osascript,
+            sender_query=clean_sender_query,
+            selection=mail_selection,
+            date_range=clean_date_range,
+        )
         if mail_app["available"]
         else {"messages": [], "status": "not_found"}
     )
@@ -16213,6 +16223,7 @@ def _apple_mail_messages(
     *,
     sender_query: str | None = None,
     selection: str | None = None,
+    date_range: str | None = None,
 ) -> dict[str, Any]:
     base: dict[str, Any] = {
         "status": "unavailable",
@@ -16222,6 +16233,7 @@ def _apple_mail_messages(
         "messages": [],
         "parsed_body_count": 0,
         "sender_query": _clean_email_filter_query(sender_query),
+        "date_range": _clean_email_date_range(date_range),
         "filter_applied": bool(_clean_email_filter_query(sender_query)),
     }
     if not osascript:
@@ -16230,7 +16242,18 @@ def _apple_mail_messages(
     try:
         with tempfile.TemporaryDirectory(prefix="jarvis-mail-source-") as source_dir:
             completed = subprocess.run(
-                [osascript, "-e", _apple_mail_newest_applescript(limit, scan_limit, source_dir, sender_query=sender_query, selection=selection)],
+                [
+                    osascript,
+                    "-e",
+                    _apple_mail_newest_applescript(
+                        limit,
+                        scan_limit,
+                        source_dir,
+                        sender_query=sender_query,
+                        selection=selection,
+                        date_range=date_range,
+                    ),
+                ],
                 shell=False,
                 cwd=PROJECT_ROOT,
                 text=True,
@@ -16271,10 +16294,12 @@ def _apple_mail_newest_applescript(
     *,
     sender_query: str | None = None,
     selection: str | None = None,
+    date_range: str | None = None,
 ) -> str:
     source_root = _applescript_string(str(source_dir or ""))
     sender_filter = _applescript_string(_clean_email_filter_query(sender_query) or "")
     selection_hint = _applescript_string(_clean_email_filter_query(selection) or "")
+    date_range_filter = _applescript_string(_clean_email_date_range(date_range) or "")
     return f'''
 on writeSourceFile(rawValue, sourcePath)
     if sourcePath is "" then return ""
@@ -16312,6 +16337,13 @@ end cleanText
             set sourceRoot to {source_root}
             set senderFilter to {sender_filter}
             set selectionHint to {selection_hint}
+            set dateRangeFilter to {date_range_filter}
+            set sinceDate to missing value
+            if dateRangeFilter is "past_month" then
+                set sinceDate to (current date) - (30 * 24 * 60 * 60)
+            else if dateRangeFilter is "past_week" then
+                set sinceDate to (current date) - (7 * 24 * 60 * 60)
+            end if
 		    set inboxMessages to messages of inbox
 		    set inboxCount to count of inboxMessages
 		    set scanCount to {scan_limit}
@@ -16333,6 +16365,11 @@ end cleanText
                         set subjectCandidate to subject of currentMessage as text
                     end try
                     if not ((senderCandidate contains senderFilter) or (subjectCandidate contains senderFilter)) then set countMessage to false
+                end if
+                if sinceDate is not missing value then
+                    try
+                        if (date received of currentMessage) < sinceDate then set countMessage to false
+                    end try
                 end if
                 if countMessage then
                     set matchCount to matchCount + 1
@@ -16380,6 +16417,11 @@ end cleanText
                                 if not ((senderCandidate contains senderFilter) or (subjectCandidate contains senderFilter)) then set includeMessage to false
                             end if
                             if selectionMode is "unread" and read status of currentMessage then set includeMessage to false
+                            if sinceDate is not missing value then
+                                try
+                                    if (date received of currentMessage) < sinceDate then set includeMessage to false
+                                end try
+                            end if
                             if includeMessage then
                                 set currentDate to date received of currentMessage
                                 if bestDate is missing value or currentDate > bestDate then
@@ -16593,6 +16635,16 @@ def _clean_email_filter_query(value: Any) -> str | None:
     if not text or text.lower() in {"null", "none", "unknown", "n/a"}:
         return None
     return text[:120]
+
+
+def _clean_email_date_range(value: Any) -> str | None:
+    text = _clean_local_field(value)
+    normalized = re.sub(r"[\s-]+", "_", str(text or "").strip().lower())
+    if normalized in {"past_month", "last_month", "past_30_days", "last_30_days", "30_days"}:
+        return "past_month"
+    if normalized in {"past_week", "last_week", "past_7_days", "last_7_days", "7_days"}:
+        return "past_week"
+    return None
 
 
 def _messages_with_parsed_email_bodies(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:

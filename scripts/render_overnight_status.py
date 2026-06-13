@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.352 carries bounded email date ranges such as `past_month` from the user's prompt into the Apple Mail read path, so `emails from Ms. Sharpay in the past month` no longer becomes an unbounded recent-inbox search.",
     "Jarvis 0.1.351 makes Calendar failures actionable: it distinguishes a missing cache, a permission/open failure, an empty cache, and a Calendar schema parse drift instead of only saying the cache is unavailable.",
     "Jarvis 0.1.350 routes obvious named music-play requests through LocalOS before fast chat in both preview and streaming execution, so voice-loop commands like `Play Waving Through a Window` no longer get echoed back as conversation.",
     "Jarvis 0.1.349 stamps each Python worker with the launching app's bundle identity and restarts stale workers after a rebuild, so the UI cannot quietly show a new version while the backend is old.",
@@ -113,7 +114,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Current verification: Python safety suite passed 548/548, Swift self-test passed, no-prompt live verifier passed 12/12, and Jarvis 0.1.351 build 351 launched from bundled app resources.",
+    "Current verification: Python safety suite passed 551/551, Swift self-test passed, no-prompt live verifier passed 12/12, and Jarvis 0.1.352 build 352 launched from bundled app resources.",
     "Voice-loop QA now sends `suppress_audio_actions: true`, and server/tool tests prove this suppresses LocalOS music side effects for automation while normal user play commands remain executable.",
     "Focused LocalOS tests now prove stale player snapshots still refuse when Chrome-direct LocalOS control is unavailable, and succeed only when the LocalOS page confirms the direct `playTrackById` command.",
     "Overnight no-permission voice suite passed for Teams assignment planning, Waving Through a Window recovery, Activity Monitor RAM, Codex strong-confirmation, Gemma 3 4B model-test planning, and Chrome-session migration.",

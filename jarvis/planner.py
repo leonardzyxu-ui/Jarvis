@@ -110,10 +110,11 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     {
         "tool": "outlook.visible_summary",
         "description": "Read and summarize local mailbox content. Use only when the user wants Jarvis to inspect email messages.",
-        "entities": ["sender_query", "selection", "email_count", "email_from", "email_to", "unread_only"],
+        "entities": ["sender_query", "selection", "date_range", "email_count", "email_from", "email_to", "unread_only"],
         "entity_details": {
             "sender_query": "Optional sender or subject text to filter by.",
             "selection": "Use latest, unread_first, index:N, or range:A-B. index:2 means the second newest inbox message.",
+            "date_range": "Optional bounded time window such as past_month or past_30_days.",
             "email_count": "Optional number of messages requested.",
             "email_from": "Optional 1-based start index in newest-first inbox order.",
             "email_to": "Optional 1-based end index in newest-first inbox order.",
@@ -1640,12 +1641,15 @@ class Planner:
             result = outlook_read_only_check(
                 sender_query=email_request.get("resolved_sender_query") or sender_query,
                 selection=selection,
+                date_range=email_request.get("date_range"),
                 original_prompt=text,
             )
             if isinstance(result, dict):
                 result.setdefault("sender_query", sender_query)
                 result["resolved_sender_query"] = email_request.get("resolved_sender_query")
                 result["contact_alias_lookup"] = email_request.get("contact_alias_lookup")
+                result["date_range"] = email_request.get("date_range")
+                result["date_range_source"] = email_request.get("date_range_source")
             summary = "Checked read-only email summary." if result.get("status") == "checked" else "Tried read-only email summary."
             return self._result(text, "outlook.visible_summary", summary, assessment, result, True)
         if selected_tool == "screenshot.capability":
@@ -2987,6 +2991,9 @@ def email_request_metadata(
     prompt_selection = _extract_email_selection_constraint(text)
     selection = entity_selection or structured_selection or prompt_selection
     sender_query = _clean_optional_entity(safe_entities.get("sender_query")) or _extract_email_sender_constraint(text)
+    entity_date_range = _clean_optional_entity(safe_entities.get("date_range"))
+    prompt_date_range = _extract_email_date_range_constraint(text)
+    date_range = _normalize_email_date_range(entity_date_range or prompt_date_range)
     resolved_sender_query = sender_query
     contact_alias_lookup: dict[str, Any] | None = None
     if sender_query:
@@ -3025,6 +3032,14 @@ def email_request_metadata(
         "resolved_sender_query": resolved_sender_query,
         "contact_alias_lookup": contact_alias_lookup,
         "selection": selection,
+        "date_range": date_range,
+        "date_range_source": (
+            "model_entities"
+            if entity_date_range
+            else "original_prompt"
+            if prompt_date_range
+            else None
+        ),
         "selection_source": (
             "model_entities"
             if entity_selection or structured_selection
@@ -3049,6 +3064,8 @@ def email_request_preview_plan(text: str, entities: dict[str, Any] | None = None
             "resolved_sender_query": metadata["resolved_sender_query"],
             "contact_alias_lookup": metadata["contact_alias_lookup"],
             "selection": metadata["selection"],
+            "date_range": metadata["date_range"],
+            "date_range_source": metadata["date_range_source"],
             "selection_source": metadata["selection_source"],
             "selection_rule": metadata["selection_rule"],
             "spoken_status": metadata["spoken_status"],
@@ -3126,6 +3143,32 @@ def _extract_email_selection_constraint(text: str) -> str | None:
     if re.search(r"\bunread\b", lower):
         return "unread_first"
     return None
+
+
+def _extract_email_date_range_constraint(text: str) -> str | None:
+    lower = re.sub(r"\s+", " ", str(text or "").lower())
+    if re.search(r"\b(?:past|last)\s+(?:month|30\s+days)\b", lower) or "in the past month" in lower:
+        return "past_month"
+    if re.search(r"\b(?:past|last)\s+(?:week|7\s+days)\b", lower):
+        return "past_week"
+    return None
+
+
+def _normalize_email_date_range(value: str | None) -> str | None:
+    lowered = re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
+    aliases = {
+        "past_month": "past_month",
+        "last_month": "past_month",
+        "past_30_days": "past_month",
+        "last_30_days": "past_month",
+        "30_days": "past_month",
+        "past_week": "past_week",
+        "last_week": "past_week",
+        "past_7_days": "past_week",
+        "last_7_days": "past_week",
+        "7_days": "past_week",
+    }
+    return aliases.get(lowered)
 
 
 def _extract_email_ordinal(lower: str) -> int | None:
