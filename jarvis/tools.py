@@ -173,6 +173,8 @@ LOCALOS_MUSIC_DEFAULT_LIMIT = 10
 LOCALOS_MUSIC_CONTROL_TTL_SECONDS = 90
 LOCALOS_MUSIC_BRIDGE_STALE_SECONDS = 15
 LOCALOS_MUSIC_CHROME_DIRECT_CONFIRM_SECONDS = 2.5
+LOCALOS_MUSIC_CHROME_DIRECT_SCRIPT_TIMEOUT_SECONDS = 4.0
+LOCALOS_MUSIC_CHROME_DIRECT_NEW_TAB_DELAY_SECONDS = 1.2
 BROWSER_FIELD_DELIMITER = "\n---JARVIS_BROWSER_FIELD---\n"
 BROWSER_PAGE_TEXT_LIMIT = 6000
 CHROME_USER_DATA_DIR = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
@@ -3511,18 +3513,24 @@ tell application "Google Chrome"
     if not foundLocalOSMusic then
         set newTab to make new tab at end of tabs of front window with properties {{URL:targetURL}}
         set active tab index of front window to (count of tabs of front window)
-        delay 2.0
+        delay {LOCALOS_MUSIC_CHROME_DIRECT_NEW_TAB_DELAY_SECONDS:.1f}
     end if
     set theTab to active tab of front window
     set jsResult to execute javascript "{_escape_applescript_string(js_payload)}" in theTab
     return "checked" & d & (title of theTab) & d & (URL of theTab) & d & jsResult
 end tell
 '''
-    completed = _run_osascript(script, timeout=7.0, stdout_tail_chars=5000, stderr_tail_chars=1000)
+    completed = _run_osascript(
+        script,
+        timeout=LOCALOS_MUSIC_CHROME_DIRECT_SCRIPT_TIMEOUT_SECONDS,
+        stdout_tail_chars=5000,
+        stderr_tail_chars=1000,
+    )
     base = {
         "control_lane": "chrome_direct_localos_page",
         "command_id": command_id,
         "player_url": player_url,
+        "script_timeout_seconds": LOCALOS_MUSIC_CHROME_DIRECT_SCRIPT_TIMEOUT_SECONDS,
         "osascript": {
             "ok": bool(completed.get("ok")),
             "returncode": completed.get("returncode"),

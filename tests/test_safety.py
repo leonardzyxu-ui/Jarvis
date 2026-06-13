@@ -1739,10 +1739,13 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["control_lane"], "chrome_direct_localos_page")
         self.assertEqual(result["page_title"], "Music Player v12")
         script = script_mock.call_args.args[0]
+        self.assertLessEqual(script_mock.call_args.kwargs["timeout"], 4.0)
         self.assertIn("LocalOSMusicPlayer", script)
         self.assertIn("playTrackById", script)
         self.assertIn("jarvis-chrome-direct", script)
+        self.assertIn("delay 1.2", script)
         self.assertIn("chrome-direct-", result["command_id"])
+        self.assertLessEqual(result["script_timeout_seconds"], 4.0)
 
     def test_localos_music_play_refuses_unknown_bridge_without_false_queue(self):
         with tempfile.TemporaryDirectory() as tmpdir:
