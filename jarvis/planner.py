@@ -529,7 +529,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     },
     {
         "tool": "contacts.infer",
-        "description": "Try to infer a contact alias from recent local Mail sender metadata without reading email bodies. Use when Leo asks who a sender alias probably is.",
+        "description": "Try to infer a contact alias from recent local Mail sender metadata without reading email bodies. Use when Leo asks who a sender alias probably is. Default scan_limit is 50 so live turns stay responsive.",
         "entities": ["alias", "scan_limit"],
     },
     {
@@ -972,6 +972,16 @@ class Planner:
                 model_test_plan(model_test_name, prompt=text),
                 True,
             )
+        contact_infer_alias = _extract_contact_infer_alias(text)
+        if contact_infer_alias is not None:
+            return self._result(
+                text,
+                "contacts.infer",
+                "Checked local contact inference.",
+                assessment,
+                contact_data_infer_from_email(contact_infer_alias, scan_limit=50),
+                True,
+            )
         return self._first_model_result(text, assessment, history=history)
 
     def _first_model_result(
@@ -1268,6 +1278,15 @@ class Planner:
                 assessment,
                 True,
                 plan={"model_name": model_test_name, "deterministic_preview": True},
+            )
+        contact_infer_alias = _extract_contact_infer_alias(text)
+        if contact_infer_alias is not None:
+            return self._preview_result(
+                text,
+                "contacts.infer",
+                assessment,
+                True,
+                plan={"alias": contact_infer_alias, "scan_limit": 50, "deterministic_preview": True},
             )
         if use_model_router:
             intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
@@ -1885,7 +1904,7 @@ class Planner:
                 "contacts.infer",
                 "Checked local contact inference.",
                 assessment,
-                contact_data_infer_from_email(alias or "", scan_limit=scan_limit or 250),
+                contact_data_infer_from_email(alias or "", scan_limit=scan_limit or 50),
                 True,
             )
         if selected_tool in {"ui.automation", "screen.ocr"}:
@@ -2786,6 +2805,22 @@ def _extract_contact_alias(text: str) -> str | None:
             alias = re.sub(r"\s+", " ", match.group(1)).strip(" .?!")
             if alias:
                 return alias[:120]
+    return None
+
+
+def _extract_contact_infer_alias(text: str) -> str | None:
+    stripped = re.sub(r"\s+", " ", str(text or "")).strip(" .?!")
+    patterns = (
+        r"(?i)\b(?:who is|who's|infer|identify|find)\s+(.+?)\s+from\s+(?:email|mail|contacts?)\b",
+        r"(?i)\b(?:look up|lookup)\s+(.+?)\s+in\s+(?:email|mail|contacts?)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, stripped)
+        if not match:
+            continue
+        alias = re.sub(r"\s+", " ", match.group(1)).strip(" .?!\"'")
+        if alias:
+            return alias[:120]
     return None
 
 

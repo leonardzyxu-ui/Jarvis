@@ -4352,6 +4352,28 @@ class PlannerTests(unittest.TestCase):
         remember_mock.assert_called_once_with("Ms Sharpay", "Ms Darbus")
         infer_mock.assert_called_once_with("Ms Sharpay", scan_limit=20)
 
+    def test_contact_inference_defaults_to_bounded_recent_sender_scan(self):
+        with patch("jarvis.planner.contact_data_infer_from_email", return_value={"tool": "contacts.infer", "status": "needs_confirmation", "executed": True, "reply": "Needs confirmation."}) as infer_mock:
+            result = Planner().handle_selected_tool("infer Ms Sharpay from email", "contacts.infer", {})
+
+        self.assertEqual(result.tool, "contacts.infer")
+        infer_mock.assert_called_once_with("Ms Sharpay", scan_limit=50)
+
+    def test_contact_inference_from_email_routes_before_fast_chat(self):
+        fake = {"tool": "contacts.infer", "status": "needs_confirmation", "executed": True, "reply": "Needs confirmation."}
+        with patch("jarvis.planner.contact_data_infer_from_email", return_value=fake) as infer_mock, \
+             patch("jarvis.planner.run_fast_local_chat") as fast_mock:
+            preview = Planner().preview("who is Ms Sharpay from email")
+            result = Planner().handle("who is Ms Sharpay from email")
+
+        self.assertEqual(preview.tool, "contacts.infer")
+        self.assertEqual(preview.result["plan"]["alias"], "Ms Sharpay")
+        self.assertEqual(preview.result["plan"]["scan_limit"], 50)
+        self.assertTrue(preview.result["plan"]["deterministic_preview"])
+        self.assertEqual(result.tool, "contacts.infer")
+        infer_mock.assert_called_once_with("Ms Sharpay", scan_limit=50)
+        fast_mock.assert_not_called()
+
     def test_device_status_reads_local_metadata_without_private_content(self):
         storage = {
             "status": "completed",
@@ -10866,6 +10888,28 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(events[-1]["data"]["tool"], "models.test_plan")
         self.assertEqual(events[-1]["data"]["result"]["model"], "Gemma 3 4B")
         self.assertIn("Tailscale is stopped", events[-1]["data"]["result"]["reply"])
+        stream_mock.assert_not_called()
+
+    def test_stream_command_routes_contact_inference_before_fast_chat(self):
+        fake = {
+            "tool": "contacts.infer",
+            "status": "needs_confirmation",
+            "executed": True,
+            "reply": "Needs confirmation.",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = JarvisServer()
+            server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
+            with patch("jarvis.planner.contact_data_infer_from_email", return_value=fake) as infer_mock, \
+                 patch("jarvis.server.stream_fast_local_chat_events") as stream_mock:
+                events = list(server.stream_command("who is Ms Sharpay from email", suppress_speech=True))
+
+        self.assertEqual([event["event"] for event in events], ["status", "final"])
+        self.assertEqual(events[0]["data"]["tool"], "contacts.infer")
+        self.assertEqual(events[0]["data"]["text"], "Looking for that contact locally now.")
+        self.assertEqual(events[-1]["data"]["tool"], "contacts.infer")
+        self.assertEqual(events[-1]["data"]["result"]["reply"], "Needs confirmation.")
+        infer_mock.assert_called_once_with("Ms Sharpay", scan_limit=50)
         stream_mock.assert_not_called()
 
     def test_server_scopes_suppressed_audio_actions_to_one_command(self):

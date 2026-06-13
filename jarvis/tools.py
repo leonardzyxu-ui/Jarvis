@@ -9076,7 +9076,7 @@ def contact_data_remember(alias: str, display_name: str, *, source: str = "leo")
     }
 
 
-def contact_data_infer_from_email(alias: str, *, scan_limit: int = 250) -> dict[str, Any]:
+def contact_data_infer_from_email(alias: str, *, scan_limit: int = 50) -> dict[str, Any]:
     """Suggest possible real sender names for an alias from recent local Mail metadata only."""
     clean_alias = _clean_contact_alias(alias)
     osascript = _find_executable("osascript")

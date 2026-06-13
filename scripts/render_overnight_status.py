@@ -21,6 +21,8 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.357 routes explicit contact-inference prompts such as `who is Ms. Sharpay from email` directly to the bounded local sender-metadata tool, avoiding a slow model-router detour.",
+    "Jarvis 0.1.356 keeps contact-alias inference responsive: unknown names such as Ms. Sharpay now default to a bounded 50-message sender-metadata scan instead of a slow 250-message scan.",
     "Jarvis 0.1.355 makes LocalOS music alias matches honest: if `Waving Through a Window` maps to the broader `Dear Evan Hansen | 2017 Tony Awards` MP3, Jarvis now says it found the closest Local OS file instead of implying an exact song title exists.",
     "Jarvis 0.1.354 fixes a streaming-only voice bug: lowercase STT text like `test the gemma 3 4b model for me` now routes to `models.test_plan` before fast chat can answer casually.",
     "Jarvis 0.1.353 makes MacBook Air offload diagnostics fast and honest: before waiting on SSH, it checks the local Tailscale transport and reports `Tailscale is stopped` without changing network settings.",
@@ -117,7 +119,8 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Current verification: Python safety suite passed 554/554 after the Tailnet/offload, streaming model-test, and LocalOS alias-wording fixes; Swift and live-app verification are rerun after each bundle rebuild.",
+    "Current verification: Python safety suite passed 557/557 after the Tailnet/offload, streaming model-test, LocalOS alias-wording, and contact-inference latency fixes; Swift and live-app verification are rerun after each bundle rebuild.",
+    "Focused contact inference timing on this Mac showed preview is instant and 50 recent Mail sender records completed in about 2.7s, while larger scans are now explicit instead of default.",
     "Focused LocalOS check now reports `closest Local OS file` for the Waving Through a Window alias and still keeps audio actions suppressed in automation.",
     "Focused streaming regression now proves `test the gemma 3 4b model for me` bypasses fast chat, emits `Planning the model test now`, and returns the safe MacBook Air/local-fallback plan.",
     "Live quiet voice-loop QA passed after the fix for model offload, Chrome-login migration, Teams assignment planning, and suppressed `Play Waving Through a Window` playback.",
