@@ -463,6 +463,19 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(result["apple_speech"]["status"], "apple_speech_skipped_no_permission_prompts")
         local_stt.assert_called_once()
 
+    def test_voice_loop_qa_allocates_unique_parallel_report_dirs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch("scripts.voice_loop_qa.time.strftime", return_value="20260614-054439"):
+                first = voice_loop_qa.allocate_run_dir(root)
+                second = voice_loop_qa.allocate_run_dir(root)
+                third = voice_loop_qa.allocate_run_dir(root)
+
+        self.assertEqual(first.name, "20260614-054439")
+        self.assertEqual(second.name, "20260614-054439-02")
+        self.assertEqual(third.name, "20260614-054439-03")
+        self.assertNotEqual(first, second)
+
     def test_voice_loop_qa_detects_internal_speech_leaks(self):
         safe = voice_loop_qa.detect_internal_speech_leaks("Checking your email now.")
         public_domain = voice_loop_qa.detect_internal_speech_leaks("Opening teams.microsoft.com in Chrome.")
@@ -5944,7 +5957,10 @@ Pages occupied by compressor:             10.
         self.assertLess(phase_ids.index("authenticated_chrome_lane"), phase_ids.index("open_or_focus_app"))
         self.assertIn("browser.bookmark_open", {phase["tool"] for phase in result["phases"]})
         self.assertIn("browser.session_strategy", {phase["tool"] for phase in result["phases"]})
-        self.assertIn("Chrome/Teams bookmark lane", result["reply"])
+        self.assertIn("signed-in Chrome", result["reply"])
+        self.assertIn("ask you the questions", result["reply"])
+        self.assertNotIn("copy Chrome cookies", result["reply"])
+        self.assertIn("No Teams page was opened", result["user_facing_safety_summary"])
 
     def test_teams_assignment_selected_tool_keeps_original_prompt_when_goal_entity_is_too_short(self):
         prompt = "Look in Teams for my newest Music assignment and ask me questions."

@@ -194,9 +194,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    run_dir = Path(args.output_dir).resolve() / stamp
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = allocate_run_dir(Path(args.output_dir).resolve())
 
     if args.speech_audit_only:
         report = run_speech_audit(
@@ -254,6 +252,22 @@ def main() -> int:
         print(f"Reply transcript: {result.get('reply_transcript')!r}")
         print(f"Similarity: {result.get('reply_similarity')}")
     return 0 if result.get("status") == "passed" else 1
+
+
+def allocate_run_dir(output_dir: Path) -> Path:
+    """Create a unique run directory even when multiple probes start together."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for suffix in ["", *[f"-{index:02d}" for index in range(2, 100)]]:
+        candidate = output_dir / f"{stamp}{suffix}"
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            continue
+    fallback = output_dir / f"{stamp}-{os.getpid()}-{time.monotonic_ns()}"
+    fallback.mkdir()
+    return fallback
 
 
 def run_voice_loop(

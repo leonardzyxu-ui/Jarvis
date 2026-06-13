@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.359 fixes closed-loop voice QA report collisions: simultaneous spoken-command probes now write unique run folders instead of overwriting each other's synthesized command audio.",
     "Jarvis 0.1.358 makes the Chrome-authenticated browsing boundary explicit: existing Chrome logins are not migrated into WebKit; signed-in sites use a visible Chrome handoff while Jarvis keeps its browser/status panel open.",
     "Jarvis 0.1.357 routes explicit contact-inference prompts such as `who is Ms. Sharpay from email` directly to the bounded local sender-metadata tool, avoiding a slow model-router detour.",
     "Jarvis 0.1.356 keeps contact-alias inference responsive: unknown names such as Ms. Sharpay now default to a bounded 50-message sender-metadata scan instead of a slow 250-message scan.",

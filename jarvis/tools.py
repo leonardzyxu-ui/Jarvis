@@ -7332,10 +7332,10 @@ def teams_assignment_workflow_plan(goal: str) -> dict[str, Any]:
     phases = ordered
 
     clean_goal = str(base.get("goal") or goal or "").strip()
-    reply_goal = (clean_goal or "the Teams assignment").rstrip(" .?!") or "the Teams assignment"
+    assignment_label = "the newest Music assignment" if "music" in clean_goal.casefold() else "the assignment"
     reply = (
-        f"Teams assignment plan prepared for {reply_goal}. "
-        "It will prefer the Chrome/Teams bookmark lane before the Teams app, and it did not open Teams, copy Chrome cookies, read the screen, click, type, download files, call Codex, submit work, or change schoolwork."
+        "I can start that through your Teams bookmark in signed-in Chrome. "
+        f"Once browser reading is active, I will inspect {assignment_label} and ask you the questions I need before doing any work."
     )
     return {
         **base,
@@ -7355,6 +7355,7 @@ def teams_assignment_workflow_plan(goal: str) -> dict[str, Any]:
         "downloaded_files": False,
         "submitted_work": False,
         "changed_schoolwork": False,
+        "user_facing_safety_summary": "Plan only. No Teams page was opened, no browser session data was copied, and no schoolwork was changed.",
         "requires_confirmation_before_submission": True,
         "read_private_content": False,
         "opened_app": False,
