@@ -737,18 +737,22 @@ final class JarvisShellModel: ObservableObject {
         openURLInChrome(url, statusPrefix: "Opening")
     }
 
-    private func openURLInChrome(_ url: URL, statusPrefix: String) {
+    private func openURLInChrome(_ url: URL, statusPrefix: String, authenticatedLane: Bool = false) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         guard let chromeURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else {
             let opened = NSWorkspace.shared.open(url)
-            browserStatusText = opened ? "Opened in default browser" : "Could not open browser"
+            browserStatusText = opened
+                ? (authenticatedLane ? "Opened in default browser; Chrome login not confirmed" : "Opened in default browser")
+                : "Could not open browser"
             return
         }
         browserStatusText = "\(statusPrefix) in Chrome"
         NSWorkspace.shared.open([url], withApplicationAt: chromeURL, configuration: configuration) { [weak self] _, error in
             Task { @MainActor in
-                self?.browserStatusText = error == nil ? "Opened in Chrome" : "Could not open Chrome"
+                self?.browserStatusText = error == nil
+                    ? (authenticatedLane ? "Opened in signed-in Chrome" : "Opened in Chrome")
+                    : "Could not open Chrome"
             }
         }
     }
@@ -762,7 +766,7 @@ final class JarvisShellModel: ObservableObject {
         let authenticatedLane = Self.isAuthenticatedBrowserURL(url)
         openInAppBrowser(url: url, title: "", authenticatedLane: authenticatedLane)
         if authenticatedLane {
-            openURLInChrome(url, statusPrefix: "Opening signed-in page")
+            openURLInChrome(url, statusPrefix: "Opening signed-in page", authenticatedLane: true)
         }
     }
 
@@ -810,7 +814,7 @@ final class JarvisShellModel: ObservableObject {
         openInAppBrowser(url: url, title: title, authenticatedLane: authenticatedLane)
         if authenticatedLane {
             browserStatusText = "Signed-in page: opening Chrome too"
-            openURLInChrome(url, statusPrefix: "Opening signed-in page")
+            openURLInChrome(url, statusPrefix: "Opening signed-in page", authenticatedLane: true)
         }
         return true
     }

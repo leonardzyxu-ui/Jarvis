@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.344 makes the Chrome-login handoff explicit in the app: authenticated sites still open in Leo's signed-in Chrome, the Jarvis browser panel stays visible for supervision, and the status now says `Opened in signed-in Chrome` instead of implying cookies were migrated.",
     "Jarvis 0.1.343 connects email sender planning to local contact memory: known aliases resolve before mailbox search, and unknown aliases such as Ms. Sharpay surface a safe `contacts.infer` next step without reading email bodies.",
     "Jarvis 0.1.342 refuses to queue LocalOS music playback when the LocalOS Music Player heartbeat is stale, so it no longer claims a song is playing when the player is not connected.",
     "Jarvis 0.1.341 fixes the overnight voice-loop routing gaps: natural `look in Teams...newest Music assignment` prompts now route to the safe Teams plan, Activity Monitor RAM prompts route to memory usage, and dictated `Gemma 3-4 B-model` is repaired to `Gemma 3 4B`.",
@@ -105,7 +106,7 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Current verification: Python safety suite passed 536/536, Swift self-test passed, and Jarvis 0.1.343 build 343 launched from bundled app resources.",
+    "Current verification: Python safety suite passed 536/536, Swift self-test passed, and Jarvis 0.1.344 build 344 launched from bundled app resources.",
     "Live closed-loop voice QA now passes for the safe example prompts: natural Teams Music assignment planning, Activity Monitor RAM, Codex strong-confirmation, Teams bookmark, browser session strategy, and Gemma 3 4B model-test planning.",
     "The Gemma model-test voice loop now survives local STT hearing `Gemma 3-4 B-model`, repairs the visible reply to `Gemma 3 4B`, routes to `models.test_plan`, and matches spoken output with 1.0 similarity.",
     "The Codex Default-chat prompt voice loop now routes to `policy.strong_confirmation` and says `Command requires strong confirmation and was not executed` instead of sending anything or showing chat-status diagnostics.",
@@ -197,7 +198,7 @@ TRY_ITEMS = [
 ]
 
 RISK_ITEMS = [
-    "Jarvis 0.1.343 cannot yet read Calendar from the live app identity; it now fails fast, but Leo may need to grant the current Jarvis/Python app identity Calendar or Full Disk access for actual schedules.",
+    "Jarvis 0.1.344 cannot yet read Calendar from the live app identity; it now fails fast, but Leo may need to grant the current Jarvis/Python app identity Calendar or Full Disk access for actual schedules.",
     "The LocalOS music page likely needs a reload to pick up the new playback-state bridge; Jarvis now reports that honestly as `bridge_not_polling`, but live audible playback was not triggered while Leo was asleep.",
     "MacBook Air remote-worker probing currently reaches the SSH target but does not return the expected worker response, so Jarvis should ask before running model tests locally.",
     "Groq works as Jarvis's fast conversation model, but the scored middle-model comparison showed it should not be trusted for safety-sensitive planning without stronger prompting or a safer model layer.",

@@ -4251,11 +4251,16 @@ Pages occupied by compressor:             10.
     def test_chrome_login_migration_request_routes_to_session_strategy(self):
         result = Planner().handle("can you migrate Chrome login to Jarvis browser?")
         preview = Planner().preview("I am logged in on Chrome; can Jarvis use that without making me login again?")
+        already_logged_in = Planner().handle("Since I am already logged in to many sites on Chrome, can you migrate that to our browser?")
 
         self.assertEqual(result.tool, "browser.session_strategy")
         self.assertTrue(result.executed)
         self.assertEqual(preview.tool, "browser.session_strategy")
+        self.assertEqual(already_logged_in.tool, "browser.session_strategy")
         self.assertIn("signed-in Chrome", result.result["spoken_summary"])
+        self.assertFalse(already_logged_in.result["can_migrate_chrome_logged_in_state"])
+        self.assertFalse(already_logged_in.result["copied_chrome_cookies"])
+        self.assertEqual(already_logged_in.result["recommended_authenticated_lane"], "chrome")
 
     def test_browser_status_reports_live_webkit_without_cookie_migration(self):
         with patch("jarvis.tools.app_status", side_effect=[
@@ -6402,6 +6407,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Signed-in page: opening Chrome too", model_source)
         self.assertIn("Signed-in site: using Chrome session", model_source)
         self.assertIn("Signed-in site: Chrome session available", model_source)
+        self.assertIn("Opened in signed-in Chrome", model_source)
+        self.assertIn("Chrome login not confirmed", model_source)
 
     def test_swift_smoke_tests_cover_current_loop_regressions(self):
         model_source = (
