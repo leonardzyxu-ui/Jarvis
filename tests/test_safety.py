@@ -1377,6 +1377,43 @@ class PlannerTests(unittest.TestCase):
         )
         search_mock.assert_not_called()
 
+    def test_named_music_play_preview_routes_before_fast_chat(self):
+        preview = Planner().preview("play Waving Through a Window")
+
+        self.assertEqual(preview.tool, "localos.music_play")
+        self.assertEqual(preview.result["plan"]["query"], "Waving Through a Window")
+        self.assertTrue(preview.result["plan"]["deterministic_preview"])
+
+    def test_streaming_named_music_play_uses_tool_without_fast_chat(self):
+        fake_result = {
+            "tool": "localos.music_play",
+            "status": "audio_suppressed",
+            "executed": False,
+            "reply": "I found Waving Through A Window. Audio actions are suppressed for this verification run.",
+        }
+        server = JarvisServer(paused=False)
+
+        with patch("jarvis.planner.localos_music_play", return_value=fake_result) as play_mock, \
+             patch("jarvis.server.stream_fast_local_chat_events") as fast_chat_mock:
+            events = list(
+                server.stream_command(
+                    "play Waving Through a Window",
+                    suppress_speech=True,
+                    suppress_audio_actions=True,
+                )
+            )
+
+        final = events[-1]["data"]
+        self.assertEqual(final["tool"], "localos.music_play")
+        self.assertEqual(final["result"]["reply"], fake_result["reply"])
+        play_mock.assert_called_once_with(
+            query="Waving Through a Window",
+            user_request="play Waving Through a Window",
+            from_your_pick=False,
+            limit=None,
+        )
+        fast_chat_mock.assert_not_called()
+
     def test_localos_music_play_queues_control_command(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
@@ -4737,6 +4774,33 @@ Pages occupied by compressor:             10.
         self.assertIn('environment["JARVIS_TTS_RATE"] = ""', source)
         self.assertNotIn('environment["JARVIS_TTS_PROVIDER"] = "piper"', source)
 
+    def test_swift_worker_supervisor_rejects_stale_bundle_workers(self):
+        supervisor_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisWorkerSupervisor.swift"
+        ).read_text(encoding="utf-8")
+        responses_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisClient"
+            / "JarvisResponses.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("workerHealthMatchesCurrentBundle", supervisor_source)
+        self.assertIn("terminateStaleWorker", supervisor_source)
+        self.assertIn("JARVIS_WORKER_BUNDLE_VERSION", supervisor_source)
+        self.assertIn("JARVIS_WORKER_BUNDLE_BUILD", supervisor_source)
+        self.assertIn("JARVIS_WORKER_BUNDLE_ID", supervisor_source)
+        self.assertIn("SIGTERM", supervisor_source)
+        self.assertIn("SIGKILL", supervisor_source)
+        self.assertIn("workerLaunchVersion", responses_source)
+        self.assertIn("workerLaunchMatchesBundle", responses_source)
+
     def test_tts_status_reports_piper_when_configured(self):
         def fake_exists(self):
             return str(self) in {"/tmp/piper", "/tmp/ryan.onnx", "/tmp/ryan.onnx.json", "/tmp/espeak-ng-data", "/usr/bin/afplay"}
@@ -7690,9 +7754,48 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(app["dock_icon_visible_by_default"])
         self.assertFalse(app["read_private_content"])
         self.assertFalse(app["changed_system_state"])
+        self.assertEqual(app["worker_launch_version"], "")
+        self.assertEqual(app["worker_launch_build"], "")
+        self.assertEqual(app["worker_launch_bundle_id"], "")
+        self.assertFalse(app["worker_launch_identity_available"])
+        self.assertFalse(app["worker_launch_matches_bundle"])
         self.assertIn(app["worker_source_kind"], {"project source", "bundled app resources"})
         self.assertIn("Jarvis 0.1.212 build 212 is online", status["reply"])
         self.assertIn("Launch mode: regular Dock app", status["reply"])
+
+    def test_system_status_reports_worker_launch_identity(self):
+        metadata = {
+            "name": "Jarvis",
+            "display_name": "Jarvis",
+            "bundle_id": "local.leo.jarvis",
+            "version": "0.1.349",
+            "build": "349",
+            "lsui_element": False,
+            "launch_mode": "regular Dock app",
+            "dock_icon_visible_by_default": True,
+        }
+
+        with patch("jarvis.tools._current_jarvis_bundle_path", return_value=Path("/Applications/Jarvis.app")), \
+             patch("jarvis.tools._bundle_metadata", return_value=metadata), \
+             patch.dict(
+                 os.environ,
+                 {
+                     "JARVIS_WORKER_BUNDLE_VERSION": "0.1.349",
+                     "JARVIS_WORKER_BUNDLE_BUILD": "349",
+                     "JARVIS_WORKER_BUNDLE_ID": "local.leo.jarvis",
+                     "JARVIS_WORKER_APP_PATH": "/Applications/Jarvis.app",
+                 },
+             ):
+            status = jarvis_tools.system_status()
+
+        app = status["app"]
+        self.assertEqual(app["bundle_id"], "local.leo.jarvis")
+        self.assertEqual(app["worker_launch_version"], "0.1.349")
+        self.assertEqual(app["worker_launch_build"], "349")
+        self.assertEqual(app["worker_launch_bundle_id"], "local.leo.jarvis")
+        self.assertEqual(app["worker_launch_app_path"], "/Applications/Jarvis.app")
+        self.assertTrue(app["worker_launch_identity_available"])
+        self.assertTrue(app["worker_launch_matches_bundle"])
 
     def test_codex_job_summaries_persist_across_worker_restart(self):
         session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"

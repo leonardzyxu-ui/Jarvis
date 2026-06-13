@@ -2590,15 +2590,36 @@ def _jarvis_app_identity() -> dict[str, Any]:
     bundle_path = _current_jarvis_bundle_path()
     metadata = _bundle_metadata(bundle_path)
     worker_source = str(Path(__file__).resolve())
+    worker_launch_version = os.environ.get("JARVIS_WORKER_BUNDLE_VERSION") or ""
+    worker_launch_build = os.environ.get("JARVIS_WORKER_BUNDLE_BUILD") or ""
+    worker_launch_bundle_id = os.environ.get("JARVIS_WORKER_BUNDLE_ID") or ""
+    worker_launch_app_path = os.environ.get("JARVIS_WORKER_APP_PATH") or ""
+    bundle_id = metadata.get("bundle_id") if metadata else None
+    version = metadata.get("version") if metadata else None
+    build = metadata.get("build") if metadata else None
+    launch_identity_available = bool(worker_launch_version and worker_launch_build and worker_launch_bundle_id)
+    launch_matches_bundle = (
+        launch_identity_available
+        and worker_launch_version == (version or "")
+        and worker_launch_build == (build or "")
+        and worker_launch_bundle_id == (bundle_id or "")
+    )
     return {
         "bundle_path": str(bundle_path),
         "bundle_metadata": metadata,
-        "version": metadata.get("version") if metadata else None,
-        "build": metadata.get("build") if metadata else None,
+        "bundle_id": bundle_id,
+        "version": version,
+        "build": build,
         "launch_mode": metadata.get("launch_mode") if metadata else None,
         "dock_icon_visible_by_default": metadata.get("dock_icon_visible_by_default") if metadata else None,
         "worker_source": worker_source,
         "worker_source_kind": _worker_source_kind(worker_source),
+        "worker_launch_version": worker_launch_version,
+        "worker_launch_build": worker_launch_build,
+        "worker_launch_bundle_id": worker_launch_bundle_id,
+        "worker_launch_app_path": worker_launch_app_path,
+        "worker_launch_identity_available": launch_identity_available,
+        "worker_launch_matches_bundle": launch_matches_bundle,
         "read_private_content": False,
         "changed_system_state": False,
     }

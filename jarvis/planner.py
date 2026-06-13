@@ -866,6 +866,49 @@ class Planner:
             return self._result(text, "browser.session_strategy", "Checked browser session strategy.", assessment, browser_session_strategy(text), True)
         if _looks_like_builtin_browser_plan_request(lower):
             return self._result(text, "browser.built_in_plan", "Prepared built-in browser plan.", assessment, browser_built_in_plan(text), True)
+        if _looks_like_your_pick_choice(text):
+            if _looks_like_music_play_request(text):
+                play_result = localos_music_play(user_request=text, from_your_pick=True, limit=None)
+                return self._result(
+                    text,
+                    "localos.music_play",
+                    (
+                        "Queued Local OS Music playback from Your Pick."
+                        if play_result.get("status") == "queued"
+                        else "Tried Local OS Music playback from Your Pick."
+                    ),
+                    assessment,
+                    play_result,
+                    True,
+                )
+            return self._result(
+                text,
+                "localos.music_choose_from_your_pick",
+                "Chose from Local OS Music Your Pick candidates.",
+                assessment,
+                localos_music_choose_from_your_pick(text, limit=None),
+                True,
+            )
+        music_query = _extract_music_search_query(text)
+        if music_query is not None:
+            if _looks_like_music_play_request(text):
+                play_result = localos_music_play(query=music_query, user_request=text, from_your_pick=False, limit=None)
+                return self._result(
+                    text,
+                    "localos.music_play",
+                    "Queued Local OS Music playback." if play_result.get("status") == "queued" else "Tried Local OS Music playback.",
+                    assessment,
+                    play_result,
+                    True,
+                )
+            return self._result(
+                text,
+                "localos.music_search",
+                "Searched Local OS Music library.",
+                assessment,
+                localos_music_search(query=music_query, limit=None),
+                True,
+            )
         quick_result = quick_local_control(text)
         if quick_result.get("matched"):
             summary = "Handled quick local command." if quick_result.get("status") == "completed" else "Tried quick local command."
@@ -1135,6 +1178,35 @@ class Planner:
             return self._preview_result(text, "browser.session_strategy", assessment, True, plan={"goal": text})
         if _looks_like_builtin_browser_plan_request(lower):
             return self._preview_result(text, "browser.built_in_plan", assessment, True, plan={"goal": text})
+        if _looks_like_your_pick_choice(text):
+            selected_tool = "localos.music_play" if _looks_like_music_play_request(text) else "localos.music_choose_from_your_pick"
+            return self._preview_result(
+                text,
+                selected_tool,
+                assessment,
+                True,
+                plan={
+                    "query": None,
+                    "from_your_pick": selected_tool == "localos.music_play",
+                    "limit": None,
+                    "deterministic_preview": True,
+                },
+            )
+        music_query = _extract_music_search_query(text)
+        if music_query is not None:
+            selected_tool = "localos.music_play" if _looks_like_music_play_request(text) else "localos.music_search"
+            return self._preview_result(
+                text,
+                selected_tool,
+                assessment,
+                True,
+                plan={
+                    "query": music_query,
+                    "from_your_pick": False,
+                    "limit": None,
+                    "deterministic_preview": True,
+                },
+            )
         quick_result = quick_local_control(text, execute=False)
         if quick_result.get("matched"):
             return self._preview_result(

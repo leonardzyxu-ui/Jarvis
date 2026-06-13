@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import JarvisClient
 
 @MainActor
@@ -31,13 +32,26 @@ final class JarvisWorkerSupervisor {
 
     private func performEnsureRunning() async -> WorkerStartupStatus {
         supervisorLog("ensureRunning started")
-        if await isHealthy() {
-            supervisorLog("worker already healthy")
-            return .alreadyRunning
+        let environment = ProcessInfo.processInfo.environment
+        let autostartDisabled = ["1", "true", "yes"].contains(environment["JARVIS_DISABLE_WORKER_AUTOSTART"]?.lowercased() ?? "")
+        if let health = await currentHealth() {
+            if workerHealthMatchesCurrentBundle(health) {
+                supervisorLog("worker already healthy")
+                return .alreadyRunning
+            }
+            let reason = staleWorkerReason(health)
+            supervisorLog("healthy worker rejected as stale: \(reason)")
+            if autostartDisabled {
+                return .failed("Worker is online but stale: \(reason)")
+            }
+            guard isLocalhost(client.baseURL) else {
+                supervisorLog("stale worker found on unsupported url \(client.baseURL.absoluteString)")
+                return .unsupportedURL(client.baseURL.absoluteString)
+            }
+            await terminateStaleWorker(health: health, reason: reason)
         }
 
-        let environment = ProcessInfo.processInfo.environment
-        if ["1", "true", "yes"].contains(environment["JARVIS_DISABLE_WORKER_AUTOSTART"]?.lowercased() ?? "") {
+        if autostartDisabled {
             supervisorLog("autostart disabled by environment")
             return .disabled
         }
@@ -119,11 +133,105 @@ final class JarvisWorkerSupervisor {
     }
 
     private func isHealthy() async -> Bool {
-        do {
-            return try await client.health().ok
-        } catch {
+        guard let health = await currentHealth() else {
             return false
         }
+        return workerHealthMatchesCurrentBundle(health)
+    }
+
+    private func currentHealth() async -> HealthResponse? {
+        do {
+            let health = try await client.health()
+            return health.ok ? health : nil
+        } catch {
+            return nil
+        }
+    }
+
+    private func workerHealthMatchesCurrentBundle(_ health: HealthResponse) -> Bool {
+        guard health.ok else {
+            return false
+        }
+        guard let expected = currentBundleLaunchIdentity() else {
+            return true
+        }
+        guard let app = health.status.app else {
+            return false
+        }
+        return app.workerLaunchVersion == expected.version
+            && app.workerLaunchBuild == expected.build
+            && app.workerLaunchBundleId == expected.bundleID
+    }
+
+    private func staleWorkerReason(_ health: HealthResponse) -> String {
+        guard let expected = currentBundleLaunchIdentity() else {
+            return "current app has no bundle launch identity"
+        }
+        guard let app = health.status.app else {
+            return "worker did not report app identity; expected \(expected.version) build \(expected.build)"
+        }
+        let actualVersion = cleanIdentityPart(app.workerLaunchVersion, fallback: "missing version")
+        let actualBuild = cleanIdentityPart(app.workerLaunchBuild, fallback: "missing build")
+        let actualBundleID = cleanIdentityPart(app.workerLaunchBundleId, fallback: "missing bundle id")
+        return "expected \(expected.bundleID) \(expected.version) build \(expected.build), found \(actualBundleID) \(actualVersion) build \(actualBuild)"
+    }
+
+    private func terminateStaleWorker(health: HealthResponse, reason: String) async {
+        if let process, process.isRunning {
+            process.terminate()
+            self.process = nil
+        }
+        guard let pid = health.status.runtime?.pid, pid > 0 else {
+            supervisorLog("stale worker had no pid: \(reason)")
+            return
+        }
+        guard pid != ProcessInfo.processInfo.processIdentifier else {
+            supervisorLog("refusing to terminate current app pid \(pid)")
+            return
+        }
+
+        supervisorLog("terminating stale worker pid \(pid): \(reason)")
+        _ = Darwin.kill(pid_t(pid), SIGTERM)
+        for _ in 0..<20 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard let nextHealth = await currentHealth(),
+                  nextHealth.status.runtime?.pid == pid else {
+                return
+            }
+        }
+        supervisorLog("stale worker pid \(pid) survived SIGTERM; sending SIGKILL")
+        _ = Darwin.kill(pid_t(pid), SIGKILL)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+    }
+
+    private func currentBundleLaunchIdentity() -> WorkerLaunchIdentity? {
+        let version = cleanIdentityPart(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+        let build = cleanIdentityPart(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
+        let bundleID = cleanIdentityPart(Bundle.main.bundleIdentifier)
+        guard !version.isEmpty, !build.isEmpty, !bundleID.isEmpty else {
+            return nil
+        }
+        return WorkerLaunchIdentity(
+            bundleID: bundleID,
+            version: version,
+            build: build,
+            appPath: Bundle.main.bundleURL.standardizedFileURL.path
+        )
+    }
+
+    private func cleanIdentityPart(_ value: String?, fallback: String = "") -> String {
+        let cleaned = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return cleaned.isEmpty ? fallback : cleaned
+    }
+
+    private func applyLaunchIdentity(to environment: inout [String: String]) {
+        guard let identity = currentBundleLaunchIdentity() else {
+            return
+        }
+        environment["JARVIS_WORKER_BUNDLE_ID"] = identity.bundleID
+        environment["JARVIS_WORKER_BUNDLE_VERSION"] = identity.version
+        environment["JARVIS_WORKER_BUNDLE_BUILD"] = identity.build
+        environment["JARVIS_WORKER_APP_PATH"] = identity.appPath
     }
 
     private func workerEnvironment(base: [String: String], projectRoot: URL) -> [String: String] {
@@ -155,6 +263,7 @@ final class JarvisWorkerSupervisor {
         if let host = client.baseURL.host, !host.isEmpty {
             environment["JARVIS_HOST"] = host
         }
+        applyLaunchIdentity(to: &environment)
         return environment
     }
 
@@ -315,6 +424,13 @@ final class JarvisWorkerSupervisor {
             .appendingPathComponent("Jarvis", isDirectory: true)
             .appendingPathComponent("Logs", isDirectory: true)
     }
+}
+
+private struct WorkerLaunchIdentity: Equatable {
+    let bundleID: String
+    let version: String
+    let build: String
+    let appPath: String
 }
 
 enum WorkerStartupStatus: Equatable, CustomStringConvertible {

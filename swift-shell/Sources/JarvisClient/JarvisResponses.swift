@@ -62,10 +62,25 @@ public struct SystemStatus: Decodable, Sendable {
     public let platform: String
     public let machine: String
     public let runtime: RuntimeStatus?
+    public let app: AppIdentityStatus?
     public let timers: TimerStatus?
     public let codexJobs: CodexJobHealth?
     public let codex: CodexStatus
     public let fastModel: FastModelStatus?
+}
+
+public struct AppIdentityStatus: Decodable, Sendable {
+    public let bundlePath: String?
+    public let bundleId: String?
+    public let version: String?
+    public let build: String?
+    public let workerSourceKind: String?
+    public let workerLaunchVersion: String?
+    public let workerLaunchBuild: String?
+    public let workerLaunchBundleId: String?
+    public let workerLaunchAppPath: String?
+    public let workerLaunchIdentityAvailable: Bool?
+    public let workerLaunchMatchesBundle: Bool?
 }
 
 public struct RuntimeStatus: Decodable, Sendable {
