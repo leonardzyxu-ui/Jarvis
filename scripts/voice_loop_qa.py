@@ -227,8 +227,11 @@ def main() -> int:
 
     report_path = run_dir / "report.json"
     latest_path = Path(args.output_dir).resolve() / "latest.json"
+    global_latest_path = REPORT_DIR / "latest.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     latest_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    if latest_path != global_latest_path:
+        global_latest_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
     result = report.get("result", {})
     print(f"Report: {report_path}")
@@ -610,6 +613,8 @@ def detect_internal_speech_leaks(text: str, *, source: str = "speech") -> list[d
     for leak_id, label, pattern in INTERNAL_SPEECH_LEAK_PATTERNS:
         match = re.search(pattern, raw_text, flags=re.IGNORECASE)
         if match:
+            if leak_id == "internal_tool_id" and _looks_like_public_domain_match(raw_text, match):
+                continue
             leaks.append(
                 {
                     "id": leak_id,
@@ -630,6 +635,16 @@ def detect_internal_speech_leaks(text: str, *, source: str = "speech") -> list[d
                 }
             )
     return leaks
+
+
+def _looks_like_public_domain_match(text: str, match: re.Match[str]) -> bool:
+    excerpt = text[match.start(): min(len(text), match.end() + 24)].casefold()
+    return bool(
+        re.match(
+            r"[a-z0-9-]+\.[a-z0-9-]+\.(?:app|cn|co|com|dev|edu|gov|io|net|org|school|uk)\b",
+            excerpt,
+        )
+    )
 
 
 def speech_payloads_from_stream_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:

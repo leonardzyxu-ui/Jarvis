@@ -157,6 +157,17 @@ BROWSER_PAGE_TEXT_LIMIT = 6000
 CHROME_USER_DATA_DIR = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
 CHROME_BOOKMARKS_SNAPSHOT_PATH = RUNTIME_DIR / "integrations" / "chrome_bookmarks.json"
 CHROME_BOOKMARKS_MAX_MATCHES = 25
+CHROME_BOOKMARK_QUERY_STOPWORDS = {
+    "a",
+    "an",
+    "bookmark",
+    "bookmarks",
+    "chrome",
+    "imported",
+    "my",
+    "please",
+    "the",
+}
 AUTHENTICATED_CHROME_DOMAINS = {
     "accounts.google.com",
     "classroom.google.com",
@@ -2995,6 +3006,13 @@ def localos_music_play(
         reply = f"Playing {_localos_music_track_phrase([selected])} in Local OS."
     elif confirmation_status == "failed":
         reply = f"I found {_localos_music_track_phrase([selected])}, but Local OS could not start it."
+    elif confirmation_status == "ignored":
+        reply = f"Local OS ignored the request for {_localos_music_track_phrase([selected])}."
+    elif confirmation_status == "bridge_not_polling":
+        reply = (
+            f"I found {_localos_music_track_phrase([selected])}, but Local OS did not pick up the command. "
+            "Open or refresh the Local OS Music Player, then try again."
+        )
     elif confirmation_status == "accepted":
         reply = f"Local OS accepted {_localos_music_track_phrase([selected])}; waiting for the audio to start."
     elif bridge_version:
@@ -3205,17 +3223,32 @@ def _localos_music_playback_confirmation(
         return {"status": "unconfirmed", "bridge_version": None, "polling_active": None, "error": "bridge_status_missing"}
 
     command_id = _localos_clean_text(command.get("id"), 80)
+    command_created_at = _safe_float(command.get("created_at"))
     selected_id = _localos_clean_text(selected_track.get("id"), 120)
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     last_confirmation: dict[str, Any] = {}
     while True:
         snapshot_result = _read_localos_music_snapshot_for_tool()
         snapshot = snapshot_result.get("snapshot") if isinstance(snapshot_result.get("snapshot"), dict) else {}
-        confirmation = _localos_music_confirmation_from_snapshot(snapshot, command_id=command_id, selected_id=selected_id)
+        confirmation = _localos_music_confirmation_from_snapshot(
+            snapshot,
+            command_id=command_id,
+            selected_id=selected_id,
+            command_created_at=command_created_at,
+        )
         if confirmation.get("status") in {"playing", "accepted", "failed", "ignored"}:
             return confirmation
         last_confirmation = confirmation
         if time.monotonic() >= deadline:
+            if (
+                last_confirmation.get("latest_command_id") != command_id
+                and last_confirmation.get("snapshot_after_command") is False
+            ):
+                return {
+                    **last_confirmation,
+                    "status": "bridge_not_polling",
+                    "error": "localos_music_window_not_polling_or_not_refreshed",
+                }
             return last_confirmation or {"status": "unconfirmed", "bridge_version": bridge_version}
         time.sleep(0.15)
 
@@ -3225,11 +3258,19 @@ def _localos_music_confirmation_from_snapshot(
     *,
     command_id: str,
     selected_id: str,
+    command_created_at: float | None = None,
 ) -> dict[str, Any]:
     if not isinstance(snapshot, dict):
         return {"status": "unconfirmed", "bridge_version": None}
     status = snapshot.get("jarvis_control_status") if isinstance(snapshot.get("jarvis_control_status"), dict) else {}
     bridge_version = _safe_int(snapshot.get("jarvis_control_bridge_version") or status.get("bridge_version"))
+    received_at = _safe_float(snapshot.get("received_at"))
+    snapshot_age_seconds = round(max(0.0, time.time() - received_at), 3) if received_at is not None else None
+    snapshot_after_command = (
+        received_at >= command_created_at - 0.05
+        if received_at is not None and command_created_at is not None
+        else None
+    )
     last_command_id = _localos_clean_text(
         snapshot.get("last_jarvis_command_id") or status.get("last_command_id"),
         80,
@@ -3257,6 +3298,8 @@ def _localos_music_confirmation_from_snapshot(
             "polling_active": bool(snapshot.get("jarvis_control_polling_active") or status.get("polling_active")),
             "latest_command_id": last_command_id,
             "current_track_playing": playing_state,
+            "snapshot_age_seconds": snapshot_age_seconds,
+            "snapshot_after_command": snapshot_after_command,
             "error": last_command_error,
         }
     if last_command_status == "playing" and current_matches and playing_state is not False:
@@ -3277,6 +3320,8 @@ def _localos_music_confirmation_from_snapshot(
         "latest_command_status": last_command_status,
         "current_track_matches": current_matches,
         "current_track_playing": playing_state,
+        "snapshot_age_seconds": snapshot_age_seconds,
+        "snapshot_after_command": snapshot_after_command,
         "error": last_command_error,
     }
 
@@ -9568,7 +9613,9 @@ def _read_chrome_bookmarks_snapshot() -> dict[str, Any] | None:
 
 def _chrome_bookmark_matches(snapshot: dict[str, Any], query: str, limit: int) -> list[dict[str, Any]]:
     bookmarks = snapshot.get("bookmarks") if isinstance(snapshot.get("bookmarks"), list) else []
-    clean_query = re.sub(r"\s+", " ", str(query or "")).strip().casefold()
+    clean_query = _normalize_chrome_bookmark_query(query)
+    if not clean_query:
+        return []
     terms = [term for term in re.split(r"\s+", clean_query) if term]
     scored: list[tuple[float, dict[str, Any]]] = []
     for item in bookmarks:
@@ -9586,6 +9633,13 @@ def _chrome_bookmark_matches(snapshot: dict[str, Any], query: str, limit: int) -
         scored.append((score, _chrome_bookmark_public_item(item)))
     scored.sort(key=lambda pair: (-pair[0], str(pair[1].get("title") or "").casefold()))
     return [item for _, item in scored[:limit]]
+
+
+def _normalize_chrome_bookmark_query(query: Any) -> str:
+    text = re.sub(r"\s+", " ", str(query or "").replace("'", " ")).strip().casefold()
+    text = re.sub(r"\bteam\s+s\b", "teams", text)
+    tokens = [token for token in re.split(r"\s+", text) if token and token not in CHROME_BOOKMARK_QUERY_STOPWORDS]
+    return " ".join(tokens)
 
 
 def _chrome_bookmark_score(query: str, title: str, url: str, domain: str, folder_path: str) -> float:

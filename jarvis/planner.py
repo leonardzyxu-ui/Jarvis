@@ -2596,6 +2596,7 @@ def _extract_chrome_bookmark_open_query(text: str) -> str | None:
     patterns = [
         r"(?i)^.*?\b(?:open|go\s+to|visit|launch)\s+(?:my\s+|the\s+|imported\s+|chrome\s+)?bookmark\s+(.+)$",
         r"(?i)^.*?\b(?:open|go\s+to|visit|launch)\s+(.+?)\s+(?:from|in)\s+(?:my\s+|the\s+|imported\s+|chrome\s+)?bookmarks?$",
+        r"(?i)^.*?\b(?:open|go\s+to|visit|launch)\s+(?:my\s+|the\s+|imported\s+|chrome\s+)?(.+?)\s+bookmarks?$",
     ]
     for pattern in patterns:
         match = re.match(pattern, cleaned)

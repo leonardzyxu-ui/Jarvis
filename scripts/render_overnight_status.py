@@ -21,6 +21,9 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.337 makes dictated Chrome bookmark requests more forgiving: if STT hears `my team's bookmark` as `my team s bookmark`, Jarvis still finds the Teams bookmark instead of saying no match.",
+    "Closed-loop voice QA no longer mistakes real domains such as `teams.microsoft.com` for leaked internal tool names, so spoken-output checks fail for real backend leaks, not normal website addresses.",
+    "LocalOS music playback now reports `Local OS did not pick up the command` when the LocalOS player bridge snapshot is stale, instead of claiming playback worked just because Jarvis queued a command.",
     "Jarvis 0.1.336 adds an authenticated-browser lane: Teams, Outlook, school portals, and similar imported Chrome bookmarks now ask Chrome to reuse Leo's existing login instead of pretending WebKit inherited it.",
     "Browser URL and bookmark plans now expose `preferred_open_lane`, `visible_browser_lane`, `requires_chrome_login`, and `open_chrome_to_reuse_login` so the macOS app can choose the right surface.",
     "The Swift browser panel now keeps the in-app WebKit view available for context while opening Chrome too when a signed-in page requires Leo's Chrome session.",
@@ -94,7 +97,9 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Current verification: Python safety suite passed 524/524, Swift self-test passed, and Jarvis 0.1.336 build 336 launched from bundled app resources.",
+    "Current verification: Python safety suite passed 526/526, Swift self-test passed, and Jarvis 0.1.337 build 337 launched from bundled app resources.",
+    "Live closed-loop voice QA passed for `Hey Jarvis, open my Teams bookmark`: local STT heard `my team's bookmark`, Jarvis routed `open my team s bookmark`, selected `browser.bookmark_open`, and the spoken reply matched the visible reply with 0.995 similarity.",
+    "Focused LocalOS tests now prove stale player snapshots return `bridge_not_polling` and tell Leo to open or refresh the Local OS Music Player instead of making a false audible-playback claim.",
     "Focused browser-lane tests now prove Teams URLs choose `chrome_authenticated`, ordinary URLs choose `jarvis_webkit`, and the Swift shell opens Chrome when `open_chrome_to_reuse_login` is set.",
     "Live suppressed Teams-assignment probe returned `teams.assignment` with `preferred_browser_lane=chrome_authenticated`, `visible_browser_lane=jarvis_webkit_panel`, and `copied_chrome_cookies=false`.",
     "Live suppressed Calendar probe returned in 0.0s with `cache_unavailable`, replacing the previous 12-second timeout behavior.",
@@ -162,6 +167,7 @@ PROOF_ITEMS = [
 
 TRY_ITEMS = [
     "Ask Jarvis to open the Teams bookmark or search imported Chrome bookmarks for Teams; the Jarvis browser panel should appear, and Chrome remains the lane for already-logged-in pages.",
+    "If Jarvis says Local OS did not pick up a music command, open or refresh the Local OS Music Player once; that means Jarvis found the song but the page has not consumed the bridge command yet.",
     "Ask Jarvis about Chrome login migration; it should say it will use Chrome for authenticated sites and should not copy cookies or session stores.",
     "Ask Jarvis to check Calendar; it should answer quickly. If it says the cache is unavailable, the remaining work is macOS permission/app-identity access, not a slow planner hang.",
     "Ask Jarvis to test a model; if the MacBook Air worker is unreachable, it should ask before running the model locally on the 16 GB MacBook Pro.",
@@ -178,8 +184,8 @@ TRY_ITEMS = [
 ]
 
 RISK_ITEMS = [
-    "Jarvis 0.1.336 cannot yet read Calendar from the live app identity; it now fails fast, but Leo may need to grant the current Jarvis/Python app identity Calendar or Full Disk access for actual schedules.",
-    "The LocalOS music page likely needs a reload to pick up the new playback-state bridge; the backend is patched, but live audible playback was not triggered while Leo was asleep.",
+    "Jarvis 0.1.337 cannot yet read Calendar from the live app identity; it now fails fast, but Leo may need to grant the current Jarvis/Python app identity Calendar or Full Disk access for actual schedules.",
+    "The LocalOS music page likely needs a reload to pick up the new playback-state bridge; Jarvis now reports that honestly as `bridge_not_polling`, but live audible playback was not triggered while Leo was asleep.",
     "MacBook Air remote-worker probing currently reaches the SSH target but does not return the expected worker response, so Jarvis should ask before running model tests locally.",
     "Groq returned HTTP 403 during the latest cloud model comparison, so the current reliable cloud lanes are Ollama Cloud GPT-OSS 120B and Gemma4 31B.",
     "GPT-OSS 20B Cloud returned empty visible replies in the latest comparison and should not be treated as a dependable middle model yet.",

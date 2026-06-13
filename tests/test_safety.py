@@ -465,12 +465,14 @@ class VerifySafeScriptTests(unittest.TestCase):
 
     def test_voice_loop_qa_detects_internal_speech_leaks(self):
         safe = voice_loop_qa.detect_internal_speech_leaks("Checking your email now.")
+        public_domain = voice_loop_qa.detect_internal_speech_leaks("Opening teams.microsoft.com in Chrome.")
         leaky = voice_loop_qa.detect_internal_speech_leaks(
             'Yes sir. \\tool({"tool":"outlook.visible_summary","selected_tool":"x"})'
         )
         ids = {item["id"] for item in leaky}
 
         self.assertEqual(safe, [])
+        self.assertEqual(public_domain, [])
         self.assertIn("hidden_tool_call", ids)
         self.assertIn("json_tool_key", ids)
         self.assertIn("selected_tool", ids)
@@ -1506,6 +1508,57 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(confirmation["current_track_matches"])
         self.assertFalse(confirmation["current_track_playing"])
 
+    def test_localos_music_playback_confirmation_reports_stale_bridge(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            old_received_at = time.time() - 60
+            snapshot_path.write_text(json.dumps({
+                "jarvis_control_bridge_version": 2,
+                "jarvis_control_polling_active": True,
+                "received_at": old_received_at,
+                "last_jarvis_command_id": "",
+                "last_jarvis_command_status": "",
+                "current_track": {"id": "track-old", "playing": False},
+            }), encoding="utf-8")
+            command = {"id": "music-new", "created_at": time.time()}
+            selected = {"id": "track-2", "title": "Waving Through A Window", "artist": "Dear Evan Hansen"}
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path):
+                confirmation = jarvis_tools._localos_music_playback_confirmation(command, selected, timeout_seconds=0.0)
+
+        self.assertEqual(confirmation["status"], "bridge_not_polling")
+        self.assertFalse(confirmation["snapshot_after_command"])
+        self.assertEqual(confirmation["error"], "localos_music_window_not_polling_or_not_refreshed")
+
+    def test_localos_music_play_tells_user_when_bridge_did_not_poll(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            control_path = Path(tmpdir) / "localos_music_control.json"
+            payload = {
+                "source": "localos-music-player",
+                "library": [
+                    {
+                        "id": "track-2",
+                        "title": "Waving Through A Window",
+                        "artist": "Dear Evan Hansen",
+                        "relativePath": "localFiles/mp3/Dear Evan Hansen - Waving Through A Window.mp3",
+                    }
+                ],
+            }
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path), \
+                 patch("jarvis.tools._localos_music_playback_confirmation", return_value={
+                     "status": "bridge_not_polling",
+                     "bridge_version": 2,
+                     "polling_active": True,
+                     "error": "localos_music_window_not_polling_or_not_refreshed",
+                 }):
+                store_localos_music_snapshot(payload)
+                result = localos_music_play("Waving Through A Window", user_request="play Waving Through A Window", limit=5)
+
+        self.assertEqual(result["playback_confirmation"], "bridge_not_polling")
+        self.assertIn("Local OS did not pick up the command", result["reply"])
+        self.assertIn("Open or refresh the Local OS Music Player", result["reply"])
+
     def test_localos_music_play_summary_does_not_claim_queue_when_no_track_found(self):
         fake_result = {
             "tool": "localos.music_play",
@@ -2321,6 +2374,7 @@ class PlannerTests(unittest.TestCase):
                 search = chrome_bookmarks_search("music")
                 opened = chrome_bookmark_open_plan("Jarvis")
                 teams = chrome_bookmark_open_plan("Teams")
+                dictated_teams = chrome_bookmark_open_plan("my team s")
 
         self.assertEqual(imported["status"], "imported")
         self.assertEqual(imported["bookmark_count"], 3)
@@ -2337,6 +2391,9 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(teams["preferred_open_lane"], "chrome_authenticated")
         self.assertTrue(teams["open_chrome_to_reuse_login"])
         self.assertFalse(teams["can_migrate_chrome_logged_in_state"])
+        self.assertEqual(dictated_teams["status"], "planned")
+        self.assertEqual(dictated_teams["title"], "Teams")
+        self.assertEqual(dictated_teams["preferred_open_lane"], "chrome_authenticated")
 
     def test_planner_routes_browser_tools_without_hidden_navigation(self):
         with patch("jarvis.planner.browser_read_page", return_value={"tool": "browser.read_page", "status": "read", "executed": True, "reply": "Read."}) as read_mock:
@@ -2349,6 +2406,11 @@ class PlannerTests(unittest.TestCase):
         search_preview = Planner().preview("search the web for Jarvis browser automation")
         self.assertEqual(search_preview.tool, "browser.search_web")
         self.assertFalse(search_preview.executed)
+
+        bookmark_preview = Planner().preview("open my Teams bookmark")
+        self.assertEqual(bookmark_preview.tool, "browser.bookmark_open")
+        self.assertFalse(bookmark_preview.executed)
+        self.assertEqual(bookmark_preview.result["plan"]["query"], "Teams")
 
     def test_tools_more_browser_read_recommendation_previews_without_reading(self):
         fake_plan = {
@@ -6545,6 +6607,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("04-reply-local-stt.json", script_source)
         self.assertIn("reply_similarity", script_source)
         self.assertIn("latest.json", script_source)
+        self.assertIn('global_latest_path = REPORT_DIR / "latest.json"', script_source)
 
     def test_swift_app_has_experimental_wake_listener_contract(self):
         listener_source = (
