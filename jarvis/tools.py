@@ -9187,7 +9187,7 @@ def _write_contact_data(data: dict[str, Any]) -> bool:
 
 def _clean_contact_alias(value: Any) -> str:
     text = _clean_local_field(value)
-    text = re.sub(r"(?i)^(?:ms|mrs|mr|dr|teacher|miss)\.?\s+", "", text).strip()
+    text = re.sub(r"(?i)^(?:ms|mrs|mr|dr|teacher|miss|his)\.?\s+", "", text).strip()
     return text[:120]
 
 

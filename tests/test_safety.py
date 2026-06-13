@@ -4060,6 +4060,23 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(preview.result["plan"]["resolved_sender_query"], "Ms Darbus")
         self.assertEqual(preview.result["plan"]["contact_alias_lookup"]["status"], "found")
 
+    def test_email_sender_alias_handles_stt_his_for_ms(self):
+        fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch("jarvis.tools.CONTACT_DATA_PATH", Path(temp_dir) / "contact_aliases.json"), \
+             patch("jarvis.planner.outlook_read_only_check", return_value=fake_result) as mail_mock:
+            contact_data_remember("Ms Sharpay", "Ms Darbus")
+            result = Planner().handle_selected_tool(
+                "Summarize all the emails from his Sharpay in the past month.",
+                "outlook.visible_summary",
+                {"sender_query": "his Sharpay", "selection": "latest"},
+            )
+
+        self.assertEqual(result.tool, "outlook.visible_summary")
+        self.assertEqual(result.result["contact_alias_lookup"]["status"], "found")
+        self.assertEqual(result.result["contact_alias_lookup"]["display_name"], "Ms Darbus")
+        self.assertEqual(mail_mock.call_args.kwargs["sender_query"], "Ms Darbus")
+
     def test_email_preview_exposes_past_month_date_range_without_reading_mail(self):
         with patch("jarvis.planner.contact_data_lookup", return_value={"status": "not_found", "alias": "Ms Sharpay"}), \
              patch("jarvis.planner.contact_data_infer_from_email") as infer_mock, \
@@ -4710,11 +4727,14 @@ Pages occupied by compressor:             10.
              patch("jarvis.tools.CONTACT_DATA_PATH", Path(temp_dir) / "contact_aliases.json"):
             stored = contact_data_remember("Ms Sharpay", "Ms Darbus")
             found = contact_data_lookup("ms sharpay")
+            stt_found = contact_data_lookup("his Sharpay")
             status = contact_data_status()
 
         self.assertEqual(stored["status"], "stored")
         self.assertEqual(found["status"], "found")
         self.assertEqual(found["display_name"], "Ms Darbus")
+        self.assertEqual(stt_found["status"], "found")
+        self.assertEqual(stt_found["display_name"], "Ms Darbus")
         self.assertEqual(status["alias_count"], 1)
 
     def test_model_test_plan_prefers_remote_worker_for_heavy_models(self):
