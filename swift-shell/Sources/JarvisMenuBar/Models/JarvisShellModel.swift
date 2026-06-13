@@ -733,6 +733,10 @@ final class JarvisShellModel: ObservableObject {
             browserStatusText = "No browser page to open."
             return
         }
+        openURLInChrome(url, statusPrefix: "Opening")
+    }
+
+    private func openURLInChrome(_ url: URL, statusPrefix: String) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         guard let chromeURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else {
@@ -740,7 +744,7 @@ final class JarvisShellModel: ObservableObject {
             browserStatusText = opened ? "Opened in default browser" : "Could not open browser"
             return
         }
-        browserStatusText = "Opening in Chrome"
+        browserStatusText = "\(statusPrefix) in Chrome"
         NSWorkspace.shared.open([url], withApplicationAt: chromeURL, configuration: configuration) { [weak self] _, error in
             Task { @MainActor in
                 self?.browserStatusText = error == nil ? "Opened in Chrome" : "Could not open Chrome"
@@ -786,10 +790,16 @@ final class JarvisShellModel: ObservableObject {
         let selectedBookmarkURL = object["selected_bookmark"]?.objectValue?["url"]?.stringValue
         let selectedBookmarkTitle = object["selected_bookmark"]?.objectValue?["title"]?.stringValue
         let title = object["title"]?.stringValue ?? selectedBookmarkTitle ?? ""
+        let openChromeToReuseLogin = object["open_chrome_to_reuse_login"]?.boolValue ?? false
+        let preferredOpenLane = object["preferred_open_lane"]?.stringValue ?? ""
         guard let url = Self.normalizedBrowserURL(from: directURL ?? selectedBookmarkURL ?? "") else {
             return false
         }
         openInAppBrowser(url: url, title: title)
+        if openChromeToReuseLogin || preferredOpenLane == "chrome_authenticated" {
+            browserStatusText = "Signed-in page: opening Chrome too"
+            openURLInChrome(url, statusPrefix: "Opening signed-in page")
+        }
         return true
     }
 

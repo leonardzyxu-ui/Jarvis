@@ -2300,6 +2300,11 @@ class PlannerTests(unittest.TestCase):
                                         "type": "url",
                                         "name": "Music Class",
                                         "url": "https://school.example/music",
+                                    },
+                                    {
+                                        "type": "url",
+                                        "name": "Teams",
+                                        "url": "https://teams.microsoft.com/v2/",
                                     }
                                 ],
                             },
@@ -2315,16 +2320,23 @@ class PlannerTests(unittest.TestCase):
                 status = chrome_bookmarks_status()
                 search = chrome_bookmarks_search("music")
                 opened = chrome_bookmark_open_plan("Jarvis")
+                teams = chrome_bookmark_open_plan("Teams")
 
         self.assertEqual(imported["status"], "imported")
-        self.assertEqual(imported["bookmark_count"], 2)
-        self.assertEqual(status["bookmark_count"], 2)
+        self.assertEqual(imported["bookmark_count"], 3)
+        self.assertEqual(status["bookmark_count"], 3)
         self.assertEqual(search["match_count"], 1)
         self.assertEqual(search["matches"][0]["title"], "Music Class")
         self.assertEqual(opened["tool"], "browser.bookmark_open")
         self.assertFalse(opened["executed"])
         self.assertTrue(opened["planned_only"])
         self.assertEqual(opened["url"], "https://example.com/jarvis")
+        self.assertEqual(opened["preferred_open_lane"], "jarvis_webkit")
+        self.assertFalse(opened["open_chrome_to_reuse_login"])
+        self.assertEqual(teams["status"], "planned")
+        self.assertEqual(teams["preferred_open_lane"], "chrome_authenticated")
+        self.assertTrue(teams["open_chrome_to_reuse_login"])
+        self.assertFalse(teams["can_migrate_chrome_logged_in_state"])
 
     def test_planner_routes_browser_tools_without_hidden_navigation(self):
         with patch("jarvis.planner.browser_read_page", return_value={"tool": "browser.read_page", "status": "read", "executed": True, "reply": "Read."}) as read_mock:
@@ -4072,6 +4084,8 @@ Pages occupied by compressor:             10.
         self.assertEqual(result["tool"], "browser.session_strategy")
         self.assertFalse(result["copied_chrome_cookies"])
         self.assertFalse(result["used_chrome_passwords"])
+        self.assertFalse(result["can_migrate_chrome_logged_in_state"])
+        self.assertFalse(result["chrome_can_be_embedded_in_jarvis"])
         self.assertEqual(result["recommended_authenticated_lane"], "chrome")
         self.assertIn("should not copy Chrome cookies", result["reply"])
 
@@ -4085,8 +4099,26 @@ Pages occupied by compressor:             10.
         self.assertEqual(result["tool"], "browser.status")
         self.assertEqual(result["built_in_browser"]["status"], "implemented")
         self.assertFalse(result["copied_chrome_cookies"])
+        self.assertFalse(result["can_migrate_chrome_logged_in_state"])
         self.assertEqual(result["recommended_authenticated_lane"], "chrome")
         self.assertIn("WebKit browser panel is live", result["reply"])
+
+    def test_browser_open_url_routes_authenticated_sites_to_chrome_lane(self):
+        result = browser_open_url_plan("https://teams.microsoft.com/v2/")
+
+        self.assertEqual(result["tool"], "browser.open_url")
+        self.assertEqual(result["preferred_open_lane"], "chrome_authenticated")
+        self.assertEqual(result["visible_browser_lane"], "jarvis_webkit")
+        self.assertTrue(result["requires_chrome_login"])
+        self.assertTrue(result["open_chrome_to_reuse_login"])
+        self.assertFalse(result["can_migrate_chrome_logged_in_state"])
+
+    def test_browser_open_url_keeps_ordinary_sites_in_webkit_lane(self):
+        result = browser_open_url_plan("https://example.com/")
+
+        self.assertEqual(result["preferred_open_lane"], "jarvis_webkit")
+        self.assertFalse(result["requires_chrome_login"])
+        self.assertFalse(result["open_chrome_to_reuse_login"])
 
     def test_contact_data_remember_and_lookup_use_local_runtime_file(self):
         with tempfile.TemporaryDirectory() as temp_dir, \
@@ -6154,6 +6186,21 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("let historyPreview = conversationHistoryPayload(currentCommand: command)", model_source)
         self.assertIn('"history_payload_preview": historyPreview', model_source)
         self.assertIn("Working rows, system rows, and the current user command are removed", model_source)
+
+    def test_swift_browser_opens_chrome_for_authenticated_lane(self):
+        model_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Models"
+            / "JarvisShellModel.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("open_chrome_to_reuse_login", model_source)
+        self.assertIn('preferredOpenLane == "chrome_authenticated"', model_source)
+        self.assertIn("openURLInChrome(url, statusPrefix:", model_source)
+        self.assertIn("Signed-in page: opening Chrome too", model_source)
 
     def test_swift_smoke_tests_cover_current_loop_regressions(self):
         model_source = (

@@ -668,7 +668,7 @@ def _stream_status_text(preview: dict[str, Any]) -> str:
         "browser.bookmarks_import": "Importing Chrome bookmarks now.",
         "browser.bookmarks_status": "Checking Chrome bookmarks now.",
         "browser.bookmarks_search": "Searching Chrome bookmarks now.",
-        "browser.bookmark_open": "Opening that bookmark in Jarvis now.",
+        "browser.bookmark_open": "Opening that bookmark now.",
         "calendar.today_schedule": "Checking your calendar now.",
         "contacts.status": "Checking contact data now.",
         "contacts.lookup": "Checking contact data now.",

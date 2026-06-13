@@ -21,6 +21,21 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.336 adds an authenticated-browser lane: Teams, Outlook, school portals, and similar imported Chrome bookmarks now ask Chrome to reuse Leo's existing login instead of pretending WebKit inherited it.",
+    "Browser URL and bookmark plans now expose `preferred_open_lane`, `visible_browser_lane`, `requires_chrome_login`, and `open_chrome_to_reuse_login` so the macOS app can choose the right surface.",
+    "The Swift browser panel now keeps the in-app WebKit view available for context while opening Chrome too when a signed-in page requires Leo's Chrome session.",
+    "Bookmark progress wording now says `Opening that bookmark now` instead of claiming every bookmark opens only inside Jarvis.",
+    "Jarvis 0.1.335 adds an in-app WebKit browser panel that can open planned URLs, searches, and imported Chrome bookmarks while keeping logged-in sites in Chrome.",
+    "Chrome session migration is now explicitly refused: Jarvis uses Chrome for authenticated pages and does not copy Chrome cookies, passwords, local storage, or session stores into WebKit.",
+    "The Teams assignment plan is now bookmark-first: it refreshes/imports Chrome bookmarks, opens the Teams bookmark path, uses Chrome for login state, and only treats the Teams app as a fallback.",
+    "Calendar checks now fail fast when the app identity cannot read the local Calendar cache, avoiding the old 12-second AppleScript hang.",
+    "Calendar has a local SQLite cache reader for environments where the Jarvis app has permission to read `group.com.apple.calendar/Calendar.sqlitedb`.",
+    "GPT-OSS 120B Cloud now gets a larger visible-output budget in the Jarvis Ollama adapter, preventing empty spoken replies after hidden thinking consumes the short fast budget.",
+    "The model comparison script now tests the same Ollama `/api/generate` path Jarvis actually uses and marks empty visible replies as failures.",
+    "Speech diagnostics now include the full intended spoken text, not only a short preview, so echo/barge-in checks stop interrupting Jarvis's own longer answers.",
+    "The bundled app build now deletes stale Python `__pycache__` files, preventing the live app from running old worker bytecode after a rebuild.",
+    "LocalOS music playback confirmation now waits for LocalOS bridge playback state and distinguishes playing, accepted, failed, and unconfirmed instead of pretending queued means audible.",
+    "Jarvis now has read-only prototypes for RAM usage, Calendar, browser/session strategy, model test planning, contact aliases, contact inference, and Jarvis-Codex daily memory status.",
     "A top-right Jarvis summon popout now appears for the Hey Jarvis flow and moves through listening, transcribing, thinking, answering, and speaking states.",
     "The summon popout was refined into a smaller 386x118 glass capsule instead of the oversized grey block, with transparent AppKit host layers and the stray bottom progress line removed.",
     "Experimental native Hey Jarvis listener in the macOS app, using Speech and AVAudioEngine.",
@@ -79,6 +94,15 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
+    "Current verification: Python safety suite passed 524/524, Swift self-test passed, and Jarvis 0.1.336 build 336 launched from bundled app resources.",
+    "Focused browser-lane tests now prove Teams URLs choose `chrome_authenticated`, ordinary URLs choose `jarvis_webkit`, and the Swift shell opens Chrome when `open_chrome_to_reuse_login` is set.",
+    "Live suppressed Teams-assignment probe returned `teams.assignment` with `preferred_browser_lane=chrome_authenticated`, `visible_browser_lane=jarvis_webkit_panel`, and `copied_chrome_cookies=false`.",
+    "Live suppressed Calendar probe returned in 0.0s with `cache_unavailable`, replacing the previous 12-second timeout behavior.",
+    "Cloud-first model comparison report showed GPT-OSS 120B Cloud completed, Gemma4 31B Cloud completed fastest on text, GPT-OSS 20B Cloud remained partial due empty visible replies, and Gemma4 31B did not confirm audio input through Ollama.",
+    "Jarvis's own GPT-OSS 120B Cloud adapter produced the 少先队 email-style spoken summary in 3.9s after the visible-output budget change.",
+    "Voice-loop QA passed for RAM usage, model-test planning, browser session strategy, and Calendar fast-fail behavior with speech suppressed.",
+    "Chrome bookmark snapshot has 23 imported links from 3 profiles, including `teams.microsoft.com`.",
+    "Jarvis checkpoint commit `ad0fccb` records the browser, voice, model, Calendar, Teams-plan, and test updates in the Jarvis repo.",
     "Python safety suite: 464/464 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, muted-latency, local-STT repair, overlapping-turn, crash-monitor, fallback-hardening, quiet-command, summon-popout, hidden-tool-call sanitization, retry-first latency, and voice-QA work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
@@ -137,6 +161,10 @@ PROOF_ITEMS = [
 ]
 
 TRY_ITEMS = [
+    "Ask Jarvis to open the Teams bookmark or search imported Chrome bookmarks for Teams; the Jarvis browser panel should appear, and Chrome remains the lane for already-logged-in pages.",
+    "Ask Jarvis about Chrome login migration; it should say it will use Chrome for authenticated sites and should not copy cookies or session stores.",
+    "Ask Jarvis to check Calendar; it should answer quickly. If it says the cache is unavailable, the remaining work is macOS permission/app-identity access, not a slow planner hang.",
+    "Ask Jarvis to test a model; if the MacBook Air worker is unreachable, it should ask before running the model locally on the 16 GB MacBook Pro.",
     "Open Jarvis from the Dock; it should be a normal app window, not an always-front overlay.",
     "Use the Popout button in the debug panel to preview the new top-right glass summon surface without starting the microphone listener.",
     "Click Perms first and read the permission tiles; if Microphone and Speech Recognition are ready, use Start Hey Jarvis from the menu bar, then say Hey Jarvis followed by a short command.",
@@ -150,6 +178,12 @@ TRY_ITEMS = [
 ]
 
 RISK_ITEMS = [
+    "Jarvis 0.1.336 cannot yet read Calendar from the live app identity; it now fails fast, but Leo may need to grant the current Jarvis/Python app identity Calendar or Full Disk access for actual schedules.",
+    "The LocalOS music page likely needs a reload to pick up the new playback-state bridge; the backend is patched, but live audible playback was not triggered while Leo was asleep.",
+    "MacBook Air remote-worker probing currently reaches the SSH target but does not return the expected worker response, so Jarvis should ask before running model tests locally.",
+    "Groq returned HTTP 403 during the latest cloud model comparison, so the current reliable cloud lanes are Ollama Cloud GPT-OSS 120B and Gemma4 31B.",
+    "GPT-OSS 20B Cloud returned empty visible replies in the latest comparison and should not be treated as a dependable middle model yet.",
+    "Gemma4 31B Cloud did not confirm audio understanding through Ollama; it answered text prompts well, but native audio input remains unproven.",
     "Real microphone pickup, false wakes, and room-noise reliability still need Leo testing.",
     "The summon popout's code-level rectangle and stray-line causes are fixed, but Leo should do the final human-eye check on the real Stage Manager desktop.",
     "Browser loopback noise trials are useful but not a perfect model of a real room.",
@@ -175,6 +209,11 @@ SUPPORTING_FILES = [
     ("runtime/wake_threshold/", "Wake-threshold smoke reports"),
     ("runtime/voice_loop_qa/latest.json", "Latest closed-loop voice QA report"),
     ("runtime/voice_loop_qa/", "Closed-loop voice QA artifacts"),
+    ("runtime/model_comparison/", "Cloud-first middle model comparison reports"),
+    ("runtime/integrations/chrome_bookmarks.json", "Imported Chrome bookmark snapshot"),
+    ("runtime/integrations/localos_music_snapshot.json", "Latest LocalOS music bridge snapshot"),
+    ("runtime/codex_daily_memory.json", "Local Jarvis-to-Codex daily memory"),
+    ("runtime/memory/contact_aliases.json", "Local contact alias memory"),
     ("scripts/repair_local_stt_model.py", "Local faster-whisper model repair helper"),
     ("output/playwright/", "Visual QA screenshots"),
 ]
@@ -542,7 +581,10 @@ def latest_wake_threshold_smoke() -> dict[str, Any]:
 
 def latest_voice_loop_qa() -> dict[str, Any]:
     report_root = PROJECT_ROOT / "runtime" / "voice_loop_qa"
-    reports = sorted(report_root.glob("*/report.json"))
+    reports = sorted(
+        report_root.rglob("report.json"),
+        key=lambda path: path.stat().st_mtime if path.exists() else 0.0,
+    )
     if not reports:
         return {
             "ok": False,

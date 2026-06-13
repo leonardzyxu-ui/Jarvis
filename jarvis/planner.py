@@ -741,7 +741,7 @@ class Planner:
             return self._result(text, "browser.bookmarks_status", "Read Chrome bookmarks status.", assessment, chrome_bookmarks_status(), True)
         bookmark_open_query = _extract_chrome_bookmark_open_query(text)
         if bookmark_open_query is not None:
-            return self._result(text, "browser.bookmark_open", "Prepared imported Chrome bookmark for the Jarvis browser.", assessment, chrome_bookmark_open_plan(bookmark_open_query), False)
+            return self._result(text, "browser.bookmark_open", "Prepared imported Chrome bookmark route.", assessment, chrome_bookmark_open_plan(bookmark_open_query), False)
         bookmark_search_query = _extract_chrome_bookmark_search_query(text)
         if bookmark_search_query is not None:
             return self._result(text, "browser.bookmarks_search", "Searched imported Chrome bookmarks.", assessment, chrome_bookmarks_search(bookmark_search_query), True)
@@ -845,7 +845,7 @@ class Planner:
             return self._result(text, "browser.bookmarks_status", "Read Chrome bookmarks status.", assessment, chrome_bookmarks_status(), True)
         bookmark_open_query = _extract_chrome_bookmark_open_query(text)
         if bookmark_open_query is not None:
-            return self._result(text, "browser.bookmark_open", "Prepared imported Chrome bookmark for the Jarvis browser.", assessment, chrome_bookmark_open_plan(bookmark_open_query), False)
+            return self._result(text, "browser.bookmark_open", "Prepared imported Chrome bookmark route.", assessment, chrome_bookmark_open_plan(bookmark_open_query), False)
         bookmark_search_query = _extract_chrome_bookmark_search_query(text)
         if bookmark_search_query is not None:
             return self._result(text, "browser.bookmarks_search", "Searched imported Chrome bookmarks.", assessment, chrome_bookmarks_search(bookmark_search_query), True)
@@ -1603,7 +1603,7 @@ class Planner:
             limit = _positive_entity_int(entities.get("limit"))
             if not execute:
                 return self._preview_result(text, "browser.bookmark_open", assessment, False, plan={"intent": intent, "query": query, "limit": limit})
-            return self._result(text, "browser.bookmark_open", "Prepared imported Chrome bookmark for the Jarvis browser.", assessment, chrome_bookmark_open_plan(query, limit=limit), False)
+            return self._result(text, "browser.bookmark_open", "Prepared imported Chrome bookmark route.", assessment, chrome_bookmark_open_plan(query, limit=limit), False)
         if selected_tool == "browser.open_url":
             url = _clean_optional_entity(entities.get("url")) or _extract_url(text)
             if not execute:
@@ -3275,7 +3275,7 @@ def _voice_loop_status_text_for_tool(tool: str) -> str:
         "browser.bookmarks_import": "Importing Chrome bookmarks now.",
         "browser.bookmarks_status": "Checking Chrome bookmarks now.",
         "browser.bookmarks_search": "Searching Chrome bookmarks now.",
-        "browser.bookmark_open": "Opening that bookmark in Jarvis now.",
+        "browser.bookmark_open": "Opening that bookmark now.",
         "terminal.read_only": "Checking that locally now.",
         "shell.read_only": "Checking that locally now.",
         "teams.assignment": "Preparing the Teams assignment plan now.",
