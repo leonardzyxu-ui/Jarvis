@@ -196,7 +196,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(result, {"ok": True})
         self.assertEqual(captured_payloads, [{"command": "status", "suppress_speech": True}])
 
-    def test_verify_safe_post_json_can_opt_into_muted_speech_metadata(self):
+    def test_verify_safe_post_json_forces_command_speech_suppression(self):
         captured_payloads = []
 
         class FakeResponse:
@@ -216,12 +216,11 @@ class VerifySafeScriptTests(unittest.TestCase):
         with patch("scripts.verify_safe.urllib.request.urlopen", side_effect=fake_urlopen):
             verify_safe.post_json(
                 "/api/command",
-                {"command": "status"},
+                {"command": "status", "speak": True},
                 base_url="http://127.0.0.1:8765",
-                allow_speech=True,
             )
 
-        self.assertEqual(captured_payloads, [{"command": "status"}])
+        self.assertEqual(captured_payloads, [{"command": "status", "suppress_speech": True}])
 
     def test_no_prompt_verifier_runs_only_safe_live_checks(self):
         calls = []
@@ -802,7 +801,7 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertEqual(detail, "wake audition page exposes clickable threshold corpus and guided controls")
 
-    def test_verify_safe_checks_muted_final_speech_alignment(self):
+    def test_verify_safe_checks_speech_mute_without_live_audio(self):
         posts = []
         reply = (
             "Jarvis 0.1.247 build 247 is online from bundled app resources. "
@@ -821,14 +820,14 @@ class VerifySafeScriptTests(unittest.TestCase):
                     "muted": bool(payload["muted"]),
                     "status": "muted" if payload["muted"] else "unmuted",
                 }
-            if path == "/api/speech/status":
-                return {"executed": False, "speech": {"status": "muted"}}
             if path == "/api/command":
+                self.assertTrue(payload.get("suppress_speech"))
                 return {
                     "tool": "system.status",
                     "result": {"reply": reply},
                     "speech": {
-                        "status": "muted",
+                        "status": "suppressed_by_request",
+                        "spoken": False,
                         "reason": "final",
                         "text_preview": preview,
                     },
@@ -843,8 +842,9 @@ class VerifySafeScriptTests(unittest.TestCase):
              patch("scripts.verify_safe.get_json", side_effect=lambda *_args, **_kwargs: next(get_statuses)):
             detail = verify_safe.check_endpoint_speech_mute("http://127.0.0.1:8765")
 
-        self.assertEqual(detail, "speech mute blocked audio and preserved final reply text")
-        self.assertIn(("/api/command", {"command": "status"}), posts)
+        self.assertEqual(detail, "speech mute state toggled and verifier status stayed silent")
+        self.assertIn(("/api/command", {"command": "status", "suppress_speech": True}), posts)
+        self.assertNotIn("/api/speech/status", [path for path, _payload in posts])
         self.assertEqual(posts[-1], ("/api/speech/mute", {"muted": False}))
 
     def test_verify_safe_restores_original_muted_state(self):
@@ -858,14 +858,14 @@ class VerifySafeScriptTests(unittest.TestCase):
                     "muted": bool(payload["muted"]),
                     "status": "muted" if payload["muted"] else "unmuted",
                 }
-            if path == "/api/speech/status":
-                return {"executed": False, "speech": {"status": "muted"}}
             if path == "/api/command":
+                self.assertTrue(payload.get("suppress_speech"))
                 return {
                     "tool": "system.status",
                     "result": {"reply": "Jarvis status."},
                     "speech": {
-                        "status": "muted",
+                        "status": "suppressed_by_request",
+                        "spoken": False,
                         "reason": "final",
                         "text_preview": "Jarvis status.",
                     },
@@ -876,7 +876,8 @@ class VerifySafeScriptTests(unittest.TestCase):
              patch("scripts.verify_safe.get_json", return_value={"muted": True}):
             detail = verify_safe.check_endpoint_speech_mute("http://127.0.0.1:8765")
 
-        self.assertEqual(detail, "speech mute blocked audio and preserved final reply text")
+        self.assertEqual(detail, "speech mute state toggled and verifier status stayed silent")
+        self.assertNotIn("/api/speech/status", [path for path, _payload in posts])
         self.assertEqual(posts[-1], ("/api/speech/mute", {"muted": True}))
 
     def test_verify_safe_checks_quiet_command_suppresses_speech_without_muting(self):
@@ -1360,7 +1361,8 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(pending["status"], "available")
         self.assertEqual(pending["command"]["action"], "play_track")
         self.assertEqual(pending["command"]["track"]["id"], "track-2")
-        self.assertIn("Playing Waving Through A Window by Dear Evan Hansen", result["reply"])
+        self.assertEqual(result["playback_confirmation"], "unconfirmed")
+        self.assertIn("I queued Waving Through A Window by Dear Evan Hansen", result["reply"])
 
     def test_localos_music_search_merges_file_fallback_when_snapshot_library_is_empty(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1412,6 +1414,37 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["selected_track"]["file_name"], "Dear Evan Hansen.mp3")
         self.assertEqual(pending["status"], "available")
         self.assertEqual(pending["command"]["track"]["file_name"], "Dear Evan Hansen.mp3")
+
+    def test_localos_music_play_uses_bridge_playing_confirmation(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            control_path = Path(tmpdir) / "localos_music_control.json"
+            payload = {
+                "source": "localos-music-player",
+                "library": [
+                    {
+                        "id": "track-2",
+                        "title": "Waving Through A Window",
+                        "artist": "Dear Evan Hansen",
+                        "relativePath": "localFiles/mp3/Dear Evan Hansen - Waving Through A Window.mp3",
+                    }
+                ],
+            }
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path), \
+                 patch("jarvis.tools._localos_music_playback_confirmation", return_value={
+                     "status": "playing",
+                     "bridge_version": 2,
+                     "polling_active": True,
+                     "error": "",
+                 }):
+                store_localos_music_snapshot(payload)
+                result = localos_music_play("Waving Through A Window", user_request="play Waving Through A Window", limit=5)
+
+        self.assertEqual(result["status"], "queued")
+        self.assertEqual(result["playback_confirmation"], "playing")
+        self.assertEqual(result["localos_bridge_version"], 2)
+        self.assertIn("Playing Waving Through A Window by Dear Evan Hansen", result["reply"])
 
     def test_localos_music_play_summary_does_not_claim_queue_when_no_track_found(self):
         fake_result = {
@@ -1485,6 +1518,15 @@ class PlannerTests(unittest.TestCase):
                         "relativePath": "localFiles/mp3/Dear Evan Hansen - Waving Through A Window.mp3",
                     },
                 ],
+                "jarvisControlBridgeVersion": 2,
+                "jarvisControlPollingActive": True,
+                "jarvisControlStatus": {
+                    "lastCommandId": "music-abc",
+                    "lastCommandStatus": "playing",
+                    "lastCommandTrackId": "track-2",
+                    "lastCommandTrackTitle": "Waving Through A Window",
+                    "lastCommandError": "",
+                },
             }
             with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path):
                 stored = store_localos_music_snapshot(payload)
@@ -1497,6 +1539,10 @@ class PlannerTests(unittest.TestCase):
             self.assertEqual(stored["library_count"], 2)
             self.assertEqual(result["status"], "available")
             self.assertEqual(result["tracks"][0]["title"], "Closer")
+            self.assertEqual(json.loads(raw_snapshot)["jarvis_control_bridge_version"], 2)
+            self.assertTrue(json.loads(raw_snapshot)["jarvis_control_polling_active"])
+            self.assertEqual(json.loads(raw_snapshot)["last_jarvis_command_id"], "music-abc")
+            self.assertEqual(json.loads(raw_snapshot)["last_jarvis_command_status"], "playing")
             self.assertEqual(search["status"], "matched")
             self.assertEqual(search["matches"][0]["title"], "Waving Through A Window")
             self.assertNotIn("blob:http://example", raw_snapshot)
@@ -1577,7 +1623,7 @@ class PlannerTests(unittest.TestCase):
     def test_localos_music_stream_status_text_is_natural(self):
         self.assertEqual(
             _stream_status_text({"tool": "localos.music_play"}),
-            "Playing that through Local OS now.",
+            "Starting that through Local OS now.",
         )
         self.assertEqual(
             _stream_status_text({"tool": "localos.music_recommendations"}),
@@ -1603,11 +1649,16 @@ class PlannerTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("JARVIS_MUSIC_CONTROL_URL", source)
+        self.assertIn("JARVIS_MUSIC_CONTROL_BRIDGE_VERSION", source)
         self.assertIn("/api/integrations/localos/music/control", source)
+        self.assertIn("jarvisControlStatus", source)
+        self.assertIn('mode: "cors"', source)
         self.assertIn("pollJarvisMusicControl", source)
         self.assertIn("handleJarvisMusicCommand", source)
+        self.assertIn("markJarvisMusicCommandStatus", source)
         self.assertIn("playTrackById", source)
         self.assertIn('command.action !== "play_track"', source)
+        self.assertIn('String(source).startsWith("mp3/")', source)
         self.assertIn("setInterval(pollJarvisMusicControl, 900)", source)
 
     def test_shell_like_status_command_routes_to_shell(self):

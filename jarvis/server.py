@@ -651,7 +651,7 @@ def _stream_status_text(preview: dict[str, Any]) -> str:
             return f"Checking {app_name} now."
     labels = {
         "outlook.visible_summary": "Checking your email now.",
-        "localos.music_play": "Playing that through Local OS now.",
+        "localos.music_play": "Starting that through Local OS now.",
         "localos.music_recommendations": "Checking your music picks now.",
         "localos.music_choose_from_your_pick": "Choosing from Your Pick now.",
         "localos.music_search": "Looking through your music library now.",
@@ -994,15 +994,15 @@ class RequestHandler(BaseHTTPRequestHandler):
         if route.path == "/api/integrations/localos/music/snapshot":
             try:
                 payload = self._read_json_or_text_payload(max_bytes=MAX_LOCALOS_MUSIC_SNAPSHOT_BYTES)
-                self._send_json(store_localos_music_snapshot(payload))
+                self._send_json(store_localos_music_snapshot(payload), cors=True)
             except RequestBodyTooLarge:
-                self._send_json({"error": "Local OS music snapshot body too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                self._send_json({"error": "Local OS music snapshot body too large"}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE, cors=True)
             except UnsupportedContentType:
-                self._send_json({"error": "Content-Type must be application/json or text/plain"}, status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+                self._send_json({"error": "Content-Type must be application/json or text/plain"}, status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE, cors=True)
             except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-                self._send_json({"error": f"Invalid Local OS music snapshot: {exc}"}, status=HTTPStatus.BAD_REQUEST)
+                self._send_json({"error": f"Invalid Local OS music snapshot: {exc}"}, status=HTTPStatus.BAD_REQUEST, cors=True)
             except OSError as exc:
-                self._send_json({"error": f"Could not save Local OS music snapshot: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._send_json({"error": f"Could not save Local OS music snapshot: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR, cors=True)
             return
         if route.path == "/api/command/stream":
             try:

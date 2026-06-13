@@ -146,10 +146,9 @@ def post_json(
     payload: dict[str, Any],
     timeout: int = 20,
     base_url: str = BASE_URL,
-    *,
-    allow_speech: bool = False,
 ) -> Any:
-    if path == "/api/command" and not allow_speech and "suppress_speech" not in payload and "speak" not in payload:
+    if path == "/api/command":
+        payload = {key: value for key, value in payload.items() if key != "speak"}
         payload = {**payload, "suppress_speech": True}
     request = urllib.request.Request(
         f"{base_url}{path}",
@@ -1297,14 +1296,12 @@ def check_endpoint_speech_mute(base_url: str) -> str:
         require(muted.get("muted") is True, f"mute state was {muted.get('muted')}")
         status = get_json("/api/speech/mute", base_url=base_url)
         require(status.get("muted") is True, f"status muted was {status.get('muted')}")
-        speech = post_json("/api/speech/status", {"text": "Verifier should stay quiet."}, base_url=base_url)
-        speech_status = (speech.get("speech") or {}).get("status")
-        require(speech.get("executed") is False and speech_status == "muted", f"speech status was {speech}")
-        final = post_json("/api/command", {"command": "status"}, base_url=base_url, allow_speech=True)
+        final = post_json("/api/command", {"command": "status", "suppress_speech": True}, base_url=base_url)
         final_speech = final.get("speech") or {}
         final_reply = (final.get("result") or {}).get("reply")
-        require(final.get("tool") == "system.status", f"final speech command tool was {final.get('tool')}")
-        require(final_speech.get("status") == "muted", f"final speech status was {final_speech}")
+        require(final.get("tool") == "system.status", f"quiet status command tool was {final.get('tool')}")
+        require(final_speech.get("status") == "suppressed_by_request", f"quiet speech status was {final_speech}")
+        require(final_speech.get("spoken") is False, f"quiet speech spoken was {final_speech}")
         require(final_speech.get("reason") == "final", f"final speech reason was {final_speech}")
         require(
             speech_preview_matches_reply(final_reply, final_speech.get("text_preview")),
@@ -1312,7 +1309,7 @@ def check_endpoint_speech_mute(base_url: str) -> str:
         )
     finally:
         post_json("/api/speech/mute", {"muted": original_muted}, base_url=base_url)
-    return "speech mute blocked audio and preserved final reply text"
+    return "speech mute state toggled and verifier status stayed silent"
 
 
 def check_endpoint_quiet_command(base_url: str) -> str:

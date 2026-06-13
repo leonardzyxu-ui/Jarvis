@@ -121,7 +121,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
             "limit": "Optional number of candidates to search or choose from, default 10.",
         },
         "examples": [
-            'Playing that through Local OS now. \\tool({"tool":"localos.music_play","entities":{"query":"Waving Through A Window","limit":5}})',
+            'Starting that through Local OS now. \\tool({"tool":"localos.music_play","entities":{"query":"Waving Through A Window","limit":5}})',
             'Choosing something from Your Pick now. \\tool({"tool":"localos.music_play","entities":{"from_your_pick":true,"limit":12}})',
         ],
     },

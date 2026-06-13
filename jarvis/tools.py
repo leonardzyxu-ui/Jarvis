@@ -2503,6 +2503,57 @@ def store_localos_music_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         payload.get("currentTrack") or payload.get("current_track"),
         rank=0,
     )
+    raw_control_status = payload.get("jarvisControlStatus") or payload.get("jarvis_control_status")
+    if not isinstance(raw_control_status, dict):
+        raw_control_status = {}
+    bridge_version = _safe_int(
+        payload.get("jarvisControlBridgeVersion")
+        or payload.get("jarvis_control_bridge_version")
+        or raw_control_status.get("bridgeVersion")
+        or raw_control_status.get("bridge_version")
+    )
+    control_status = {
+        "bridge_version": bridge_version,
+        "polling_active": bool(
+            payload.get("jarvisControlPollingActive")
+            or payload.get("jarvis_control_polling_active")
+            or raw_control_status.get("pollingActive")
+            or raw_control_status.get("polling_active")
+        ),
+        "last_poll_at_ms": _safe_float(raw_control_status.get("lastPollAt") or raw_control_status.get("last_poll_at")),
+        "last_poll_ok_at_ms": _safe_float(raw_control_status.get("lastPollOkAt") or raw_control_status.get("last_poll_ok_at")),
+        "last_poll_error": _localos_clean_text(
+            raw_control_status.get("lastPollError") or raw_control_status.get("last_poll_error"),
+            180,
+        ),
+        "last_command_id": _localos_clean_text(
+            raw_control_status.get("lastCommandId") or raw_control_status.get("last_command_id"),
+            80,
+        ),
+        "last_command_action": _localos_clean_text(
+            raw_control_status.get("lastCommandAction") or raw_control_status.get("last_command_action"),
+            80,
+        ),
+        "last_command_status": _localos_clean_text(
+            raw_control_status.get("lastCommandStatus") or raw_control_status.get("last_command_status"),
+            80,
+        ),
+        "last_command_track_id": _localos_clean_text(
+            raw_control_status.get("lastCommandTrackId") or raw_control_status.get("last_command_track_id"),
+            120,
+        ),
+        "last_command_track_title": _localos_clean_text(
+            raw_control_status.get("lastCommandTrackTitle") or raw_control_status.get("last_command_track_title"),
+            160,
+        ),
+        "last_command_handled_at_ms": _safe_float(
+            raw_control_status.get("lastCommandHandledAt") or raw_control_status.get("last_command_handled_at")
+        ),
+        "last_command_error": _localos_clean_text(
+            raw_control_status.get("lastCommandError") or raw_control_status.get("last_command_error"),
+            220,
+        ),
+    }
     snapshot = {
         "schema": "jarvis.localos.music.snapshot.v1",
         "source": _localos_clean_text(payload.get("source"), 80) or "localos-music-player",
@@ -2518,6 +2569,12 @@ def store_localos_music_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         "library": library,
         "library_count": len(library),
         "current_track": current_track,
+        "jarvis_control_bridge_version": bridge_version,
+        "jarvis_control_polling_active": control_status["polling_active"],
+        "jarvis_control_status": control_status,
+        "last_jarvis_command_id": control_status["last_command_id"],
+        "last_jarvis_command_status": control_status["last_command_status"],
+        "last_jarvis_command_error": control_status["last_command_error"],
     }
     LOCALOS_MUSIC_SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
     temp_path = LOCALOS_MUSIC_SNAPSHOT_PATH.with_suffix(".json.tmp")
@@ -2756,6 +2813,20 @@ def localos_music_play(
         }
 
     command = _queue_localos_music_control("play_track", selected, user_request=user_request or query or "")
+    confirmation = _localos_music_playback_confirmation(command, selected)
+    confirmation_status = str(confirmation.get("status") or "unconfirmed")
+    bridge_version = confirmation.get("bridge_version")
+    if confirmation_status == "playing":
+        reply = f"Playing {_localos_music_track_phrase([selected])} in Local OS."
+    elif confirmation_status == "failed":
+        reply = f"I found {_localos_music_track_phrase([selected])}, but Local OS could not start it."
+    elif bridge_version:
+        reply = f"Starting {_localos_music_track_phrase([selected])} in Local OS."
+    else:
+        reply = (
+            f"I queued {_localos_music_track_phrase([selected])} in Local OS. "
+            "If it does not start, refresh the LocalOS music window once."
+        )
     return {
         **base,
         "status": "queued",
@@ -2764,7 +2835,11 @@ def localos_music_play(
         "source_status": source_result.get("status"),
         "selected_track": selected,
         "control": command,
-        "reply": f"Playing {_localos_music_track_phrase([selected])} in Local OS.",
+        "playback_confirmation": confirmation_status,
+        "localos_bridge_version": bridge_version,
+        "localos_bridge_polling_active": confirmation.get("polling_active"),
+        "localos_command_error": confirmation.get("error"),
+        "reply": reply,
         **_duration_fields(started_at),
     }
 
@@ -2934,6 +3009,86 @@ def _read_localos_music_snapshot_for_tool() -> dict[str, Any]:
     if not isinstance(snapshot, dict):
         return {"status": "snapshot_invalid", "error": "snapshot_invalid"}
     return {"status": "available", "snapshot": snapshot}
+
+
+def _localos_music_playback_confirmation(
+    command: dict[str, Any],
+    selected_track: dict[str, Any],
+    *,
+    timeout_seconds: float = 1.8,
+) -> dict[str, Any]:
+    snapshot_result = _read_localos_music_snapshot_for_tool()
+    snapshot = snapshot_result.get("snapshot") if isinstance(snapshot_result.get("snapshot"), dict) else {}
+    bridge_version = _safe_int(snapshot.get("jarvis_control_bridge_version")) if snapshot else None
+    if not bridge_version:
+        return {"status": "unconfirmed", "bridge_version": None, "polling_active": None, "error": "bridge_status_missing"}
+
+    command_id = _localos_clean_text(command.get("id"), 80)
+    selected_id = _localos_clean_text(selected_track.get("id"), 120)
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    last_confirmation: dict[str, Any] = {}
+    while True:
+        snapshot_result = _read_localos_music_snapshot_for_tool()
+        snapshot = snapshot_result.get("snapshot") if isinstance(snapshot_result.get("snapshot"), dict) else {}
+        confirmation = _localos_music_confirmation_from_snapshot(snapshot, command_id=command_id, selected_id=selected_id)
+        if confirmation.get("status") in {"playing", "accepted", "failed", "ignored"}:
+            return confirmation
+        last_confirmation = confirmation
+        if time.monotonic() >= deadline:
+            return last_confirmation or {"status": "unconfirmed", "bridge_version": bridge_version}
+        time.sleep(0.15)
+
+
+def _localos_music_confirmation_from_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    command_id: str,
+    selected_id: str,
+) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        return {"status": "unconfirmed", "bridge_version": None}
+    status = snapshot.get("jarvis_control_status") if isinstance(snapshot.get("jarvis_control_status"), dict) else {}
+    bridge_version = _safe_int(snapshot.get("jarvis_control_bridge_version") or status.get("bridge_version"))
+    last_command_id = _localos_clean_text(
+        snapshot.get("last_jarvis_command_id") or status.get("last_command_id"),
+        80,
+    )
+    last_command_status = _localos_clean_text(
+        snapshot.get("last_jarvis_command_status") or status.get("last_command_status"),
+        80,
+    ).lower()
+    last_command_error = _localos_clean_text(
+        snapshot.get("last_jarvis_command_error") or status.get("last_command_error"),
+        220,
+    )
+    current_track = snapshot.get("current_track") if isinstance(snapshot.get("current_track"), dict) else {}
+    current_id = _localos_clean_text(current_track.get("id"), 120) if current_track else ""
+    current_matches = bool(selected_id and current_id == selected_id)
+    if last_command_id != command_id:
+        return {
+            "status": "unconfirmed",
+            "bridge_version": bridge_version,
+            "polling_active": bool(snapshot.get("jarvis_control_polling_active") or status.get("polling_active")),
+            "latest_command_id": last_command_id,
+            "error": last_command_error,
+        }
+    if last_command_status == "playing" and current_matches:
+        normalized_status = "playing"
+    elif last_command_status in {"accepted", "received"} and current_matches:
+        normalized_status = "accepted"
+    elif last_command_status in {"failed", "ignored"}:
+        normalized_status = last_command_status
+    else:
+        normalized_status = "unconfirmed"
+    return {
+        "status": normalized_status,
+        "bridge_version": bridge_version,
+        "polling_active": bool(snapshot.get("jarvis_control_polling_active") or status.get("polling_active")),
+        "latest_command_id": last_command_id,
+        "latest_command_status": last_command_status,
+        "current_track_matches": current_matches,
+        "error": last_command_error,
+    }
 
 
 def _localos_music_snapshot_tracks(payload: dict[str, Any]) -> list[Any]:
