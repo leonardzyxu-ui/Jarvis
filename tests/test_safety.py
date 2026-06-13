@@ -1552,14 +1552,103 @@ class PlannerTests(unittest.TestCase):
                 "jarvis_control_status": {"bridge_version": 2, "polling_active": True},
             }), encoding="utf-8")
             with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
-                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path):
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path), \
+                 patch("jarvis.tools._localos_music_play_via_chrome", return_value={
+                     "status": "unavailable",
+                     "error": "chrome_direct_not_available",
+                 }):
                 result = localos_music_play("Waving Through A Window", user_request="play Waving Through A Window", limit=5)
 
         self.assertEqual(result["status"], "not_queued")
         self.assertEqual(result["playback_confirmation"], "bridge_not_polling")
         self.assertFalse(control_path.exists())
+        self.assertEqual(result["chrome_direct"]["status"], "unavailable")
         self.assertIn("Local OS Music is not connected", result["reply"])
         self.assertIn("Open or refresh the Local OS Music Player", result["reply"])
+
+    def test_localos_music_play_uses_chrome_direct_when_bridge_is_stale_but_page_confirms(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            control_path = Path(tmpdir) / "localos_music_control.json"
+            snapshot_path.write_text(json.dumps({
+                "schema": "jarvis.localos.music.snapshot.v1",
+                "source": "localos-music-player",
+                "received_at": time.time() - 60,
+                "all_songs_count": 1,
+                "library_count": 1,
+                "library": [
+                    {
+                        "id": "track-2",
+                        "title": "Waving Through A Window",
+                        "artist": "Dear Evan Hansen",
+                        "relative_path": "localFiles/mp3/Dear Evan Hansen - Waving Through A Window.mp3",
+                    }
+                ],
+                "jarvis_control_bridge_version": 2,
+                "jarvis_control_polling_active": True,
+                "jarvis_control_status": {"bridge_version": 2, "polling_active": True},
+            }), encoding="utf-8")
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path), \
+                 patch("jarvis.tools._localos_music_play_via_chrome", return_value={
+                     "status": "playing",
+                     "bridge_version": 2,
+                     "polling_active": True,
+                     "latest_command_id": "chrome-direct-test",
+                     "latest_command_status": "playing",
+                     "current_track_matches": True,
+                     "current_track_playing": True,
+                 }) as direct_mock:
+                result = localos_music_play("Waving Through A Window", user_request="play Waving Through A Window", limit=5)
+
+        self.assertEqual(result["status"], "queued")
+        self.assertEqual(result["control_lane"], "chrome_direct_localos_page")
+        self.assertEqual(result["playback_confirmation"], "playing")
+        self.assertFalse(control_path.exists())
+        self.assertIn("Playing Waving Through A Window by Dear Evan Hansen in Local OS", result["reply"])
+        direct_mock.assert_called_once()
+
+    def test_localos_music_chrome_direct_helper_marks_localos_page_command_and_confirms(self):
+        delimiter = jarvis_tools.BROWSER_FIELD_DELIMITER
+        direct_json = json.dumps({
+            "status": "accepted",
+            "commandId": "chrome-direct-test",
+            "trackTitle": "Waving Through A Window",
+            "playing": False,
+        })
+        with tempfile.TemporaryDirectory() as tmpdir:
+            player_path = Path(tmpdir) / "!musicPlayer.html"
+            player_path.write_text("<html></html>", encoding="utf-8")
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_PLAYER_PATH", player_path), \
+                 patch("jarvis.tools._find_executable", return_value="/usr/bin/osascript"), \
+                 patch("jarvis.tools._run_osascript", return_value={
+                     "ok": True,
+                     "stdout": f"checked{delimiter}Music Player v12{delimiter}{player_path.as_uri()}{delimiter}{direct_json}",
+                     "stderr": "",
+                     "returncode": 0,
+                 }) as script_mock, \
+                 patch("jarvis.tools._localos_music_playback_confirmation", return_value={
+                     "status": "playing",
+                     "bridge_version": 2,
+                     "polling_active": True,
+                     "latest_command_id": "chrome-direct-test",
+                     "latest_command_status": "playing",
+                     "current_track_matches": True,
+                     "current_track_playing": True,
+                 }):
+                result = jarvis_tools._localos_music_play_via_chrome(
+                    {"id": "track-2", "title": "Waving Through A Window", "artist": "Dear Evan Hansen"},
+                    user_request="play Waving Through A Window",
+                )
+
+        self.assertEqual(result["status"], "playing")
+        self.assertEqual(result["control_lane"], "chrome_direct_localos_page")
+        self.assertEqual(result["page_title"], "Music Player v12")
+        script = script_mock.call_args.args[0]
+        self.assertIn("LocalOSMusicPlayer", script)
+        self.assertIn("playTrackById", script)
+        self.assertIn("jarvis-chrome-direct", script)
+        self.assertIn("chrome-direct-", result["command_id"])
 
     def test_localos_music_play_tells_user_when_bridge_did_not_poll(self):
         with tempfile.TemporaryDirectory() as tmpdir:

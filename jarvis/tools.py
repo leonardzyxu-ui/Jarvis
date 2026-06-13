@@ -155,6 +155,7 @@ LOCALOS_MUSIC_LIBRARY_MAX_TRACKS = 500
 LOCALOS_MUSIC_DEFAULT_LIMIT = 10
 LOCALOS_MUSIC_CONTROL_TTL_SECONDS = 90
 LOCALOS_MUSIC_BRIDGE_STALE_SECONDS = 15
+LOCALOS_MUSIC_CHROME_DIRECT_CONFIRM_SECONDS = 2.5
 BROWSER_FIELD_DELIMITER = "\n---JARVIS_BROWSER_FIELD---\n"
 BROWSER_PAGE_TEXT_LIMIT = 6000
 CHROME_USER_DATA_DIR = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
@@ -3003,6 +3004,34 @@ def localos_music_play(
 
     bridge_liveness = _localos_music_bridge_liveness()
     if bridge_liveness.get("status") in {"stale", "not_polling"}:
+        direct_confirmation = _localos_music_play_via_chrome(selected, user_request=user_request or query or "")
+        direct_status = str(direct_confirmation.get("status") or "")
+        if direct_status in {"playing", "accepted"}:
+            reply = (
+                f"Playing {_localos_music_track_phrase([selected])} in Local OS."
+                if direct_status == "playing"
+                else f"Local OS accepted {_localos_music_track_phrase([selected])}; waiting for the audio to start."
+            )
+            return {
+                **base,
+                "status": "queued",
+                "available": True,
+                "source_tool": source_result.get("tool"),
+                "source_status": source_result.get("status"),
+                "selected_track": selected,
+                "control_lane": "chrome_direct_localos_page",
+                "playback_confirmation": direct_status,
+                "localos_bridge_version": direct_confirmation.get("bridge_version"),
+                "localos_bridge_polling_active": direct_confirmation.get("polling_active"),
+                "localos_bridge_latest_command_id": direct_confirmation.get("latest_command_id"),
+                "localos_bridge_latest_command_status": direct_confirmation.get("latest_command_status"),
+                "localos_bridge_current_track_matches": direct_confirmation.get("current_track_matches"),
+                "localos_bridge_current_track_playing": direct_confirmation.get("current_track_playing"),
+                "chrome_direct": direct_confirmation,
+                "bridge_recovery": _localos_music_bridge_recovery(),
+                "reply": reply,
+                **_duration_fields(started_at),
+            }
         return {
             **base,
             "status": "not_queued",
@@ -3015,6 +3044,7 @@ def localos_music_play(
             "localos_bridge_polling_active": bridge_liveness.get("polling_active"),
             "localos_bridge_snapshot_age_seconds": bridge_liveness.get("snapshot_age_seconds"),
             "localos_command_error": bridge_liveness.get("error"),
+            "chrome_direct": direct_confirmation,
             "bridge_recovery": _localos_music_bridge_recovery(),
             "reply": (
                 f"I found {_localos_music_track_phrase([selected])}, but Local OS Music is not connected right now. "
@@ -3050,6 +3080,7 @@ def localos_music_play(
     return {
         **base,
         "status": "queued",
+        "control_lane": "localos_polling_bridge",
         "available": True,
         "source_tool": source_result.get("tool"),
         "source_status": source_result.get("status"),
@@ -3285,6 +3316,209 @@ def _localos_music_bridge_liveness() -> dict[str, Any]:
         "polling_active": polling_active,
         "snapshot_age_seconds": snapshot_age_seconds,
         "error": "",
+    }
+
+
+def _localos_music_play_via_chrome(
+    selected_track: dict[str, Any],
+    *,
+    user_request: str = "",
+) -> dict[str, Any]:
+    """Ask the existing LocalOS music page in Chrome to play; audio still belongs to LocalOS."""
+    started_at = time.monotonic()
+    track_id = _localos_clean_text(selected_track.get("id"), 120)
+    if not track_id:
+        return {
+            "status": "unavailable",
+            "error": "missing_track_id",
+            "control_lane": "chrome_direct_localos_page",
+            **_duration_fields(started_at),
+        }
+    if not LOCALOS_MUSIC_PLAYER_PATH.exists():
+        return {
+            "status": "unavailable",
+            "error": "localos_music_player_missing",
+            "control_lane": "chrome_direct_localos_page",
+            "player_path": str(LOCALOS_MUSIC_PLAYER_PATH),
+            **_duration_fields(started_at),
+        }
+    if not _find_executable("osascript"):
+        return {
+            "status": "unavailable",
+            "error": "osascript_not_found",
+            "control_lane": "chrome_direct_localos_page",
+            **_duration_fields(started_at),
+        }
+
+    command_id = f"chrome-direct-{uuid.uuid4().hex[:12]}"
+    player_url = LOCALOS_MUSIC_PLAYER_PATH.as_uri()
+    js_payload = f"""
+(() => {{
+  const trackId = {json.dumps(track_id)};
+  const commandId = {json.dumps(command_id)};
+  const userRequest = {json.dumps(_localos_clean_text(user_request, 220))};
+  const result = {{
+    status: "unavailable",
+    commandId,
+    href: String(location.href || ""),
+    title: String(document.title || "")
+  }};
+  const api = window.LocalOSMusicPlayer;
+  if (!api || typeof api.playTrackById !== "function") {{
+    result.status = "api_missing";
+    return JSON.stringify(result);
+  }}
+  const track = typeof getTrackById === "function" ? getTrackById(trackId) : null;
+  if (!track) {{
+    result.status = "track_not_found";
+    return JSON.stringify(result);
+  }}
+  try {{
+    if (typeof jarvisMusicControlStatus !== "undefined") {{
+      jarvisMusicControlStatus.lastCommandId = commandId;
+      jarvisMusicControlStatus.lastCommandAction = "play_track";
+      jarvisMusicControlStatus.lastCommandTrackId = trackId;
+      jarvisMusicControlStatus.lastCommandTrackTitle = String(track.title || "");
+      jarvisMusicControlStatus.lastCommandError = "";
+      jarvisMusicControlStatus.lastCommandStatus = "received";
+      jarvisMusicControlStatus.lastCommandHandledAt = Date.now();
+      jarvisMusicControlStatus.directUserRequest = userRequest;
+    }}
+    const accepted = !!api.playTrackById(trackId);
+    if (!accepted) {{
+      if (typeof markJarvisMusicCommandStatus === "function") {{
+        markJarvisMusicCommandStatus("failed", {{ track, error: "LocalOS page could not start the requested track." }});
+      }}
+      result.status = "failed";
+      result.error = "playTrackById_returned_false";
+      return JSON.stringify(result);
+    }}
+    if (typeof markJarvisMusicCommandStatus === "function") {{
+      markJarvisMusicCommandStatus("accepted", {{ track }});
+    }}
+    setTimeout(() => {{
+      try {{
+        const current = typeof getCurrentTrack === "function" ? getCurrentTrack() : null;
+        const playing = !!(typeof audioEl !== "undefined" && audioEl.src && !audioEl.paused);
+        if (current && current.id === trackId && typeof markJarvisMusicCommandStatus === "function") {{
+          markJarvisMusicCommandStatus(playing ? "playing" : "accepted", {{ track: current }});
+        }}
+        if (typeof publishJarvisMusicSnapshot === "function") {{
+          publishJarvisMusicSnapshot("jarvis-chrome-direct", {{ force: true }}).catch(() => {{}});
+        }}
+      }} catch (error) {{}}
+    }}, 700);
+    const state = typeof api.getState === "function" ? api.getState() : {{}};
+    result.status = state && state.playing ? "playing" : "accepted";
+    result.playing = !!(state && state.playing);
+    result.trackTitle = String(track.title || "");
+    result.trackArtist = String(track.artist || "");
+    return JSON.stringify(result);
+  }} catch (error) {{
+    result.status = "failed";
+    result.error = error && error.message ? String(error.message) : "LocalOS direct playback failed.";
+    return JSON.stringify(result);
+  }}
+}})()
+""".strip()
+    script = f'''
+set d to "{_escape_applescript_string(BROWSER_FIELD_DELIMITER)}"
+set targetURL to "{_escape_applescript_string(player_url)}"
+if application "Google Chrome" is not running then
+    tell application "Google Chrome" to activate
+    delay 0.4
+end if
+tell application "Google Chrome"
+    if (count of windows) = 0 then
+        make new window
+    end if
+    set foundLocalOSMusic to false
+    repeat with w in windows
+        set tabIndex to 1
+        repeat with t in tabs of w
+            set tabURL to URL of t
+            set tabTitle to title of t
+            if tabURL contains "!musicPlayer.html" or tabURL contains "musicPlayer.html" or tabTitle contains "Music Player" then
+                set active tab index of w to tabIndex
+                set index of w to 1
+                set foundLocalOSMusic to true
+                exit repeat
+            end if
+            set tabIndex to tabIndex + 1
+        end repeat
+        if foundLocalOSMusic then exit repeat
+    end repeat
+    if not foundLocalOSMusic then
+        set newTab to make new tab at end of tabs of front window with properties {{URL:targetURL}}
+        set active tab index of front window to (count of tabs of front window)
+        delay 2.0
+    end if
+    set theTab to active tab of front window
+    set jsResult to execute javascript "{_escape_applescript_string(js_payload)}" in theTab
+    return "checked" & d & (title of theTab) & d & (URL of theTab) & d & jsResult
+end tell
+'''
+    completed = _run_osascript(script, timeout=7.0, stdout_tail_chars=5000, stderr_tail_chars=1000)
+    base = {
+        "control_lane": "chrome_direct_localos_page",
+        "command_id": command_id,
+        "player_url": player_url,
+        "osascript": {
+            "ok": bool(completed.get("ok")),
+            "returncode": completed.get("returncode"),
+            "stderr": _text_tail(str(completed.get("stderr") or ""), 500),
+        },
+    }
+    if not completed.get("ok"):
+        return {
+            **base,
+            "status": "unavailable",
+            "error": "chrome_direct_automation_failed",
+            **_duration_fields(started_at),
+        }
+    fields = str(completed.get("stdout") or "").split(BROWSER_FIELD_DELIMITER)
+    if len(fields) < 4 or fields[0].strip() != "checked":
+        return {
+            **base,
+            "status": "unavailable",
+            "error": "chrome_direct_unexpected_response",
+            "stdout": _text_tail(str(completed.get("stdout") or ""), 500),
+            **_duration_fields(started_at),
+        }
+    page_title = fields[1].strip()
+    page_url = fields[2].strip()
+    try:
+        direct_result = json.loads(fields[3])
+    except json.JSONDecodeError:
+        direct_result = {"status": "unavailable", "error": "chrome_direct_json_unreadable", "raw": fields[3][:500]}
+    direct_status = str(direct_result.get("status") or "unavailable")
+    if direct_status not in {"accepted", "playing"}:
+        return {
+            **base,
+            "status": direct_status,
+            "page_title": page_title,
+            "page_url": page_url,
+            "direct_result": direct_result,
+            "error": direct_result.get("error") or direct_status,
+            **_duration_fields(started_at),
+        }
+
+    confirmation = _localos_music_playback_confirmation(
+        {"id": command_id, "created_at": time.time()},
+        selected_track,
+        timeout_seconds=LOCALOS_MUSIC_CHROME_DIRECT_CONFIRM_SECONDS,
+    )
+    confirmation_status = str(confirmation.get("status") or direct_status)
+    if confirmation_status not in {"accepted", "playing", "failed", "ignored", "bridge_not_polling"}:
+        confirmation_status = direct_status
+    return {
+        **base,
+        **confirmation,
+        "status": confirmation_status,
+        "page_title": page_title,
+        "page_url": page_url,
+        "direct_result": direct_result,
+        **_duration_fields(started_at),
     }
 
 

@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.347 gives LocalOS music a second control lane: if the polling bridge is stale, Jarvis can ask the real LocalOS music page in Chrome to run `LocalOSMusicPlayer.playTrackById(...)`, and it still only claims playback after LocalOS-side confirmation.",
     "Jarvis 0.1.346 lets actual email execution try contact-alias inference from recent Mail sender metadata before searching message bodies, while `/api/plan` stays preview-only and does not read Mail metadata.",
     "Jarvis 0.1.345 resolves `today` for Calendar preview plans before execution, so `Check my calendar for my schedule today` no longer shows a vague `date_iso: null` plan.",
     "Jarvis 0.1.344 makes the Chrome-login handoff explicit in the app: authenticated sites still open in Leo's signed-in Chrome, the Jarvis browser panel stays visible for supervision, and the status now says `Opened in signed-in Chrome` instead of implying cookies were migrated.",
@@ -108,7 +109,8 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
-    "Current verification: Python safety suite passed 538/538, Swift self-test passed, and Jarvis 0.1.346 build 346 launched from bundled app resources.",
+    "Current verification: Python safety suite passed 540/540, Swift self-test passed, no-prompt live verifier passed 12/12, and Jarvis 0.1.347 build 347 launched from bundled app resources.",
+    "Focused LocalOS tests now prove stale player snapshots still refuse when Chrome-direct LocalOS control is unavailable, and succeed only when the LocalOS page confirms the direct `playTrackById` command.",
     "Overnight no-permission voice suite passed for Teams assignment planning, Waving Through a Window recovery, Activity Monitor RAM, Codex strong-confirmation, Gemma 3 4B model-test planning, and Chrome-session migration.",
     "Live closed-loop voice QA now passes for the safe example prompts: natural Teams Music assignment planning, Activity Monitor RAM, Codex strong-confirmation, Teams bookmark, browser session strategy, and Gemma 3 4B model-test planning.",
     "The Gemma model-test voice loop now survives local STT hearing `Gemma 3-4 B-model`, repairs the visible reply to `Gemma 3 4B`, routes to `models.test_plan`, and matches spoken output with 1.0 similarity.",
@@ -126,7 +128,7 @@ PROOF_ITEMS = [
     "Chrome bookmark snapshot has 23 imported links from 3 profiles, including `teams.microsoft.com`.",
     "Sharpay-style email previews now include `contact_alias_lookup`, `resolved_sender_query`, and `recommended_tool: contacts.infer` when the alias is not known, while remaining planned-only; actual email execution can now infer a confident alias from recent sender metadata before searching messages.",
     "Latest local checkpoint commits record the browser/session, music-recovery, model-scoring, report-proof, voice-loop routing, LocalOS stale-bridge hardening, and contact-aware email planning; the branch has not been pushed while Leo is asleep.",
-    "Python safety suite: 538/538 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, muted-latency, local-STT repair, overlapping-turn, crash-monitor, fallback-hardening, quiet-command, summon-popout, hidden-tool-call sanitization, model-scoring, browser-session, music-bridge, contact-memory, contact-inference, calendar-preview, and voice-QA work.",
+    "Python safety suite: 540/540 passed after the wake, mute, final-speech, report-route, speech-alignment, model-selected device/app-routing, app-specific status-line, fuzzy-wake, stale-progress, anti-flicker, muted-latency, local-STT repair, overlapping-turn, crash-monitor, fallback-hardening, quiet-command, summon-popout, hidden-tool-call sanitization, model-scoring, browser-session, music-bridge, contact-memory, contact-inference, calendar-preview, LocalOS Chrome-direct control, and voice-QA work.",
     "Swift build passed for the Jarvis menu-bar app.",
     "Swift self-tests passed, including menu-bar routing labels, native wake detection, and worker checks.",
     "Swift permission-readiness self-test passed without requesting permissions; it currently reports Microphone ready and Speech Recognition not requested.",
