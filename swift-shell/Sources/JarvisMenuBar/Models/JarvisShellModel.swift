@@ -55,6 +55,9 @@ final class JarvisShellModel: ObservableObject {
     private var summonGeneration = 0
     private var latestSpeechLikelyActiveUntil: Date?
     private var latestSpeechPreview: String = ""
+    private var lastCapturedWakeCommand: String = ""
+    private var lastCapturedWakeTranscript: String = ""
+    private var bargeInGraceUntil: Date?
     private var lastBargeInTranscript: String = ""
     private var lastBargeInAt: Date?
     var onSpeechMuteStateChanged: (() -> Void)?
@@ -353,6 +356,10 @@ final class JarvisShellModel: ObservableObject {
             wakeTranscriptText = transcript
             wakeDetailText = "Captured: \(command)"
             recordWakeEvent("command_captured", detail: "Wake command captured.", transcript: transcript, command: command)
+            lastCapturedWakeCommand = command
+            lastCapturedWakeTranscript = transcript
+            bargeInGraceUntil = Date().addingTimeInterval(2.5)
+            clearSpeechPlaybackWindow()
             guard !isBusy else {
                 recordWakeEvent("command_held_busy", detail: "Jarvis was busy when the wake command arrived.", transcript: transcript, command: command)
                 messages.append(ChatMessage(role: .jarvis, text: "I heard \(command), but I am still finishing the current task.", detail: "Wake command held."))
@@ -481,6 +488,16 @@ final class JarvisShellModel: ObservableObject {
             return
         }
         guard let activeUntil = latestSpeechLikelyActiveUntil, Date() < activeUntil else {
+            return
+        }
+        if let bargeInGraceUntil, Date() < bargeInGraceUntil {
+            return
+        }
+        guard !Self.looksLikeWakeOrCapturedCommand(
+            cleanTranscript,
+            command: lastCapturedWakeCommand,
+            transcript: lastCapturedWakeTranscript
+        ) else {
             return
         }
         guard !Self.looksLikeCurrentJarvisSpeechEcho(cleanTranscript, spokenText: latestSpeechPreview) else {
@@ -996,7 +1013,6 @@ final class JarvisShellModel: ObservableObject {
                 updateSummonThinking(statusText)
                 if !isSpeechMuted {
                     _ = try? await client.speakStatus(statusText)
-                    notePotentialSpeech(text: statusText)
                 }
                 recordTurnPhase("Working", detail: statusText)
                 response = try await runNativeOutlookRead(commandText)
@@ -1037,7 +1053,6 @@ final class JarvisShellModel: ObservableObject {
                         if progressTask == nil {
                             progressTask = self.startProgressNudges(for: commandText, turnID: turnID)
                         }
-                        self.notePotentialSpeech(text: statusText)
                     },
                     onDelta: { delta in
                         stopProgressNudges()
@@ -2197,6 +2212,31 @@ final class JarvisShellModel: ObservableObject {
         let prefixLength = min(80, spoken.count)
         let spokenPrefix = String(spoken.prefix(prefixLength))
         return heard.contains(spokenPrefix) && spokenPrefix.count >= 12
+    }
+
+    private static func looksLikeWakeOrCapturedCommand(_ transcript: String, command: String, transcript capturedTranscript: String) -> Bool {
+        let heard = normalizeSpeechCheckText(transcript)
+        guard !heard.isEmpty else {
+            return false
+        }
+        if ["hey jarvis", "hello jarvis", "jarvis"].contains(heard) {
+            return true
+        }
+        return normalizedSpeechTextsMatch(heard, normalizeSpeechCheckText(command))
+            || normalizedSpeechTextsMatch(heard, normalizeSpeechCheckText(capturedTranscript))
+    }
+
+    private static func normalizedSpeechTextsMatch(_ lhs: String, _ rhs: String) -> Bool {
+        guard !lhs.isEmpty, !rhs.isEmpty else {
+            return false
+        }
+        if lhs == rhs {
+            return true
+        }
+        guard min(lhs.count, rhs.count) >= 8 else {
+            return false
+        }
+        return lhs.contains(rhs) || rhs.contains(lhs)
     }
 
     private static func speechPreviewMatchesVisibleText(

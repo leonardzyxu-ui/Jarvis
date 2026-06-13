@@ -5525,11 +5525,18 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("func stopSpeaking()", client_source)
         self.assertIn('"suppress_speech": true', client_source)
         self.assertIn("latestSpeechLikelyActiveUntil", model_source)
+        self.assertIn("lastCapturedWakeCommand", model_source)
+        self.assertIn("lastCapturedWakeTranscript", model_source)
+        self.assertIn("bargeInGraceUntil", model_source)
+        self.assertIn("bargeInGraceUntil = Date().addingTimeInterval(2.5)", model_source)
         self.assertIn("handleSpeechBargeInIfNeeded(transcript:", model_source)
         self.assertIn("looksLikeCurrentJarvisSpeechEcho", model_source)
+        self.assertIn("looksLikeWakeOrCapturedCommand", model_source)
+        self.assertIn("normalizedSpeechTextsMatch", model_source)
         self.assertIn('"speech_barge_in"', model_source)
         self.assertIn("client.stopSpeaking()", model_source)
         self.assertIn("clearSpeechPlaybackWindow()", model_source)
+        self.assertNotIn("notePotentialSpeech(text: statusText)", model_source)
         self.assertNotIn("toggleSpeechMuted()", model_source[model_source.index("handleSpeechBargeInIfNeeded"):])
 
     def test_swift_menu_bar_icon_left_click_opens_panel(self):
