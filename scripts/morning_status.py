@@ -24,7 +24,6 @@ VERIFICATION_HIGHLIGHTS = {
     "endpoint_preflight": "local preflight summary",
     "endpoint_plan_preview": "plan-only command preview",
     "endpoint_wake_simulation": "text wake simulation + command assessment",
-    "endpoint_wake_audition_corpus": "wake-lab threshold corpus route",
     "endpoint_prompt_injection_scan": "prompt-injection scan",
     "morning_status_base_url_command": "morning status URL normalization",
     "dashboard_non_loopback_rejected": "loopback bind guard",
@@ -99,8 +98,6 @@ def main() -> int:
     print_latest_verification()
     print_requirement_audit()
     print_latest_latency_smoke()
-    print_latest_context_smoke()
-    print_latest_wake_threshold_smoke()
     print_current_bundle()
     print_process_status()
     return 0
@@ -295,52 +292,6 @@ def print_latest_latency_smoke() -> None:
     )
 
 
-def print_latest_context_smoke() -> None:
-    reports = sorted((PROJECT_ROOT / "runtime" / "conversation_context").glob("conversation-context-*.json"))
-    if not reports:
-        print("Latest conversation context: none")
-        return
-
-    latest = reports[-1]
-    try:
-        data = json.loads(latest.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        print(f"Latest conversation context: {latest.relative_to(PROJECT_ROOT)} unreadable ({error})")
-        return
-
-    summary = context_smoke_summary(data)
-    age = format_uptime(time_since(latest.stat().st_mtime))
-    state = "passed" if summary["ok"] else "needs attention"
-    print(
-        f"Latest conversation context: {state} "
-        f"(used history {str(summary['used_history']).lower()}, total {summary['total_seconds']:.3f}s, "
-        f"{latest.relative_to(PROJECT_ROOT)}, age {age})"
-    )
-
-
-def print_latest_wake_threshold_smoke() -> None:
-    reports = sorted((PROJECT_ROOT / "runtime" / "wake_threshold").glob("wake-threshold-*.json"))
-    if not reports:
-        print("Latest wake threshold: none")
-        return
-
-    latest = reports[-1]
-    try:
-        data = json.loads(latest.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        print(f"Latest wake threshold: {latest.relative_to(PROJECT_ROOT)} unreadable ({error})")
-        return
-
-    summary = wake_threshold_summary(data)
-    age = format_uptime(time_since(latest.stat().st_mtime))
-    state = "passed" if summary["ok"] else "needs attention"
-    print(
-        f"Latest wake threshold: {state} {summary['passed']}/{summary['total']} "
-        f"(closest reject {summary['closest_reject_label']} {summary['closest_reject_score']:.6f}, "
-        f"{latest.relative_to(PROJECT_ROOT)}, age {age})"
-    )
-
-
 def latency_smoke_summary(data: dict[str, Any]) -> dict[str, Any]:
     results = data.get("results", [])
     if not isinstance(results, list):
@@ -366,14 +317,18 @@ def latency_smoke_summary(data: dict[str, Any]) -> dict[str, Any]:
         total = numeric_value(result.get("total_seconds"))
         after_first_cps = numeric_value(result.get("chars_per_second_after_first_visible"))
         visible_chars = numeric_value(result.get("visible_chars")) or 0.0
-        if first is not None:
+        if first is None:
+            ok = False
+        else:
             first_values.append(first)
-        if first is None or first > max_first_allowed:
+            if first > max_first_allowed:
+                ok = False
+        if total is None:
             ok = False
-        if total is not None:
+        else:
             total_values.append(total)
-        if total is None or total > max_total_allowed:
-            ok = False
+            if total > max_total_allowed:
+                ok = False
         if after_first_cps is not None:
             after_first_cps_values.append(after_first_cps)
         if visible_chars >= min_rate_visible_chars and (after_first_cps is None or after_first_cps < min_after_first_cps):
@@ -391,29 +346,35 @@ def latency_smoke_summary(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def context_smoke_summary(data: dict[str, Any]) -> dict[str, Any]:
-    result = data.get("result") if isinstance(data.get("result"), dict) else {}
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, dict):
+        result = {}
     status = str(result.get("status") or "")
-    used_history = result.get("used_history") is True
+    used_history = bool(result.get("used_history"))
+    total_seconds = numeric_value(result.get("total_seconds")) or 0.0
     return {
         "ok": status == "passed" and used_history,
         "status": status,
         "used_history": used_history,
-        "total_seconds": numeric_value(result.get("total_seconds")) or 0.0,
+        "total_seconds": total_seconds,
     }
 
 
 def wake_threshold_summary(data: dict[str, Any]) -> dict[str, Any]:
-    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    summary = data.get("summary") if isinstance(data, dict) else None
+    if not isinstance(summary, dict):
+        summary = {}
+    status = str(summary.get("status") or "")
     passed = int(numeric_value(summary.get("passed")) or 0)
     total = int(numeric_value(summary.get("total")) or 0)
-    status = str(summary.get("status") or "")
+    closest_reject_score = numeric_value(summary.get("closest_reject_score")) or 0.0
     return {
         "ok": status == "passed" and total > 0 and passed == total,
         "status": status,
         "passed": passed,
         "total": total,
         "closest_reject_label": str(summary.get("closest_reject_label") or ""),
-        "closest_reject_score": numeric_value(summary.get("closest_reject_score")) or 0.0,
+        "closest_reject_score": closest_reject_score,
     }
 
 

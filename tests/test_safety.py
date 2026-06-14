@@ -84,6 +84,7 @@ from jarvis.tools import (
     codex_chat_plan,
     codex_chat_status,
     codex_delegate_plan,
+    commerce_price_convert,
     contact_data_lookup,
     contact_data_remember,
     contact_data_status,
@@ -1104,7 +1105,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 return verify_safe.CheckResult(
                     name=name,
                     passed=False,
-                    summary="missing expected text: Permission rows: 6",
+                    summary="missing expected text: Permission rows: 7",
                     returncode=-9,
                     stdout_tail="",
                     stderr_tail="",
@@ -1115,7 +1116,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 passed=True,
                 summary="passed",
                 returncode=0,
-                stdout_tail="Permission rows: 6",
+                stdout_tail="Permission rows: 7",
                 stderr_tail="",
                 duration_seconds=0.001,
             )
@@ -1128,13 +1129,57 @@ class VerifySafeScriptTests(unittest.TestCase):
                 "temporary_app_permission_self_test",
                 ["Jarvis.app/Contents/MacOS/jarvis-menu-bar", "--permission-self-test"],
                 timeout=60,
-                expect="Permission rows: 6",
+                expect="Permission rows: 7",
             )
 
         self.assertTrue(result.passed)
         self.assertIn("retry 5", result.summary)
         self.assertEqual(len(calls), 6)
         self.assertEqual(sleeps, [0.5, 1.5, 3.0, 5.0, 8.0])
+
+    def test_temp_app_command_retries_transient_readiness_connection_failure(self):
+        calls = []
+        failures_remaining = 1
+
+        def fake_run_command(name, args, *, timeout=120, env=None, expect=None, expected_returncode=0):
+            nonlocal failures_remaining
+            calls.append((name, args, timeout, env, expect, expected_returncode))
+            if failures_remaining:
+                failures_remaining -= 1
+                return verify_safe.CheckResult(
+                    name=name,
+                    passed=False,
+                    summary="missing expected text: Mode: pause/resume passed",
+                    returncode=1,
+                    stdout_tail="",
+                    stderr_tail="Jarvis menu-bar self-test failed: readiness failed after retry: Could not connect to the server.",
+                    duration_seconds=0.001,
+                )
+            return verify_safe.CheckResult(
+                name=name,
+                passed=True,
+                summary="passed",
+                returncode=0,
+                stdout_tail="Mode: pause/resume passed",
+                stderr_tail="",
+                duration_seconds=0.001,
+            )
+
+        sleeps = []
+        with patch("scripts.verify_safe.run_command", side_effect=fake_run_command), patch(
+            "scripts.verify_safe.time.sleep", side_effect=sleeps.append
+        ):
+            result = verify_safe.run_temp_app_command(
+                "temporary_app_self_test",
+                ["Jarvis.app/Contents/MacOS/jarvis-menu-bar", "--self-test"],
+                timeout=90,
+                expect="Mode: pause/resume passed",
+            )
+
+        self.assertTrue(result.passed)
+        self.assertIn("transient temp-app retry 1", result.summary)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sleeps, [0.5])
 
 
 class SafetyPolicyTests(unittest.TestCase):
@@ -1405,6 +1450,39 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(preview.result["plan"]["query"], "Waving Through a Window")
         self.assertTrue(preview.result["plan"]["deterministic_preview"])
 
+    def test_model_selected_magic_keyboard_price_conversion_routes_to_tool(self):
+        fake_result = {
+            "tool": "commerce.price_convert",
+            "status": "converted",
+            "executed": True,
+            "reply": "Magic Keyboard (USB-C) is $99.00 from Apple's U.S. store, which is about 671 yuan before tax or shipping.",
+        }
+        with patch("jarvis.planner.commerce_price_convert", return_value=fake_result) as price_mock:
+            result = Planner().handle_selected_tool(
+                "Jarvis, could you search up the price of the Magic Keyboard and tell me its price converted to yuan?",
+                "commerce.price_convert",
+                {},
+            )
+
+        self.assertEqual(result.tool, "commerce.price_convert")
+        self.assertTrue(result.executed)
+        self.assertEqual(result.result["reply"], fake_result["reply"])
+        price_mock.assert_called_once_with(
+            "Magic Keyboard",
+            target_currency="CNY",
+            source_country="US",
+        )
+
+    def test_price_conversion_tool_is_visible_to_models_and_status_lines(self):
+        tool_ids = {spec["tool"] for spec in NATURAL_LANGUAGE_TOOL_SPECS}
+        self.assertIn("commerce.price_convert", tool_ids)
+        registry_ids = {tool["id"] for tool in tool_registry()["tools"]}
+        self.assertIn("commerce.price_convert", registry_ids)
+        prompt = jarvis_tools._fast_chat_system_prompt(NATURAL_LANGUAGE_TOOL_SPECS)
+        self.assertIn("commerce.price_convert", prompt)
+        self.assertIn("public product price", prompt)
+        self.assertEqual(_stream_status_text({"tool": "commerce.price_convert"}), "Checking the price now.")
+
     def test_streaming_named_music_play_uses_tool_without_fast_chat(self):
         fake_result = {
             "tool": "localos.music_play",
@@ -1574,6 +1652,42 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(confirmation["current_track_matches"])
         self.assertFalse(confirmation["current_track_playing"])
 
+    def test_localos_music_playback_confirmation_waits_past_accepted_for_audio(self):
+        command = {"id": "music-abc", "created_at": time.time() - 0.1}
+        selected = {"id": "track-2", "title": "Waving Through A Window", "artist": "Dear Evan Hansen"}
+        accepted_snapshot = {
+            "jarvis_control_bridge_version": 2,
+            "jarvis_control_polling_active": True,
+            "received_at": time.time(),
+            "last_jarvis_command_id": "music-abc",
+            "last_jarvis_command_status": "accepted",
+            "current_track": {"id": "track-2", "title": "Waving Through A Window", "playing": False},
+            "playing": False,
+        }
+        playing_snapshot = {
+            **accepted_snapshot,
+            "last_jarvis_command_status": "playing",
+            "current_track": {"id": "track-2", "title": "Waving Through A Window", "playing": True},
+            "playing": True,
+        }
+        with patch(
+            "jarvis.tools._read_localos_music_snapshot_for_tool",
+            side_effect=[
+                {"status": "available", "snapshot": accepted_snapshot},
+                {"status": "available", "snapshot": accepted_snapshot},
+                {"status": "available", "snapshot": playing_snapshot},
+            ],
+        ), patch("jarvis.tools.time.sleep", return_value=None) as sleep_mock:
+            confirmation = jarvis_tools._localos_music_playback_confirmation(
+                command,
+                selected,
+                timeout_seconds=1.0,
+            )
+
+        self.assertEqual(confirmation["status"], "playing")
+        self.assertTrue(confirmation["current_track_playing"])
+        sleep_mock.assert_called()
+
     def test_localos_music_playback_confirmation_reports_stale_bridge(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
@@ -1630,7 +1744,7 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(control_path.exists())
         self.assertEqual(result["chrome_direct"]["status"], "unavailable")
         self.assertIn("Local OS Music is not connected", result["reply"])
-        self.assertIn("Open or refresh the Local OS Music Player", result["reply"])
+        self.assertIn("refresh that tab", result["reply"])
 
     def test_localos_music_play_uses_chrome_direct_when_bridge_is_stale_but_page_confirms(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1673,6 +1787,182 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(control_path.exists())
         self.assertIn("Playing Waving Through A Window by Dear Evan Hansen in Local OS", result["reply"])
         direct_mock.assert_called_once()
+
+    def test_localos_music_play_does_not_claim_chrome_direct_when_audio_not_started(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            control_path = Path(tmpdir) / "localos_music_control.json"
+            snapshot_path.write_text(json.dumps({
+                "schema": "jarvis.localos.music.snapshot.v1",
+                "source": "localos-music-player",
+                "received_at": time.time() - 60,
+                "all_songs_count": 1,
+                "library_count": 1,
+                "library": [
+                    {
+                        "id": "track-2",
+                        "title": "Waving Through A Window",
+                        "artist": "Dear Evan Hansen",
+                        "relative_path": "localFiles/mp3/Dear Evan Hansen - Waving Through A Window.mp3",
+                    }
+                ],
+                "jarvis_control_bridge_version": 2,
+                "jarvis_control_polling_active": True,
+                "jarvis_control_status": {"bridge_version": 2, "polling_active": True},
+            }), encoding="utf-8")
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path), \
+                 patch("jarvis.tools._localos_music_play_via_chrome", return_value={
+                     "status": "accepted",
+                     "bridge_version": 2,
+                     "polling_active": True,
+                     "latest_command_id": "chrome-direct-test",
+                     "latest_command_status": "accepted",
+                     "current_track_matches": True,
+                     "current_track_playing": False,
+                 }) as direct_mock:
+                result = localos_music_play("Waving Through A Window", user_request="play Waving Through A Window", limit=5)
+
+        self.assertEqual(result["status"], "not_queued")
+        self.assertEqual(result["control_lane"], "chrome_direct_localos_page")
+        self.assertEqual(result["playback_confirmation"], "accepted")
+        self.assertFalse(control_path.exists())
+        self.assertIn("did not start the audio", result["reply"])
+        self.assertNotIn("Playing Waving Through A Window", result["reply"])
+        direct_mock.assert_called_once()
+
+    def test_localos_music_open_player_for_polling_uses_launchservices_chrome(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            player_path = Path(tmpdir) / "!musicPlayer.html"
+            marker_path = Path(tmpdir) / "localos_music_player_open.json"
+            player_path.write_text("<html></html>", encoding="utf-8")
+            stale = {"status": "stale", "bridge_version": 2, "polling_active": False}
+            live = {"status": "live", "bridge_version": 2, "polling_active": True}
+            completed = subprocess.CompletedProcess(
+                args=["/usr/bin/open"],
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_PLAYER_PATH", player_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH", marker_path), \
+                 patch("jarvis.tools._find_executable", return_value="/usr/bin/open"), \
+                 patch("jarvis.tools.subprocess.run", return_value=completed) as run_mock, \
+                 patch("jarvis.tools._localos_music_bridge_liveness", side_effect=[stale, live]), \
+                 patch("jarvis.tools.time.sleep", return_value=None):
+                result = jarvis_tools._localos_music_open_player_for_polling(timeout_seconds=1.0)
+
+        self.assertEqual(result["status"], "live")
+        self.assertTrue(result["opened"])
+        run_mock.assert_called_once()
+        args = run_mock.call_args.args[0]
+        self.assertEqual(args[:3], ["/usr/bin/open", "-a", "Google Chrome"])
+        self.assertEqual(args[3], player_path.as_uri())
+
+    def test_localos_music_open_player_for_polling_respects_recent_open_cooldown(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            player_path = Path(tmpdir) / "!musicPlayer.html"
+            marker_path = Path(tmpdir) / "localos_music_player_open.json"
+            player_path.write_text("<html></html>", encoding="utf-8")
+            marker_path.write_text(json.dumps({
+                "schema": "jarvis.localos.music.player_open.v1",
+                "opened_at": time.time(),
+                "player_url": player_path.as_uri(),
+            }), encoding="utf-8")
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_PLAYER_PATH", player_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH", marker_path), \
+                 patch("jarvis.tools._find_executable", return_value="/usr/bin/open"), \
+                 patch("jarvis.tools.subprocess.run") as run_mock, \
+                 patch("jarvis.tools._localos_music_bridge_liveness", return_value={
+                     "status": "stale",
+                     "bridge_version": 2,
+                     "polling_active": True,
+                 }):
+                result = jarvis_tools._localos_music_open_player_for_polling(timeout_seconds=1.0)
+
+        self.assertEqual(result["status"], "recently_opened")
+        self.assertFalse(result["opened"])
+        self.assertEqual(result["error"], "localos_music_player_recently_opened")
+        run_mock.assert_not_called()
+
+    def test_localos_music_open_player_for_polling_does_not_duplicate_recent_seen_tab(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            player_path = Path(tmpdir) / "!musicPlayer.html"
+            marker_path = Path(tmpdir) / "localos_music_player_open.json"
+            player_path.write_text("<html></html>", encoding="utf-8")
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_PLAYER_PATH", player_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH", marker_path), \
+                 patch("jarvis.tools._find_executable", return_value="/usr/bin/open"), \
+                 patch("jarvis.tools.subprocess.run") as run_mock, \
+                 patch("jarvis.tools._localos_music_bridge_liveness", return_value={
+                     "status": "stale",
+                     "bridge_version": 2,
+                     "polling_active": True,
+                     "snapshot_age_seconds": 55.0,
+                 }):
+                result = jarvis_tools._localos_music_open_player_for_polling(timeout_seconds=1.0)
+
+        self.assertEqual(result["status"], "recently_seen")
+        self.assertFalse(result["opened"])
+        self.assertEqual(result["error"], "localos_music_player_recently_seen")
+        self.assertEqual(result["snapshot_age_seconds"], 55.0)
+        run_mock.assert_not_called()
+
+    def test_localos_music_play_recovers_from_chrome_automation_denial_by_opening_player(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            control_path = Path(tmpdir) / "localos_music_control.json"
+            snapshot_path.write_text(json.dumps({
+                "schema": "jarvis.localos.music.snapshot.v1",
+                "source": "localos-music-player",
+                "received_at": time.time() - 60,
+                "all_songs_count": 1,
+                "library_count": 1,
+                "library": [
+                    {
+                        "id": "track-2",
+                        "title": "Waving Through A Window",
+                        "artist": "Dear Evan Hansen",
+                        "relative_path": "localFiles/mp3/Dear Evan Hansen - Waving Through A Window.mp3",
+                    }
+                ],
+                "jarvis_control_bridge_version": 2,
+                "jarvis_control_polling_active": True,
+                "jarvis_control_status": {"bridge_version": 2, "polling_active": True},
+            }), encoding="utf-8")
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path), \
+                 patch("jarvis.tools._localos_music_play_via_chrome", return_value={
+                     "status": "unavailable",
+                     "error": "chrome_direct_automation_failed",
+                 }) as direct_mock, \
+                 patch("jarvis.tools._localos_music_open_player_for_polling", return_value={
+                     "status": "live",
+                     "opened": True,
+                     "liveness": {"status": "live", "bridge_version": 2, "polling_active": True},
+                 }) as open_mock, \
+                 patch("jarvis.tools._localos_music_playback_confirmation", return_value={
+                     "status": "playing",
+                     "bridge_version": 2,
+                     "polling_active": True,
+                     "latest_command_id": "music-test",
+                     "latest_command_status": "playing",
+                     "current_track_matches": True,
+                     "current_track_playing": True,
+                 }):
+                result = localos_music_play("Waving Through A Window", user_request="play Waving Through A Window", limit=5)
+                pending = localos_music_pending_control()
+
+        self.assertEqual(result["status"], "queued")
+        self.assertEqual(result["control_lane"], "localos_polling_bridge_opened_player")
+        self.assertEqual(result["playback_confirmation"], "playing")
+        self.assertEqual(result["player_open"]["status"], "live")
+        self.assertEqual(result["chrome_direct"]["error"], "chrome_direct_automation_failed")
+        self.assertEqual(pending["status"], "available")
+        self.assertEqual(pending["command"]["track"]["id"], "track-2")
+        self.assertIn("Playing Waving Through A Window by Dear Evan Hansen in Local OS", result["reply"])
+        direct_mock.assert_called_once()
+        open_mock.assert_called_once()
 
     def test_localos_music_play_suppresses_audio_actions_after_selecting_track(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2053,6 +2343,8 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("JARVIS_MUSIC_HEARTBEAT_MS", source)
         self.assertIn("scheduleJarvisMusicHeartbeatSnapshot", source)
         self.assertIn('"jarvis-control-heartbeat"', source)
+        self.assertIn("Starting ${track.title}.", source)
+        self.assertNotIn("Playing ${track.title}.", source)
         self.assertIn("publishJarvisMusicSnapshot(reason = \"music-update\", options = {})", source)
         self.assertIn("!options.force", source)
 
@@ -2659,6 +2951,44 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(built_in["copied_chrome_cookies"])
         self.assertEqual(built_in["recommended_authenticated_lane"], "chrome")
         self.assertIn("should not copy Chrome cookies", built_in["reply"])
+
+    def test_commerce_price_convert_parses_official_apple_price_and_yuan_rate(self):
+        apple_page = """
+        <html><head>
+        <title>Magic Keyboard (USB-C) - US English - Apple</title>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Magic Keyboard (USB-C) - US English",
+         "offers":[{"@type":"Offer","priceCurrency":"USD","price":99.00,
+                    "availability":"http://schema.org/InStock","sku":"MXCL3LL/A"}]}
+        </script>
+        </head></html>
+        """
+        rate_json = json.dumps({
+            "result": "success",
+            "time_last_update_utc": "Sun, 14 Jun 2026 00:02:31 +0000",
+            "rates": {"CNY": 6.781714},
+        })
+
+        def fake_fetch(url, *, timeout):
+            if "apple.com" in url:
+                return {"ok": True, "text": apple_page, "url": url}
+            if "open.er-api.com" in url:
+                return {"ok": True, "text": rate_json, "url": url}
+            return {"ok": False, "error": "unexpected url"}
+
+        with patch("jarvis.tools._fetch_public_web_text", side_effect=fake_fetch):
+            result = commerce_price_convert("Magic Keyboard", target_currency="CNY", source_country="USA")
+
+        self.assertEqual(result["tool"], "commerce.price_convert")
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["status"], "converted")
+        self.assertEqual(result["source_country"], "US")
+        self.assertEqual(result["price"]["formatted_price"], "$99.00")
+        self.assertEqual(result["exchange_rate"]["rate"], 6.781714)
+        self.assertEqual(result["converted"]["rounded_amount"], 671)
+        self.assertIn("about 671 yuan", result["reply"])
+        self.assertNotIn("https://", result["reply"])
+        self.assertEqual(result["spoken_summary"], result["reply"])
 
     def test_chrome_bookmarks_import_search_and_open_plan_are_local(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -7020,6 +7350,22 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("captureResponseDiagnostics(response)", model_source)
         self.assertIn("recordTurnPhase(\"Answering\"", model_source)
 
+    def test_swift_menu_bar_self_test_retries_mode_roundtrip(self):
+        self_test_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisMenuBarSelfTest.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('withRetry("mode", operation:', self_test_source)
+        self.assertIn('withRetry("pause mode")', self_test_source)
+        self.assertIn('withRetry("paused status command")', self_test_source)
+        self.assertIn('withRetry("resume mode")', self_test_source)
+        self.assertIn('Mode: \\(modeSelfTest ? "pause/resume passed" : "endpoint not available")', self_test_source)
+
     def test_swift_copy_chat_json_includes_history_payload_preview(self):
         model_source = (
             PROJECT_ROOT
@@ -7120,6 +7466,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("window.level = .normal", app_source)
         self.assertIn('return true', app_source)
         self.assertNotIn("<key>LSUIElement</key>", bundle_script)
+        self.assertIn("<key>NSAppleEventsUsageDescription</key>", bundle_script)
+        self.assertIn("inspect or control apps such as Google Chrome", bundle_script)
 
     def test_app_bundle_prefers_stable_local_signing_identity(self):
         bundle_script = (
@@ -7238,11 +7586,23 @@ class RuntimeSurfaceTests(unittest.TestCase):
             / "JarvisClient"
             / "JarvisClient.swift"
         ).read_text(encoding="utf-8")
+        helper_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisStatusHelper"
+            / "main.swift"
+        ).read_text(encoding="utf-8")
+        package_source = (PROJECT_ROOT / "swift-shell" / "Package.swift").read_text(encoding="utf-8")
+        bundle_script = (PROJECT_ROOT / "swift-shell" / "scripts" / "build_app_bundle.sh").read_text(encoding="utf-8")
+        launch_script = (PROJECT_ROOT / "swift-shell" / "scripts" / "build_and_launch_app.sh").read_text(encoding="utf-8")
+        verify_source = (PROJECT_ROOT / "scripts" / "verify_safe.py").read_text(encoding="utf-8")
+        menu_head_asset = PROJECT_ROOT / "assets" / "jarvis-menu-head.png"
 
-        self.assertIn('"Shut Up"', app_source)
-        self.assertIn('"Keep Blabbering"', app_source)
-        self.assertIn("toggleSpeechMute", app_source)
-        self.assertIn("menuNeedsUpdate", app_source)
+        self.assertIn('"Shut Up"', helper_source)
+        self.assertIn('"Keep Blabbering"', helper_source)
+        self.assertIn("toggleSpeechMute", helper_source)
+        self.assertIn("menuNeedsUpdate", helper_source)
         self.assertIn("toggleSpeechMuted()", model_source)
         self.assertIn("isSpeechMuted", model_source)
         self.assertIn("onSpeechMuteStateChanged", model_source)
@@ -7256,19 +7616,69 @@ class RuntimeSurfaceTests(unittest.TestCase):
             model_source.index("return try await client.setSpeechMuted(muted)"),
             model_source.index("let startup = await workerSupervisor.ensureRunning()"),
         )
-        self.assertIn("model.onSpeechMuteStateChanged", app_source)
-        self.assertIn('"Open Overnight Report"', app_source)
+        self.assertIn("model.onSpeechPlaybackLikelyStarted", app_source)
+        self.assertIn("startStatusHelper()", app_source)
+        self.assertIn("private var statusHelperProcess: Process?", app_source)
+        self.assertIn('appendingPathComponent("jarvis-status-helper")', app_source)
+        self.assertIn("let center = DistributedNotificationCenter.default()", app_source)
+        self.assertIn("center.addObserver", app_source)
+        self.assertIn("handleStatusHelperOpenPanel", app_source)
+        self.assertIn("handleStatusHelperRunStatus", app_source)
+        self.assertIn("handleStatusHelperToggleWakeListener", app_source)
+        self.assertIn("handleStatusHelperQuit", app_source)
+        self.assertIn('name: "JarvisStatusHelper"', package_source)
+        self.assertIn('executable(name: "jarvis-status-helper"', package_source)
+        self.assertIn('CommandLine.arguments.contains("--self-test")', helper_source)
+        self.assertIn("Jarvis status helper self-test passed", helper_source)
+        self.assertIn('swift build --package-path "$PACKAGE_DIR" -c "$CONFIGURATION" --product jarvis-status-helper', bundle_script)
+        self.assertIn('cp "$SOURCE_STATUS_HELPER" "$MACOS_DIR/jarvis-status-helper"', bundle_script)
+        self.assertIn('STATUS_HELPER_EXECUTABLE="$APP_PATH/Contents/MacOS/jarvis-status-helper"', launch_script)
+        self.assertIn('"$STATUS_HELPER_EXECUTABLE"*', launch_script)
+        self.assertIn("swift_status_helper_self_test", verify_source)
+        self.assertIn('"jarvis-status-helper", "--self-test"', verify_source)
+        self.assertNotIn("item.autosaveName", helper_source)
+        self.assertNotIn("statusItemAutosaveName", helper_source)
+        self.assertNotIn("item.behavior = [.removalAllowed]", helper_source)
+        self.assertIn("item.button?.image = image", helper_source)
+        self.assertIn("item.button?.imageScaling = .scaleProportionallyDown", helper_source)
+        self.assertIn("item.button?.imagePosition = image == nil ? .noImage : .imageOnly", helper_source)
+        self.assertIn("item.menu = menu", helper_source)
+        self.assertIn("onSpeechPlaybackLikelyStarted?()", model_source)
+        self.assertIn("var onSpeechPlaybackLikelyStarted", model_source)
+        self.assertNotIn("JarvisMenuBarApp.environmentFlag(\"JARVIS_SHOW_MENU_BAR_ITEM\"", app_source)
+        self.assertIn('"Open Overnight Report"', helper_source)
         self.assertIn("openOvernightReport", app_source)
         self.assertIn("overnightReportURL", model_source)
         self.assertIn('appendingPathComponent("overnight-report/")', model_source)
-        self.assertIn('"Open Wake Test"', app_source)
+        self.assertIn('"Open Wake Test"', helper_source)
         self.assertIn('"Start Hey Jarvis"', app_source)
         self.assertIn('"Stop Hey Jarvis"', app_source)
-        self.assertIn("NSStatusItem.squareLength", app_source)
-        self.assertIn("item.button?.title = Self.statusItemTitle", app_source)
-        self.assertIn("item.button?.imagePosition = .imageOnly", app_source)
-        self.assertIn('item.button?.toolTip = "Jarvis"', app_source)
-        self.assertNotIn('item.button?.title = "Jarvis"', app_source)
+        self.assertIn('"Toggle Hey Jarvis"', helper_source)
+        self.assertIn("NSStatusItem.squareLength", helper_source)
+        self.assertIn("static var statusItemFallbackTitle", app_source)
+        self.assertIn('"J"', app_source)
+        self.assertIn('Bundle.main.url(forResource: "JarvisMenuHead", withExtension: "png")', helper_source)
+        self.assertIn('Bundle.main.url(forResource: "JarvisLogo", withExtension: "png")', helper_source)
+        self.assertIn("cp \"$PROJECT_ROOT/assets/jarvis-menu-head.png\" \"$RESOURCES_DIR/JarvisMenuHead.png\"", bundle_script)
+        self.assertTrue(menu_head_asset.exists())
+        self.assertTrue(menu_head_asset.read_bytes().startswith(b"\x89PNG"))
+        self.assertIn("image.size = NSSize(width: 20, height: 20)", helper_source)
+        self.assertIn("image.isTemplate = false", helper_source)
+        self.assertNotIn('"speaker.wave.2.circle.fill"', helper_source)
+        self.assertNotIn("private final class JarvisStatusItemView", app_source)
+        self.assertNotIn("private final class PassthroughStatusIconView", helper_source)
+        self.assertNotIn("override func hitTest(_ point: NSPoint) -> NSView?", helper_source)
+        self.assertNotIn("button.addSubview", helper_source)
+        self.assertNotIn("JarvisSafetyHeadWindowController", app_source)
+        self.assertNotIn("JarvisSafetyHeadWindowController", helper_source)
+        self.assertNotIn("NSPanel(", helper_source)
+        self.assertNotIn("item.view =", helper_source)
+        self.assertIn('item.button?.toolTip = "Jarvis"', helper_source)
+        self.assertNotIn('item.button?.title = "Jarvis"', helper_source)
+        self.assertLess(
+            helper_source.index("menu.addItem(muteItem)"),
+            helper_source.index('NSMenuItem(title: "Open Panel"'),
+        )
         self.assertIn("toggleWakeListener", app_source)
         self.assertIn("wakeAuditionURL", model_source)
         self.assertIn("setSpeechMuted", client_source)
@@ -7324,7 +7734,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('"Captured wake command echo must not stop Jarvis speech."', selftest_source)
         self.assertIn('"An intentional interruption should stop Jarvis speech."', selftest_source)
 
-    def test_swift_menu_bar_icon_left_click_opens_panel(self):
+    def test_swift_menu_bar_icon_left_click_opens_menu_for_shut_up(self):
         app_source = (
             PROJECT_ROOT
             / "swift-shell"
@@ -7333,16 +7743,27 @@ class RuntimeSurfaceTests(unittest.TestCase):
             / "App"
             / "JarvisMenuBarApp.swift"
         ).read_text(encoding="utf-8")
+        helper_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisStatusHelper"
+            / "main.swift"
+        ).read_text(encoding="utf-8")
 
-        self.assertIn("private var statusMenu: NSMenu?", app_source)
-        self.assertIn("#selector(statusItemClicked(_:))", app_source)
-        self.assertIn("sendAction(on: [.leftMouseUp, .rightMouseUp])", app_source)
-        self.assertIn("event?.type == .rightMouseUp", app_source)
-        self.assertIn("event?.modifierFlags.contains(.control)", app_source)
-        self.assertIn("showStatusMenu(from: sender)", app_source)
-        self.assertIn("statusMenu.popUp(positioning: nil", app_source)
+        self.assertIn("private var statusHelperProcess: Process?", app_source)
+        self.assertIn("item.menu = menu", helper_source)
+        self.assertIn("NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)", helper_source)
+        self.assertNotIn("statusMenu.popUp(positioning: nil", helper_source)
+        self.assertNotIn("sendAction(on: [.leftMouseUp, .rightMouseUp])", helper_source)
+        self.assertNotIn("override func mouseDown(with event: NSEvent)", helper_source)
+        self.assertNotIn("override func hitTest(_ point: NSPoint) -> NSView?", helper_source)
+        self.assertNotIn("statusItemAutosaveName", helper_source)
+        self.assertNotIn("removalAllowed", helper_source)
+        self.assertNotIn("JarvisSafetyHeadWindowController", helper_source)
+        self.assertIn("client.setSpeechMuted", helper_source)
+        self.assertIn("DistributedNotificationCenter.default().postNotificationName", helper_source)
         self.assertIn("openPanel()", app_source)
-        self.assertNotIn("item.menu = menu", app_source)
 
     def test_swift_wake_permission_callbacks_are_not_main_actor_isolated(self):
         listener_source = (
@@ -7624,6 +8045,11 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('label: "Calendar Cache"', service_source)
         self.assertIn("Needs Full Disk Access", service_source)
         self.assertIn("Calendar summaries need Full Disk Access for Jarvis.app", service_source)
+        self.assertIn('id: "chrome-automation"', service_source)
+        self.assertIn('label: "Chrome Automation"', service_source)
+        self.assertIn("AEDeterminePermissionToAutomateTarget", service_source)
+        self.assertIn("Needs Automation Access", service_source)
+        self.assertIn("Privacy & Security > Automation > Google Chrome", service_source)
 
     def test_swift_wake_start_preflights_permissions_without_prompting(self):
         model_source = (
@@ -7731,6 +8157,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("browser.current_tab", tool_ids)
         self.assertIn("browser.read_page", tool_ids)
         self.assertIn("browser.search_web", tool_ids)
+        self.assertIn("commerce.price_convert", tool_ids)
         self.assertIn("browser.built_in_plan", tool_ids)
         self.assertIn("browser.session_strategy", tool_ids)
         self.assertIn("browser.bookmarks_import", tool_ids)

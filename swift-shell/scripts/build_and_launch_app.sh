@@ -7,6 +7,7 @@ PROJECT_ROOT="$(cd "$PACKAGE_DIR/.." && pwd)"
 
 APP_PATH="${APP_PATH:-$PROJECT_ROOT/output/Jarvis.app}"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/jarvis-menu-bar"
+STATUS_HELPER_EXECUTABLE="$APP_PATH/Contents/MacOS/jarvis-status-helper"
 WORKER_SCRIPT="$APP_PATH/Contents/Resources/JarvisWorker/scripts/run_dashboard.py"
 PIPER_SCRIPT="$APP_PATH/Contents/Resources/JarvisWorker/jarvis/piper_warm_worker.py"
 BASE_URL="${JARVIS_BASE_URL:-${JARVIS_URL:-http://127.0.0.1:8765}}"
@@ -16,7 +17,7 @@ collect_existing_pids() {
   ps -axo pid=,command= | while read -r pid command; do
     [[ -n "${pid:-}" ]] || continue
     case "$command" in
-      "$APP_EXECUTABLE"*|*"$WORKER_SCRIPT"*|*"$PIPER_SCRIPT"*)
+      "$APP_EXECUTABLE"*|*"$STATUS_HELPER_EXECUTABLE"*|*"$WORKER_SCRIPT"*|*"$PIPER_SCRIPT"*)
         printf '%s\n' "$pid"
         ;;
     esac
@@ -72,6 +73,7 @@ diagnose_launch_state() {
   printf 'Launch diagnostics:\n'
   printf '  app: %s\n' "$APP_PATH"
   printf '  executable: %s\n' "$APP_EXECUTABLE"
+  printf '  status helper: %s\n' "$STATUS_HELPER_EXECUTABLE"
   printf '  health: %s/api/health\n' "$BASE_URL"
   local found=0
   while IFS= read -r pid; do

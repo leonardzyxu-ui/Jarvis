@@ -21,6 +21,17 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.389 stops LocalOS music recovery from multiplying Chrome tabs: recent opener attempts and recent LocalOS music heartbeats now block duplicate `open Chrome` recovery calls.",
+    "Jarvis 0.1.388 adds a LocalOS music recovery lane: if macOS blocks direct Chrome automation, Jarvis opens the LocalOS Music Player normally, waits for its polling bridge, then queues playback without pretending the song started early.",
+    "Jarvis 0.1.387 tightens LocalOS music playback honesty: `accepted` no longer counts as played, Jarvis waits past early acceptance for real audio, and LocalOS no longer flashes a false `Playing` notification before audio starts.",
+    "Jarvis 0.1.386 adds a real public price plus yuan conversion lane: the Magic Keyboard prompt now routes to `commerce.price_convert`, reads Apple's official U.S. product price, fetches a live USD-CNY rate, and keeps the spoken answer clean.",
+    "Jarvis 0.1.385 moves the menu-bar head into a tiny bundled native helper that uses the proven AppKit status-item path, while the main Jarvis app keeps the normal Dock/window behavior.",
+    "Jarvis 0.1.384 fixes the invisible/displaced menu-bar control by matching the verified native status-item path: direct system button image, no floating panel, no custom hit-test view, and no poisoned autosave placement.",
+    "Jarvis 0.1.383 restores the menu-bar control to a direct system-drawn `NSStatusItem` with a persistent autosave name, so the colored head is no longer a floating overlay and can behave like a normal Command-draggable menu item.",
+    "Jarvis 0.1.382 keeps the menu-bar control native and Command-draggable while drawing the colored Iron Man head through a pass-through image view inside the standard status button.",
+    "Jarvis 0.1.381 restores the menu-bar control as a real native `NSStatusItem`: the colored Iron Man head comes from a cropped menu asset, `Shut Up` is the first menu item, and there is no floating overlay that breaks Command-drag behavior.",
+    "Jarvis 0.1.375 makes the menu-bar safety control non-optional: the native status item is always enabled, is recreated if missing, and is forced visible before app-driven speech so `Shut Up` is reachable whenever Jarvis is talking.",
+    "Jarvis 0.1.374 adds a Chrome Automation permission tile and Apple Events usage description, so logged-in Chrome handoff can explain when Jarvis needs Automation access to read the active page instead of copying Chrome sessions.",
     "Jarvis 0.1.373 adds a Calendar Cache permission tile so the app shows whether the current Jarvis identity can read the local Calendar database; when blocked it names Full Disk Access for Jarvis.app and tells Leo to reopen Jarvis.",
     "Jarvis 0.1.372 fixes private-read safety for natural plural wording: `summarize all the emails...` is now visibly logged as private email access instead of being mislabeled as local conversation.",
     "Jarvis 0.1.371 makes Chrome page-reading failures actionable: if macOS blocks Automation, Jarvis now says the exact Google Chrome permission needed, keeps the signed-in Chrome strategy, and still refuses to copy cookies or sessions into WebKit.",
@@ -227,6 +238,7 @@ PROOF_ITEMS = [
 
 TRY_ITEMS = [
     "Ask Jarvis to open the Teams bookmark or search imported Chrome bookmarks for Teams; the Jarvis browser panel should appear, and Chrome remains the lane for already-logged-in pages.",
+    "Open Perms and check Chrome Automation; if it says Needs Automation Access, allow Jarvis.app under Privacy & Security > Automation > Google Chrome before expecting current-page summaries.",
     "If Jarvis says Local OS did not pick up a music command, open or refresh the Local OS Music Player once; that means Jarvis found the song but the page has not consumed the bridge command yet.",
     "Ask Jarvis about Chrome login migration; it should say it will use Chrome for authenticated sites and should not copy cookies or session stores.",
     "Ask Jarvis to check Calendar; it should answer quickly. If it says the cache is unavailable, the remaining work is macOS permission/app-identity access, not a slow planner hang.",
@@ -245,7 +257,7 @@ TRY_ITEMS = [
 
 RISK_ITEMS = [
     "Calendar reading still depends on the new Jarvis 0.1.373 Calendar Cache tile being Ready; if it says Needs Full Disk Access, grant Jarvis.app Full Disk Access and reopen Jarvis before expecting real schedule summaries.",
-    "Chrome active-page reading now routes correctly, but the live app currently gets `automation_not_allowed` from macOS when it tries to read Chrome page text; Leo may need to grant Jarvis Automation access to Google Chrome before Teams-page summaries work.",
+    "Chrome active-page reading now routes correctly, but Teams-page summaries still depend on the new Chrome Automation tile being Ready; Jarvis will not copy Chrome cookies or sessions into WebKit.",
     "The LocalOS music page likely needs a reload or active Chrome tab to pick up the playback-state bridge; Jarvis now reports missing/stale bridge status honestly, but live audible playback was not triggered while Leo was asleep.",
     "MacBook Air remote-worker probing currently cannot proceed because Tailscale is stopped on this Mac; Jarvis now detects that quickly and should ask before running model tests locally.",
     "Groq works as Jarvis's fast conversation model, but the scored middle-model comparison showed it should not be trusted for safety-sensitive planning without stronger prompting or a safer model layer.",

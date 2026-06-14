@@ -39,6 +39,7 @@ from .tools import (
     codex_chat_plan,
     codex_chat_status,
     codex_speed_status,
+    commerce_price_convert,
     codex_job_status,
     codex_delegate_plan,
     contact_data_infer_from_email,
@@ -355,6 +356,19 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "tool": "browser.search_web",
         "description": "Prepare a web-search URL when the user asks to search the web. This plans only and does not open the browser or read results.",
         "entities": ["query"],
+    },
+    {
+        "tool": "commerce.price_convert",
+        "description": "Fetch a public product price from a reliable official source when available and convert it to yuan. Use when the user asks for a current product price plus currency conversion, such as Magic Keyboard price in yuan.",
+        "entities": ["product_query", "target_currency", "source_country"],
+        "entity_details": {
+            "product_query": "Product name to price, such as Magic Keyboard. Keep the user's intended product name.",
+            "target_currency": "Currency to convert into. Use CNY when Leo says yuan or RMB.",
+            "source_country": "Country/store for the source price. Use US unless Leo specifies another country.",
+        },
+        "examples": [
+            'Checking the price now. \\tool({"tool":"commerce.price_convert","entities":{"product_query":"Magic Keyboard","target_currency":"CNY","source_country":"US"}})',
+        ],
     },
     {
         "tool": "browser.built_in_plan",
@@ -1314,6 +1328,24 @@ class Planner:
                 True,
                 plan={"alias": contact_infer_alias, "scan_limit": 50, "deterministic_preview": True},
             )
+        if use_model_router and _looks_like_email_inspection_request(lower):
+            email_request = email_request_metadata(text, {}, infer_unknown_alias=False)
+            return PlannedResult(
+                command=text,
+                tool="outlook.visible_summary",
+                summary="Command preview prepared by local email intent router. No email was read.",
+                assessment=assessment.to_dict(),
+                result={
+                    "planned_only": True,
+                    "would_execute_if_run": True,
+                    "selected_tool": "outlook.visible_summary",
+                    "deterministic_preview": True,
+                    **email_request,
+                    "plan": email_request_preview_plan(text, {}),
+                },
+                executed=False,
+                confirmation=None,
+            )
         if use_model_router:
             intent = select_tool_intent(text, NATURAL_LANGUAGE_TOOL_SPECS)
             routed = self._handle_model_intent(text, assessment, intent, execute=False, history=history)
@@ -1748,6 +1780,38 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "browser.search_web", assessment, False, plan={"intent": intent, "query": query})
             return self._result(text, "browser.search_web", "Prepared browser search plan.", assessment, browser_search_plan(query), False)
+        if selected_tool == "commerce.price_convert":
+            product_query = (
+                _clean_optional_entity(entities.get("product_query") or entities.get("product") or entities.get("query"))
+                or _extract_price_product_query(text)
+            )
+            target_currency = _clean_optional_entity(entities.get("target_currency") or entities.get("currency")) or _extract_target_currency(text)
+            source_country = _clean_optional_entity(entities.get("source_country") or entities.get("country")) or "US"
+            if not execute:
+                return self._preview_result(
+                    text,
+                    "commerce.price_convert",
+                    assessment,
+                    True,
+                    plan={
+                        "intent": intent,
+                        "product_query": product_query,
+                        "target_currency": target_currency,
+                        "source_country": source_country,
+                    },
+                )
+            return self._result(
+                text,
+                "commerce.price_convert",
+                "Checked public product price and currency conversion.",
+                assessment,
+                commerce_price_convert(
+                    product_query,
+                    target_currency=target_currency,
+                    source_country=source_country,
+                ),
+                True,
+            )
         if selected_tool == "browser.built_in_plan":
             goal = _clean_optional_entity(entities.get("goal")) or text
             if not execute:
@@ -2258,6 +2322,26 @@ def _middle_plan_next_tool_preview(text: str, result: dict[str, Any]) -> dict[st
             "recommended_tool": recommended,
             "executed": False,
             "preview": browser_search_plan(query),
+        }
+    if recommended == "commerce.price_convert":
+        product_query = (
+            _clean_optional_entity(entities.get("product_query") or entities.get("product") or entities.get("query"))
+            or _extract_price_product_query(text)
+        )
+        return {
+            "recommended_tool": recommended,
+            "executed": False,
+            "preview": {
+                "tool": "commerce.price_convert",
+                "status": "planned",
+                "planned_only": True,
+                "executed": False,
+                "product_query": product_query,
+                "target_currency": _clean_optional_entity(entities.get("target_currency") or entities.get("currency")) or _extract_target_currency(text),
+                "source_country": _clean_optional_entity(entities.get("source_country") or entities.get("country")) or "US",
+                "read_private_content": False,
+                "changed_browser_state": False,
+            },
         }
     if recommended == "browser.built_in_plan":
         goal = _clean_optional_entity(entities.get("goal")) or text
@@ -2772,6 +2856,36 @@ def _extract_browser_search_query(text: str) -> str:
     return cleaned[:160]
 
 
+def _extract_price_product_query(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(text or "")).strip(" .?!")
+    patterns = [
+        r"(?i)^.*?\bprice\s+of\s+(?:the\s+)?(.+?)(?:\s+(?:and|then)?\s*(?:tell|convert|converted|in|to)\b.*)?$",
+        r"(?i)^.*?\b(?:search(?:\s+up)?|look\s+up|check|find)\s+(?:the\s+)?(?:current\s+)?price\s+(?:for|of)\s+(?:the\s+)?(.+?)(?:\s+(?:and|then)?\s*(?:tell|convert|converted|in|to)\b.*)?$",
+        r"(?i)^.*?\b(?:search(?:\s+up)?|look\s+up|check|find)\s+(?:the\s+)?(.+?)\s+price(?:\s+(?:and|then)?\s*(?:tell|convert|converted|in|to)\b.*)?$",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, cleaned)
+        if match:
+            product = re.sub(
+                r"(?i)\b(?:converted?\s+to|in|to)\s+(?:yuan|rmb|cny|dollars?|usd).*$",
+                "",
+                match.group(1),
+            )
+            return re.sub(r"\s+", " ", product).strip(" .?!\"'")[:160]
+    if "magic keyboard" in cleaned.lower():
+        return "Magic Keyboard"
+    return cleaned[:160]
+
+
+def _extract_target_currency(text: str) -> str:
+    lower = str(text or "").lower()
+    if re.search(r"\b(?:yuan|rmb|cny|renminbi)\b", lower):
+        return "CNY"
+    if re.search(r"\b(?:usd|dollars?|us dollars?)\b", lower):
+        return "USD"
+    return "CNY"
+
+
 def _looks_like_chrome_bookmarks_import_request(lower: str) -> bool:
     return "bookmark" in lower and any(
         phrase in lower
@@ -2922,7 +3036,7 @@ def _bool_entity(value: Any) -> bool:
 
 def _extract_handoff_tool_id(text: str) -> str:
     for match in re.finditer(
-        r"\b(?:app|browser|codex|conversation|diagnostics|files|localos|memory|outlook|planner|policy|quick|safety|screen|screenshot|shell|system|teams|terminal|tools|ui|voice|workflow)\.[a-z0-9_]+",
+        r"\b(?:app|browser|codex|commerce|conversation|diagnostics|files|localos|memory|outlook|planner|policy|quick|safety|screen|screenshot|shell|system|teams|terminal|tools|ui|voice|workflow)\.[a-z0-9_]+",
         text,
         flags=re.IGNORECASE,
     ):
@@ -3670,6 +3784,7 @@ def _voice_loop_status_text_for_tool(tool: str) -> str:
         "browser.current_tab": "Checking the current Chrome tab now.",
         "browser.read_page": "Reading the current Chrome page now.",
         "browser.search_web": "Preparing that browser search now.",
+        "commerce.price_convert": "Checking the price now.",
         "browser.built_in_plan": "Planning the built-in browser now.",
         "browser.session_strategy": "Checking browser session options now.",
         "browser.bookmarks_import": "Importing Chrome bookmarks now.",
@@ -4377,6 +4492,14 @@ def _looks_like_email_status(lower: str) -> bool:
         and any(cue in lower for cue in status_cues)
         and not any(cue in lower for cue in private_read_cues)
     )
+
+
+def _looks_like_email_inspection_request(lower: str) -> bool:
+    if _looks_like_email_status(lower):
+        return False
+    email_cues = ("email", "emails", "mail", "message", "messages", "inbox", "outlook")
+    inspect_cues = ("check", "read", "summarize", "summary", "scan", "look at", "find")
+    return any(cue in lower for cue in email_cues) and any(cue in lower for cue in inspect_cues)
 
 
 def _is_exact_email_status_command(lower: str) -> bool:

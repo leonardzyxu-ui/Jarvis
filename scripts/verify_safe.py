@@ -124,9 +124,16 @@ def run_temp_app_command(
         total_duration += result.duration_seconds
         if result.passed:
             if len(attempts) > 1:
-                result.summary = f"passed after transient macOS SIGKILL retry {len(attempts) - 1}"
+                retry_label = (
+                    "temp-app"
+                    if any(temp_app_command_needs_transient_retry(attempt) for attempt in attempts[:-1])
+                    else "macOS SIGKILL"
+                )
+                result.summary = f"passed after transient {retry_label} retry {len(attempts) - 1}"
                 result.duration_seconds = round(total_duration, 3)
             return result
+        if temp_app_command_needs_transient_retry(result):
+            continue
         if result.returncode != -9 or result.stdout_tail or result.stderr_tail:
             return result
 
@@ -134,6 +141,18 @@ def run_temp_app_command(
     final.summary = "; ".join(f"attempt {index}: {attempt.summary}" for index, attempt in enumerate(attempts, start=1))
     final.duration_seconds = round(total_duration, 3)
     return final
+
+
+def temp_app_command_needs_transient_retry(result: CheckResult) -> bool:
+    text = f"{result.summary}\n{result.stdout_tail}\n{result.stderr_tail}".lower()
+    if result.passed:
+        return False
+    return (
+        "could not connect to the server" in text
+        or "the network connection was lost" in text
+        or "nsurlerrordomain code=-1005" in text
+        or "readiness failed after retry" in text
+    )
 
 
 def get_json(path: str, timeout: int = 20, base_url: str = BASE_URL) -> Any:
@@ -737,6 +756,7 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
 
     app_path = Path(build.stdout_tail.splitlines()[-1].strip())
     executable = app_path / "Contents" / "MacOS" / "jarvis-menu-bar"
+    status_helper = app_path / "Contents" / "MacOS" / "jarvis-status-helper"
     plist_path = app_path / "Contents" / "Info.plist"
 
     results.append(
@@ -787,7 +807,7 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
             "temporary_app_permission_self_test",
             [str(executable), "--permission-self-test"],
             timeout=60,
-            expect="Permission rows: 6",
+            expect="Permission rows: 7",
         )
     )
     results.append(
@@ -805,6 +825,14 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
             [str(executable), "--hotkey-self-test"],
             timeout=60,
             expect="Hotkey registered: Command+Option+J",
+        )
+    )
+    results.append(
+        run_temp_app_command(
+            "temporary_app_status_helper_self_test",
+            [str(status_helper), "--self-test"],
+            timeout=60,
+            expect="Jarvis status helper self-test passed",
         )
     )
     autostart_port = free_local_port()
@@ -1420,7 +1448,7 @@ def run_checks() -> dict[str, Any]:
                     "swift_permission_self_test",
                     ["swift", "run", "--package-path", "swift-shell", "jarvis-menu-bar", "--permission-self-test"],
                     timeout=120,
-                    expect="Permission rows: 6",
+                    expect="Permission rows: 7",
                 ),
                 run_command(
                     "swift_menu_bar_self_test",
@@ -1434,6 +1462,12 @@ def run_checks() -> dict[str, Any]:
                     ["swift", "run", "--package-path", "swift-shell", "jarvis-menu-bar", "--hotkey-self-test"],
                     timeout=120,
                     expect="Hotkey registered: Command+Option+J",
+                ),
+                run_command(
+                    "swift_status_helper_self_test",
+                    ["swift", "run", "--package-path", "swift-shell", "jarvis-status-helper", "--self-test"],
+                    timeout=120,
+                    expect="Jarvis status helper self-test passed",
                 ),
                 run_command(
                     "swift_host_probe_status",

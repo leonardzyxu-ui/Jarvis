@@ -706,6 +706,7 @@ def _stream_status_text(preview: dict[str, Any]) -> str:
         "browser.current_tab": "Checking the current Chrome tab now.",
         "browser.read_page": "Reading the current Chrome page now.",
         "browser.search_web": "Preparing that browser search now.",
+        "commerce.price_convert": "Checking the price now.",
         "browser.built_in_plan": "Planning the built-in browser now.",
         "browser.session_strategy": "Checking browser session options now.",
         "browser.bookmarks_import": "Importing Chrome bookmarks now.",

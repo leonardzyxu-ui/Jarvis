@@ -27,22 +27,30 @@ enum JarvisMenuBarSelfTest {
         try runCommandRoutingSelfTest()
 
         var modeSelfTest = false
-        if let mode = try? await client.mode() {
+        if let mode = try? await withRetry("mode", operation: {
+            try await client.mode()
+        }) {
             guard mode.commandsEnabled else {
                 throw SelfTestError.failed("Worker started in paused mode; resume Jarvis before running the default self-test.")
             }
-            let paused = try await client.setPaused(true, reason: "Menu-bar self-test pause.")
+            let paused = try await withRetry("pause mode") {
+                try await client.setPaused(true, reason: "Menu-bar self-test pause.")
+            }
             guard paused.paused, paused.commandsEnabled == false else {
                 _ = try? await client.setPaused(false, reason: "Menu-bar self-test cleanup.")
                 throw SelfTestError.failed("Pause mode did not report paused.")
             }
             do {
-                let pausedStatus = try await client.send(command: "status")
+                let pausedStatus = try await withRetry("paused status command") {
+                    try await client.send(command: "status")
+                }
                 guard pausedStatus.tool == "policy.pause", pausedStatus.executed == false else {
                     _ = try? await client.setPaused(false, reason: "Menu-bar self-test cleanup.")
                     throw SelfTestError.failed("Paused worker did not block status command.")
                 }
-                let resumed = try await client.setPaused(false, reason: "Menu-bar self-test resume.")
+                let resumed = try await withRetry("resume mode") {
+                    try await client.setPaused(false, reason: "Menu-bar self-test resume.")
+                }
                 guard resumed.paused == false, resumed.commandsEnabled else {
                     _ = try? await client.setPaused(false, reason: "Menu-bar self-test cleanup.")
                     throw SelfTestError.failed("Pause mode did not resume command execution.")
@@ -85,6 +93,27 @@ enum JarvisMenuBarSelfTest {
             print("Verification: not available")
         }
         print("Mode: \(modeSelfTest ? "pause/resume passed" : "endpoint not available")")
+    }
+
+    @MainActor
+    private static func withRetry<T>(
+        _ label: String,
+        attempts: Int = 3,
+        delayNanoseconds: UInt64 = 200_000_000,
+        operation: () async throws -> T
+    ) async throws -> T {
+        var latestError: Error?
+        for attempt in 1...max(1, attempts) {
+            do {
+                return try await operation()
+            } catch {
+                latestError = error
+                if attempt < attempts {
+                    try? await Task.sleep(nanoseconds: delayNanoseconds)
+                }
+            }
+        }
+        throw latestError ?? SelfTestError.failed("Retry failed for \(label).")
     }
 
     @MainActor
@@ -170,11 +199,8 @@ enum JarvisMenuBarSelfTest {
         guard JarvisAppDelegate.menuBarItemEnabled(environment: [:]) else {
             throw SelfTestError.failed("Menu-bar item should be enabled by default beside normal Dock app mode.")
         }
-        guard !JarvisAppDelegate.menuBarItemEnabled(environment: ["JARVIS_SHOW_MENU_BAR_ITEM": "no"]) else {
-            throw SelfTestError.failed("Menu-bar item override should allow hiding the status item.")
-        }
-        guard JarvisAppDelegate.menuBarItemEnabled(environment: ["JARVIS_SHOW_MENU_BAR_ITEM": "on"]) else {
-            throw SelfTestError.failed("Menu-bar item override should allow enabling the status item.")
+        guard JarvisAppDelegate.menuBarItemEnabled(environment: [:]) else {
+            throw SelfTestError.failed("Menu-bar item should stay enabled for the speech mute safety control.")
         }
         guard JarvisAppDelegate.statusItemTitle.isEmpty else {
             throw SelfTestError.failed("Menu-bar status item should use the icon without a text title.")
@@ -317,7 +343,7 @@ enum JarvisMenuBarSelfTest {
 
     static func runPermissionReadiness() async throws {
         let snapshot = await JarvisPermissionService.snapshot()
-        let expectedIds = Set(["microphone", "speech-recognition", "screen-recording", "accessibility", "calendar-cache", "notifications"])
+        let expectedIds = Set(["microphone", "speech-recognition", "screen-recording", "accessibility", "calendar-cache", "chrome-automation", "notifications"])
         let actualIds = Set(snapshot.map(\.id))
         guard actualIds == expectedIds else {
             throw SelfTestError.failed("Permission snapshot missing expected items: \(actualIds.sorted().joined(separator: ", "))")

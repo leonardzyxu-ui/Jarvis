@@ -9,8 +9,8 @@ APP_NAME="${APP_NAME:-Jarvis}"
 BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"
 CONFIGURATION="${CONFIGURATION:-debug}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_ROOT/output}"
-APP_VERSION="${APP_VERSION:-0.1.373}"
-BUILD_NUMBER="${BUILD_NUMBER:-373}"
+APP_VERSION="${APP_VERSION:-0.1.389}"
+BUILD_NUMBER="${BUILD_NUMBER:-389}"
 REPLACE_APP="${REPLACE_APP:-0}"
 
 default_sign_identity() {
@@ -43,11 +43,17 @@ BUILD_NUMBER_XML="$(xml_escape "$BUILD_NUMBER")"
 mkdir -p "$OUTPUT_ROOT"
 
 swift build --package-path "$PACKAGE_DIR" -c "$CONFIGURATION" --product jarvis-menu-bar
+swift build --package-path "$PACKAGE_DIR" -c "$CONFIGURATION" --product jarvis-status-helper
 BIN_DIR="$(swift build --package-path "$PACKAGE_DIR" -c "$CONFIGURATION" --show-bin-path)"
 SOURCE_EXECUTABLE="$BIN_DIR/jarvis-menu-bar"
+SOURCE_STATUS_HELPER="$BIN_DIR/jarvis-status-helper"
 
 if [[ ! -x "$SOURCE_EXECUTABLE" ]]; then
   echo "Missing built executable: $SOURCE_EXECUTABLE" >&2
+  exit 1
+fi
+if [[ ! -x "$SOURCE_STATUS_HELPER" ]]; then
+  echo "Missing built status helper: $SOURCE_STATUS_HELPER" >&2
   exit 1
 fi
 
@@ -74,6 +80,8 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$SOURCE_EXECUTABLE" "$MACOS_DIR/jarvis-menu-bar"
 chmod 755 "$MACOS_DIR/jarvis-menu-bar"
+cp "$SOURCE_STATUS_HELPER" "$MACOS_DIR/jarvis-status-helper"
+chmod 755 "$MACOS_DIR/jarvis-status-helper"
 
 if [[ -f "$PROJECT_ROOT/assets/Jarvis.icns" ]]; then
   cp "$PROJECT_ROOT/assets/Jarvis.icns" "$RESOURCES_DIR/Jarvis.icns"
@@ -83,6 +91,9 @@ if [[ -f "$PROJECT_ROOT/assets/jarvis-logo-512.png" ]]; then
   cp "$PROJECT_ROOT/assets/jarvis-logo-512.png" "$RESOURCES_DIR/JarvisLogo.png"
 elif [[ -f "$PROJECT_ROOT/assets/jarvis-logo-256.png" ]]; then
   cp "$PROJECT_ROOT/assets/jarvis-logo-256.png" "$RESOURCES_DIR/JarvisLogo.png"
+fi
+if [[ -f "$PROJECT_ROOT/assets/jarvis-menu-head.png" ]]; then
+  cp "$PROJECT_ROOT/assets/jarvis-menu-head.png" "$RESOURCES_DIR/JarvisMenuHead.png"
 fi
 printf '%s\n' "$PROJECT_ROOT" > "$RESOURCES_DIR/JarvisWorkspaceRoot.txt"
 
@@ -124,6 +135,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <string>Jarvis will use the microphone only after Leo enables voice command capture.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>Jarvis will use speech recognition only after Leo enables command transcription.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Jarvis needs permission to inspect or control apps such as Google Chrome only when Leo asks it to use those apps.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

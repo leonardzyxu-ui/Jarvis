@@ -15,6 +15,7 @@ enum JarvisPermissionService {
             screenRecordingStatus(),
             accessibilityStatus(),
             calendarCacheStatus(),
+            chromeAutomationStatus(),
         ]
         permissions.append(await notificationStatus())
         return permissions
@@ -220,6 +221,68 @@ enum JarvisPermissionService {
                 isReady: false
             )
         }
+    }
+
+    private static func chromeAutomationStatus() -> PermissionReadiness {
+        let chromeBundleID = "com.google.Chrome"
+        var target = AEAddressDesc()
+        var bundleIDBytes = Array(chromeBundleID.utf8)
+        let createStatus = bundleIDBytes.withUnsafeMutableBytes { buffer -> OSErr in
+            AECreateDesc(typeApplicationBundleID, buffer.baseAddress, buffer.count, &target)
+        }
+        guard createStatus == noErr else {
+            return PermissionReadiness(
+                id: "chrome-automation",
+                label: "Chrome Automation",
+                state: "Unavailable",
+                detail: "Jarvis could not prepare the Chrome Automation permission check.",
+                isReady: false
+            )
+        }
+        defer {
+            AEDisposeDesc(&target)
+        }
+
+        let permission = AEDeterminePermissionToAutomateTarget(
+            &target,
+            AEEventClass(kCoreEventClass),
+            AEEventID(kAEGetData),
+            false
+        )
+        if permission == noErr {
+            return PermissionReadiness(
+                id: "chrome-automation",
+                label: "Chrome Automation",
+                state: "Ready",
+                detail: "Jarvis can ask Chrome for local browser automation when needed.",
+                isReady: true
+            )
+        }
+        if permission == -1744 {
+            return PermissionReadiness(
+                id: "chrome-automation",
+                label: "Chrome Automation",
+                state: "Not requested",
+                detail: "A Chrome-control task can ask macOS for Automation access when needed.",
+                isReady: false
+            )
+        }
+        if permission == -1743 {
+            return PermissionReadiness(
+                id: "chrome-automation",
+                label: "Chrome Automation",
+                state: "Needs Automation Access",
+                detail: "Grant Jarvis under Privacy & Security > Automation > Google Chrome.",
+                isReady: false
+            )
+        }
+        return PermissionReadiness(
+            id: "chrome-automation",
+            label: "Chrome Automation",
+            state: "Unknown",
+            detail: "Chrome Automation permission returned status \(permission).",
+            isReady: false
+        )
     }
 
     private static func notificationStatus() async -> PermissionReadiness {

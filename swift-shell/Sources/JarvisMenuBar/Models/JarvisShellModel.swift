@@ -67,6 +67,7 @@ final class JarvisShellModel: ObservableObject {
     private var lastBargeInTranscript: String = ""
     private var lastBargeInAt: Date?
     var onSpeechMuteStateChanged: (() -> Void)?
+    var onSpeechPlaybackLikelyStarted: (() -> Void)?
     private static let busyReplyText = "I am still finishing the current task. Send that again in a moment."
     private static let speechBargeInGraceSeconds: TimeInterval = 3.5
     private static let speechBargeInMinimumTokenCount = 4
@@ -483,6 +484,7 @@ final class JarvisShellModel: ObservableObject {
         }
         latestSpeechPreview = cleanText
         latestSpeechLikelyActiveUntil = Date().addingTimeInterval(Self.estimatedSpeechPlaybackSeconds(for: cleanText))
+        onSpeechPlaybackLikelyStarted?()
     }
 
     private func clearSpeechPlaybackWindow() {

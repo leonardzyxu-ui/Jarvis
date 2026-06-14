@@ -252,11 +252,15 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = JarvisShellModel()
     private var hotKeyService: JarvisHotKeyService?
     private var hotKeyStatus: HotKeyRegistrationResult?
+    private var statusHelperProcess: Process?
     private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.onSpeechMuteStateChanged = { [weak self] in
             self?.updateSpeechMuteMenuItem()
+        }
+        model.onSpeechPlaybackLikelyStarted = { [weak self] in
+            self?.startStatusHelper()
         }
         model.$summonSurface
             .receive(on: RunLoop.main)
@@ -264,11 +268,13 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.syncSummonSurface(surface)
             }
             .store(in: &cancellables)
+        registerStatusHelperNotifications()
         configureMainMenu()
         if Self.menuBarItemEnabled {
             configureStatusItem()
         }
         configureHotKey()
+        startStatusHelper()
         model.startWorkerMonitoring()
         model.refresh()
         openPanel()
@@ -276,6 +282,8 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         cancellables.removeAll()
+        DistributedNotificationCenter.default().removeObserver(self)
+        stopStatusHelper()
         model.stopWorkerMonitoring()
     }
 
@@ -337,9 +345,10 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: Self.statusItemLength)
-        item.button?.title = Self.statusItemTitle
-        item.button?.image = Self.statusItemImage()
-        item.button?.imagePosition = .imageOnly
+        let image = Self.statusItemImage()
+        item.button?.title = image == nil ? Self.statusItemFallbackTitle : Self.statusItemTitle
+        item.button?.image = image
+        item.button?.imagePosition = image == nil ? .noImage : .imageOnly
         item.button?.toolTip = "Jarvis"
         item.button?.setAccessibilityLabel("Jarvis")
         item.button?.target = self
@@ -376,9 +385,6 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     static func menuBarItemEnabled(environment: [String: String]) -> Bool {
-        if let override = JarvisMenuBarApp.environmentFlag("JARVIS_SHOW_MENU_BAR_ITEM", environment: environment) {
-            return override
-        }
         return true
     }
 
@@ -398,16 +404,20 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ""
     }
 
+    static var statusItemFallbackTitle: String {
+        "J"
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         updateWakeListenerMenuItem()
         updateSpeechMuteMenuItem()
     }
 
     private static func statusItemImage() -> NSImage? {
-        let fallback = NSImage(systemSymbolName: "bolt.horizontal.circle", accessibilityDescription: "Jarvis")
-        guard let url = Bundle.main.url(forResource: "JarvisLogo", withExtension: "png"),
+        guard let url = Bundle.main.url(forResource: "JarvisMenuHead", withExtension: "png")
+            ?? Bundle.main.url(forResource: "JarvisLogo", withExtension: "png"),
               let image = NSImage(contentsOf: url) else {
-            return fallback
+            return nil
         }
         image.size = NSSize(width: 18, height: 18)
         image.isTemplate = false
@@ -539,5 +549,84 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    private func registerStatusHelperNotifications() {
+        let center = DistributedNotificationCenter.default()
+        center.addObserver(self, selector: #selector(handleStatusHelperOpenPanel), name: MainAppNotification.openPanel.name, object: nil)
+        center.addObserver(self, selector: #selector(handleStatusHelperRunStatus), name: MainAppNotification.runStatus.name, object: nil)
+        center.addObserver(self, selector: #selector(handleStatusHelperToggleWakeListener), name: MainAppNotification.toggleWakeListener.name, object: nil)
+        center.addObserver(self, selector: #selector(handleStatusHelperQuit), name: MainAppNotification.quit.name, object: nil)
+    }
+
+    private func startStatusHelper() {
+        if statusHelperProcess?.isRunning == true {
+            return
+        }
+        let helperURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("MacOS")
+            .appendingPathComponent("jarvis-status-helper")
+        guard FileManager.default.isExecutableFile(atPath: helperURL.path) else {
+            return
+        }
+        let process = Process()
+        process.executableURL = helperURL
+        process.arguments = [
+            "--app-bundle-path",
+            Bundle.main.bundlePath,
+            "--base-url",
+            model.dashboardURL.absoluteString,
+        ]
+        process.terminationHandler = { [weak self] terminatedProcess in
+            Task { @MainActor in
+                if self?.statusHelperProcess === terminatedProcess {
+                    self?.statusHelperProcess = nil
+                }
+            }
+        }
+        do {
+            try process.run()
+            statusHelperProcess = process
+        } catch {
+            statusHelperProcess = nil
+        }
+    }
+
+    private func stopStatusHelper() {
+        guard let process = statusHelperProcess else {
+            return
+        }
+        if process.isRunning {
+            process.terminate()
+        }
+        statusHelperProcess = nil
+    }
+
+    @objc private func handleStatusHelperOpenPanel(_ notification: Notification) {
+        openPanel()
+    }
+
+    @objc private func handleStatusHelperRunStatus(_ notification: Notification) {
+        runStatus()
+    }
+
+    @objc private func handleStatusHelperToggleWakeListener(_ notification: Notification) {
+        toggleWakeListener()
+    }
+
+    @objc private func handleStatusHelperQuit(_ notification: Notification) {
+        quit()
+    }
+}
+
+private enum MainAppNotification: String {
+    case openPanel = "local.leo.jarvis.statusHelper.openPanel"
+    case runStatus = "local.leo.jarvis.statusHelper.runStatus"
+    case toggleWakeListener = "local.leo.jarvis.statusHelper.toggleWakeListener"
+    case quit = "local.leo.jarvis.statusHelper.quit"
+
+    var name: Notification.Name {
+        Notification.Name(rawValue)
     }
 }

@@ -142,6 +142,9 @@ CALENDAR_SQLITE_DB_PATH = Path.home() / "Library" / "Group Containers" / "group.
 REMOTE_WORKER_USER = "hongyi"
 REMOTE_WORKER_HOST = "100.72.212.85"
 REMOTE_WORKER_SSH_TARGET = f"{REMOTE_WORKER_USER}@{REMOTE_WORKER_HOST}"
+PUBLIC_WEB_TIMEOUT_SECONDS = 8.0
+USD_CNY_RATE_URL = "https://open.er-api.com/v6/latest/USD"
+APPLE_MAGIC_KEYBOARD_URL = "https://www.apple.com/shop/product/MXCL3LL/A/magic-keyboard-usb-c-us-english"
 APP_SEARCH_DIRS = [
     Path("/Applications"),
     Path("/Applications/Utilities"),
@@ -167,11 +170,14 @@ LOCALOS_MUSIC_PLAYER_PATH = LOCALOS_ROOT / "localOS" / "localFiles" / "HTMLfiles
 LOCALOS_MUSIC_MP3_DIR = LOCALOS_ROOT / "localOS" / "localFiles" / "mp3"
 LOCALOS_MUSIC_SNAPSHOT_PATH = RUNTIME_DIR / "integrations" / "localos_music_snapshot.json"
 LOCALOS_MUSIC_CONTROL_PATH = RUNTIME_DIR / "integrations" / "localos_music_control.json"
+LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH = RUNTIME_DIR / "integrations" / "localos_music_player_open.json"
 LOCALOS_MUSIC_SNAPSHOT_MAX_TRACKS = 25
 LOCALOS_MUSIC_LIBRARY_MAX_TRACKS = 500
 LOCALOS_MUSIC_DEFAULT_LIMIT = 10
 LOCALOS_MUSIC_CONTROL_TTL_SECONDS = 90
 LOCALOS_MUSIC_BRIDGE_STALE_SECONDS = 15
+LOCALOS_MUSIC_PLAYER_OPEN_COOLDOWN_SECONDS = 45
+LOCALOS_MUSIC_PLAYER_RECENT_SNAPSHOT_SECONDS = 180
 LOCALOS_MUSIC_CHROME_DIRECT_CONFIRM_SECONDS = 2.5
 LOCALOS_MUSIC_CHROME_DIRECT_SCRIPT_TIMEOUT_SECONDS = 4.0
 LOCALOS_MUSIC_CHROME_DIRECT_NEW_TAB_DELAY_SECONDS = 1.2
@@ -1029,6 +1035,14 @@ def tool_registry() -> dict[str, Any]:
                 "risk": "external_navigation_possible",
                 "available": True,
                 "description": "Prepares a web-search URL without opening a browser or reading search results.",
+            },
+            {
+                "id": "commerce.price_convert",
+                "label": "Price + Currency Lookup",
+                "mode": "public_web_read",
+                "risk": "public_network_lookup",
+                "available": True,
+                "description": "Fetches a public product price from an official source when available and converts USD prices to yuan with a live public exchange-rate source.",
             },
             {
                 "id": "browser.built_in_plan",
@@ -3067,12 +3081,8 @@ def localos_music_play(
     if bridge_liveness.get("status") in {"unknown", "stale", "not_polling"}:
         direct_confirmation = _localos_music_play_via_chrome(selected, user_request=user_request or query or "")
         direct_status = str(direct_confirmation.get("status") or "")
-        if direct_status in {"playing", "accepted"}:
-            reply = (
-                f"Playing {_localos_music_found_phrase(selected)} in Local OS."
-                if direct_status == "playing"
-                else f"Local OS accepted {_localos_music_found_phrase(selected)}; waiting for the audio to start."
-            )
+        if direct_status == "playing":
+            reply = f"Playing {_localos_music_found_phrase(selected)} in Local OS."
             return {
                 **base,
                 "status": "queued",
@@ -3093,6 +3103,86 @@ def localos_music_play(
                 "reply": reply,
                 **_duration_fields(started_at),
             }
+        if direct_status == "accepted":
+            return {
+                **base,
+                "status": "not_queued",
+                "available": True,
+                "source_tool": source_result.get("tool"),
+                "source_status": source_result.get("status"),
+                "selected_track": selected,
+                "control_lane": "chrome_direct_localos_page",
+                "playback_confirmation": "accepted",
+                "localos_bridge_version": direct_confirmation.get("bridge_version"),
+                "localos_bridge_polling_active": direct_confirmation.get("polling_active"),
+                "localos_bridge_latest_command_id": direct_confirmation.get("latest_command_id"),
+                "localos_bridge_latest_command_status": direct_confirmation.get("latest_command_status"),
+                "localos_bridge_current_track_matches": direct_confirmation.get("current_track_matches"),
+                "localos_bridge_current_track_playing": direct_confirmation.get("current_track_playing"),
+                "localos_command_error": direct_confirmation.get("error"),
+                "chrome_direct": direct_confirmation,
+                "bridge_recovery": _localos_music_bridge_recovery(),
+                "reply": (
+                    f"I found {_localos_music_found_phrase(selected)}, but Local OS did not start the audio. "
+                    "Open or refresh the Local OS Music Player, then try again."
+                ),
+                **_duration_fields(started_at),
+            }
+        player_open = _localos_music_open_player_for_polling()
+        if player_open.get("status") == "live":
+            command = _queue_localos_music_control("play_track", selected, user_request=user_request or query or "")
+            confirmation = _localos_music_playback_confirmation(command, selected)
+            confirmation_status = str(confirmation.get("status") or "unconfirmed")
+            bridge_version = confirmation.get("bridge_version")
+            if confirmation_status == "playing":
+                reply = f"Playing {_localos_music_found_phrase(selected)} in Local OS."
+            elif confirmation_status == "failed":
+                reply = f"I found {_localos_music_found_phrase(selected)}, but Local OS could not start it."
+            elif confirmation_status == "ignored":
+                reply = f"Local OS ignored the request for {_localos_music_found_phrase(selected)}."
+            elif confirmation_status == "bridge_not_polling":
+                reply = (
+                    f"I found {_localos_music_found_phrase(selected)}, but Local OS did not pick up the command. "
+                    "Open or refresh the Local OS Music Player, then try again."
+                )
+            elif confirmation_status == "accepted":
+                reply = (
+                    f"I found {_localos_music_found_phrase(selected)}, but Local OS did not start the audio. "
+                    "Open or refresh the Local OS Music Player, then try again."
+                )
+            elif bridge_version:
+                reply = f"I sent {_localos_music_found_phrase(selected)} to Local OS, but it has not confirmed playback yet."
+            else:
+                reply = (
+                    f"I queued {_localos_music_found_phrase(selected)} in Local OS. "
+                    "If it does not start, refresh the LocalOS music window once."
+                )
+            result_status = "queued"
+            if confirmation_status in {"accepted", "failed", "ignored", "bridge_not_polling"}:
+                result_status = "not_queued"
+            return {
+                **base,
+                "status": result_status,
+                "available": True,
+                "source_tool": source_result.get("tool"),
+                "source_status": source_result.get("status"),
+                "selected_track": selected,
+                "control": command,
+                "control_lane": "localos_polling_bridge_opened_player",
+                "playback_confirmation": confirmation_status,
+                "localos_bridge_version": bridge_version,
+                "localos_bridge_polling_active": confirmation.get("polling_active"),
+                "localos_bridge_latest_command_id": confirmation.get("latest_command_id"),
+                "localos_bridge_latest_command_status": confirmation.get("latest_command_status"),
+                "localos_bridge_current_track_matches": confirmation.get("current_track_matches"),
+                "localos_bridge_current_track_playing": confirmation.get("current_track_playing"),
+                "localos_command_error": confirmation.get("error"),
+                "chrome_direct": direct_confirmation,
+                "player_open": player_open,
+                "bridge_recovery": _localos_music_bridge_recovery(),
+                "reply": reply,
+                **_duration_fields(started_at),
+            }
         return {
             **base,
             "status": "not_queued",
@@ -3107,10 +3197,17 @@ def localos_music_play(
             "localos_command_error": bridge_liveness.get("error"),
             "localos_bridge_status": bridge_liveness.get("status"),
             "chrome_direct": direct_confirmation,
+            "player_open": player_open,
             "bridge_recovery": _localos_music_bridge_recovery(),
             "reply": (
                 f"I found {_localos_music_found_phrase(selected)}, but Local OS Music is not connected right now. "
-                "Open or refresh the Local OS Music Player, then try again."
+                + (
+                    "I already opened the Local OS Music Player; wait for it to finish connecting, then try again."
+                    if player_open.get("status") == "recently_opened"
+                    else "I recently saw the Local OS Music Player open; refresh that tab, then try again."
+                    if player_open.get("status") == "recently_seen"
+                    else "Open or refresh the Local OS Music Player, then try again."
+                )
             ),
             **_duration_fields(started_at),
         }
@@ -3139,9 +3236,12 @@ def localos_music_play(
             f"I queued {_localos_music_found_phrase(selected)} in Local OS. "
             "If it does not start, refresh the LocalOS music window once."
         )
+    result_status = "queued"
+    if confirmation_status in {"accepted", "failed", "ignored", "bridge_not_polling"}:
+        result_status = "not_queued"
     return {
         **base,
-        "status": "queued",
+        "status": result_status,
         "control_lane": "localos_polling_bridge",
         "available": True,
         "source_tool": source_result.get("tool"),
@@ -3378,6 +3478,164 @@ def _localos_music_bridge_liveness() -> dict[str, Any]:
         "polling_active": polling_active,
         "snapshot_age_seconds": snapshot_age_seconds,
         "error": "",
+    }
+
+
+def _localos_music_recent_player_open(now: float | None = None) -> dict[str, Any] | None:
+    if not LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH.exists():
+        return None
+    try:
+        marker = json.loads(LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(marker, dict):
+        return None
+    opened_at = _safe_float(marker.get("opened_at"))
+    if opened_at is None:
+        return None
+    current = time.time() if now is None else now
+    age = max(0.0, current - opened_at)
+    if age > LOCALOS_MUSIC_PLAYER_OPEN_COOLDOWN_SECONDS:
+        return None
+    return {
+        "status": "recently_opened",
+        "opened_at": opened_at,
+        "age_seconds": round(age, 3),
+        "cooldown_seconds": LOCALOS_MUSIC_PLAYER_OPEN_COOLDOWN_SECONDS,
+        "player_url": _localos_clean_text(marker.get("player_url"), 500),
+    }
+
+
+def _mark_localos_music_player_opened(player_url: str) -> None:
+    try:
+        LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH.with_suffix(".json.tmp")
+        temp_path.write_text(
+            json.dumps(
+                {
+                    "schema": "jarvis.localos.music.player_open.v1",
+                    "opened_at": time.time(),
+                    "player_url": player_url,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        temp_path.replace(LOCALOS_MUSIC_PLAYER_OPEN_MARK_PATH)
+    except OSError:
+        return
+
+
+def _localos_music_open_player_for_polling(*, timeout_seconds: float = 3.5) -> dict[str, Any]:
+    """Open the LocalOS music player normally so its polling bridge can connect."""
+    started_at = time.monotonic()
+    current_liveness = _localos_music_bridge_liveness()
+    if current_liveness.get("status") == "live":
+        return {
+            "status": "live",
+            "opened": False,
+            "already_live": True,
+            "liveness": current_liveness,
+            **_duration_fields(started_at),
+        }
+    snapshot_age = _safe_float(current_liveness.get("snapshot_age_seconds"))
+    if (
+        current_liveness.get("bridge_version")
+        and snapshot_age is not None
+        and snapshot_age <= LOCALOS_MUSIC_PLAYER_RECENT_SNAPSHOT_SECONDS
+    ):
+        return {
+            "status": "recently_seen",
+            "opened": False,
+            "error": "localos_music_player_recently_seen",
+            "snapshot_age_seconds": snapshot_age,
+            "recent_snapshot_seconds": LOCALOS_MUSIC_PLAYER_RECENT_SNAPSHOT_SECONDS,
+            "liveness": current_liveness,
+            **_duration_fields(started_at),
+        }
+    if not LOCALOS_MUSIC_PLAYER_PATH.exists():
+        return {
+            "status": "unavailable",
+            "error": "localos_music_player_missing",
+            "player_path": str(LOCALOS_MUSIC_PLAYER_PATH),
+            **_duration_fields(started_at),
+        }
+    open_path = _find_executable("open")
+    if not open_path:
+        return {
+            "status": "unavailable",
+            "error": "open_tool_missing",
+            "player_path": str(LOCALOS_MUSIC_PLAYER_PATH),
+            **_duration_fields(started_at),
+        }
+
+    player_url = LOCALOS_MUSIC_PLAYER_PATH.as_uri()
+    recent_open = _localos_music_recent_player_open()
+    if recent_open is not None:
+        liveness = _localos_music_bridge_liveness()
+        return {
+            **recent_open,
+            "opened": False,
+            "error": "localos_music_player_recently_opened",
+            "liveness": liveness,
+            **_duration_fields(started_at),
+        }
+    _mark_localos_music_player_opened(player_url)
+    try:
+        completed = subprocess.run(
+            [open_path, "-a", "Google Chrome", player_url],
+            shell=False,
+            cwd=PROJECT_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5.0,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "open_timeout",
+            "error": "open_timed_out",
+            "player_url": player_url,
+            **_duration_fields(started_at),
+        }
+    except OSError as error:
+        return {
+            "status": "open_failed",
+            "error": str(error),
+            "player_url": player_url,
+            **_duration_fields(started_at),
+        }
+
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    last_liveness: dict[str, Any] = {}
+    while True:
+        liveness = _localos_music_bridge_liveness()
+        last_liveness = liveness
+        if liveness.get("status") == "live":
+            return {
+                "status": "live",
+                "opened": completed.returncode == 0,
+                "returncode": completed.returncode,
+                "stderr": _text_tail(completed.stderr or "", 500),
+                "player_url": player_url,
+                "liveness": liveness,
+                **_duration_fields(started_at),
+            }
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.25)
+
+    return {
+        "status": "opened_unconfirmed" if completed.returncode == 0 else "open_failed",
+        "opened": completed.returncode == 0,
+        "returncode": completed.returncode,
+        "stderr": _text_tail(completed.stderr or "", 500),
+        "player_url": player_url,
+        "liveness": last_liveness,
+        **_duration_fields(started_at),
     }
 
 
@@ -3624,7 +3882,7 @@ def _localos_music_playback_confirmation(
             selected_id=selected_id,
             command_created_at=command_created_at,
         )
-        if confirmation.get("status") in {"playing", "accepted", "failed", "ignored"}:
+        if confirmation.get("status") in {"playing", "failed", "ignored"}:
             return confirmation
         last_confirmation = confirmation
         if time.monotonic() >= deadline:
@@ -4180,6 +4438,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "browser.current_tab", "kind": "private_metadata_read", "description": "Read the active Chrome tab title and URL only."},
         {"id": "browser.read_page", "kind": "private_read_local_only", "description": "Read bounded active Chrome page text locally and scan it as untrusted content; do not send it to a model automatically."},
         {"id": "browser.search_web", "kind": "plan_only", "description": "Prepare a web-search URL without opening the browser."},
+        {"id": "commerce.price_convert", "kind": "public_web_read", "description": "Fetch an official public product price when available and convert USD prices to yuan with a live public exchange rate."},
         {"id": "browser.built_in_plan", "kind": "read_only_plan", "description": "Explain Chrome control versus a future Jarvis WebKit browser."},
         {"id": "browser.session_strategy", "kind": "read_only_plan", "description": "Explain the safe logged-in-site strategy: use Chrome for existing sessions, not copied cookies."},
         {"id": "browser.bookmarks_import", "kind": "private_read_local_write", "description": "Import Chrome bookmarks into Jarvis's local runtime snapshot without printing bookmark contents."},
@@ -9781,6 +10040,343 @@ def browser_search_plan(query: str) -> dict[str, Any]:
     }
 
 
+def commerce_price_convert(
+    product_query: str,
+    *,
+    target_currency: str = "CNY",
+    source_country: str = "US",
+) -> dict[str, Any]:
+    """Fetch a public product price and convert it with a public exchange rate."""
+    started_at = time.monotonic()
+    clean_product = re.sub(r"\s+", " ", str(product_query or "")).strip(" .?!")
+    target = _normalize_currency_code(target_currency)
+    base = {
+        "tool": "commerce.price_convert",
+        "executed": False,
+        "product_query": clean_product,
+        "target_currency": target,
+        "source_country": _normalize_source_country(source_country),
+        "read_private_content": False,
+        "changed_browser_state": False,
+        "opened_browser": False,
+        "external_network_lookup": True,
+    }
+    if not clean_product:
+        return {
+            **base,
+            "status": "missing_product",
+            **_duration_fields(started_at),
+            "reply": "I need the product name before I can check the price.",
+        }
+
+    source = _commerce_known_price_source(clean_product, source_country=source_country)
+    if source is None:
+        search = browser_search_plan(f"{clean_product} official price")
+        return {
+            **base,
+            "status": "unsupported_product",
+            "supported_products": ["Apple Magic Keyboard"],
+            "search_plan": search,
+            **_duration_fields(started_at),
+            "reply": f"I do not have a reliable official price source for {clean_product} yet.",
+        }
+
+    price_page = _fetch_public_web_text(source["url"], timeout=PUBLIC_WEB_TIMEOUT_SECONDS)
+    if not price_page.get("ok"):
+        return {
+            **base,
+            "status": "price_source_unavailable",
+            "source": source,
+            "source_error": _text_tail(str(price_page.get("error") or ""), 400),
+            **_duration_fields(started_at),
+            "reply": f"I could not reach the official price source for {source['label']} just now.",
+        }
+
+    price = _extract_apple_product_price(str(price_page.get("text") or ""), source)
+    if not price.get("ok"):
+        return {
+            **base,
+            "status": "price_parse_failed",
+            "source": source,
+            "parse_error": price.get("error") or "unknown",
+            **_duration_fields(started_at),
+            "reply": f"I reached the official page for {source['label']}, but I could not verify the price.",
+        }
+
+    if target == str(price.get("currency") or "USD").upper():
+        converted = float(price["amount"])
+        rate_result = {
+            "base": target,
+            "target": target,
+            "rate": 1.0,
+            "source_url": "",
+            "status": "same_currency",
+        }
+    elif str(price.get("currency") or "").upper() == "USD" and target == "CNY":
+        rate_result = _fetch_usd_cny_exchange_rate()
+        if not rate_result.get("ok"):
+            return {
+                **base,
+                "status": "exchange_rate_unavailable",
+                "source": source,
+                "price": price,
+                "exchange_rate": rate_result,
+                **_duration_fields(started_at),
+                "reply": (
+                    f"{price['product_name']} is {price['formatted_price']} from Apple's U.S. store, "
+                    "but I could not fetch a live yuan exchange rate."
+                ),
+            }
+        converted = float(price["amount"]) * float(rate_result["rate"])
+    else:
+        return {
+            **base,
+            "status": "unsupported_conversion",
+            "source": source,
+            "price": price,
+            **_duration_fields(started_at),
+            "reply": f"I found {price['product_name']} at {price['formatted_price']}, but I cannot convert that currency to {target} yet.",
+        }
+
+    rounded_converted = int(round(converted))
+    product_name = str(price["product_name"])
+    reply = (
+        f"{product_name} is {price['formatted_price']} from Apple's U.S. store, "
+        f"which is about {rounded_converted:,} yuan before tax or shipping."
+    )
+    return {
+        **base,
+        "executed": True,
+        "status": "converted",
+        "source": source,
+        "price": price,
+        "exchange_rate": rate_result,
+        "converted": {
+            "currency": target,
+            "amount": round(converted, 2),
+            "rounded_amount": rounded_converted,
+            "formatted": f"{rounded_converted:,} yuan",
+        },
+        **_duration_fields(started_at),
+        "reply": reply,
+        "spoken_summary": reply,
+    }
+
+
+def _commerce_known_price_source(product_query: str, *, source_country: str = "US") -> dict[str, str] | None:
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(product_query or "").lower()).strip()
+    country = _normalize_source_country(source_country)
+    if country == "US" and "magic keyboard" in normalized and "ipad" not in normalized:
+        return {
+            "label": "Magic Keyboard (USB-C) - US English",
+            "brand": "Apple",
+            "url": APPLE_MAGIC_KEYBOARD_URL,
+            "source_type": "official_product_page",
+            "country": "US",
+        }
+    return None
+
+
+def _normalize_source_country(value: Any) -> str:
+    text = re.sub(r"[^A-Za-z]+", " ", str(value or "US")).strip().upper()
+    compact = text.replace(" ", "")
+    if compact in {"", "US", "USA", "UNITEDSTATES", "UNITEDSTATESOFAMERICA"}:
+        return "US"
+    return text[:8]
+
+
+def _fetch_public_web_text(url: str, *, timeout: float) -> dict[str, Any]:
+    request = urllib.request.Request(
+        str(url),
+        headers={
+            "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+            "User-Agent": "Jarvis/0.1 local-mac-assistant",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=_https_context()) as response:
+            raw = response.read(700_000)
+            charset = response.headers.get_content_charset() or "utf-8"
+            return {
+                "ok": True,
+                "status": getattr(response, "status", None),
+                "url": getattr(response, "url", url),
+                "content_type": response.headers.get("content-type", ""),
+                "text": raw.decode(charset, errors="replace"),
+            }
+    except TimeoutError:
+        return {"ok": False, "error": "timeout", "url": url}
+    except urllib.error.HTTPError as error:
+        return {
+            "ok": False,
+            "error": f"HTTP {error.code}: {_text_tail(error.read(), 500)}",
+            "url": url,
+        }
+    except (urllib.error.URLError, OSError) as error:
+        reason = getattr(error, "reason", error)
+        return {"ok": False, "error": str(reason), "url": url}
+
+
+def _extract_apple_product_price(page_text: str, source: dict[str, str]) -> dict[str, Any]:
+    data = _json_ld_product_data(page_text)
+    if data:
+        product_name = _voice_friendly_product_name(_clean_local_field(data.get("name")) or source.get("label") or "Apple product")
+        offers = data.get("offers")
+        if isinstance(offers, dict):
+            offers = [offers]
+        if isinstance(offers, list):
+            for offer in offers:
+                if not isinstance(offer, dict):
+                    continue
+                amount = _float_from_price(offer.get("price"))
+                currency = _clean_local_field(offer.get("priceCurrency")).upper() or "USD"
+                if amount is not None and currency:
+                    return {
+                        "ok": True,
+                        "product_name": product_name,
+                        "amount": amount,
+                        "currency": currency,
+                        "formatted_price": _format_currency_amount(amount, currency),
+                        "availability": _clean_local_field(offer.get("availability")),
+                        "sku": _clean_local_field(offer.get("sku")) or source.get("sku", ""),
+                        "source_url": source.get("url", ""),
+                    }
+    title = _voice_friendly_product_name(_html_title(page_text) or source.get("label") or "Apple product")
+    price_match = re.search(r'"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?', page_text)
+    currency_match = re.search(r'"priceCurrency"\s*:\s*"([A-Z]{3})"', page_text)
+    amount = _float_from_price(price_match.group(1) if price_match else None)
+    currency = currency_match.group(1) if currency_match else "USD"
+    if amount is None:
+        return {"ok": False, "error": "No structured price was found."}
+    return {
+        "ok": True,
+        "product_name": title,
+        "amount": amount,
+        "currency": currency,
+        "formatted_price": _format_currency_amount(amount, currency),
+        "availability": "",
+        "sku": source.get("sku", ""),
+        "source_url": source.get("url", ""),
+    }
+
+
+def _json_ld_product_data(page_text: str) -> dict[str, Any] | None:
+    scripts = re.findall(
+        r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
+        page_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for script in scripts:
+        payload = html.unescape(script).strip()
+        if not payload:
+            continue
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        product = _find_product_json_ld(parsed)
+        if product is not None:
+            return product
+    return None
+
+
+def _find_product_json_ld(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        value_type = value.get("@type")
+        types = value_type if isinstance(value_type, list) else [value_type]
+        if any(str(item).lower() == "product" for item in types) and "offers" in value:
+            return value
+        for child in value.values():
+            found = _find_product_json_ld(child)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_product_json_ld(item)
+            if found is not None:
+                return found
+    return None
+
+
+def _fetch_usd_cny_exchange_rate() -> dict[str, Any]:
+    fetched = _fetch_public_web_text(USD_CNY_RATE_URL, timeout=PUBLIC_WEB_TIMEOUT_SECONDS)
+    if not fetched.get("ok"):
+        return {
+            "ok": False,
+            "status": "source_unavailable",
+            "source_url": USD_CNY_RATE_URL,
+            "error": fetched.get("error"),
+        }
+    try:
+        data = json.loads(str(fetched.get("text") or ""))
+    except json.JSONDecodeError as error:
+        return {
+            "ok": False,
+            "status": "parse_failed",
+            "source_url": USD_CNY_RATE_URL,
+            "error": str(error),
+        }
+    rates = data.get("rates") if isinstance(data, dict) else {}
+    rate = _float_from_price(rates.get("CNY") if isinstance(rates, dict) else None)
+    if rate is None:
+        return {
+            "ok": False,
+            "status": "missing_rate",
+            "source_url": USD_CNY_RATE_URL,
+            "error": "CNY rate missing.",
+        }
+    return {
+        "ok": True,
+        "status": "checked",
+        "base": "USD",
+        "target": "CNY",
+        "rate": rate,
+        "source_url": USD_CNY_RATE_URL,
+        "time_last_update_utc": str(data.get("time_last_update_utc") or ""),
+    }
+
+
+def _float_from_price(value: Any) -> float | None:
+    text = re.sub(r"[^0-9.]+", "", str(value or ""))
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _normalize_currency_code(value: Any) -> str:
+    text = re.sub(r"[^A-Za-z]+", "", str(value or "")).upper()
+    if text in {"", "YUAN", "RMB", "CNH"}:
+        return "CNY"
+    if len(text) == 3:
+        return text
+    return "CNY"
+
+
+def _format_currency_amount(amount: float, currency: str) -> str:
+    code = str(currency or "").upper()
+    if code == "USD":
+        return f"${amount:,.2f}"
+    if code == "CNY":
+        return f"{amount:,.2f} yuan"
+    return f"{amount:,.2f} {code}"
+
+
+def _html_title(page_text: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", page_text, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return ""
+    title = re.sub(r"\s+", " ", html.unescape(match.group(1))).strip()
+    return re.sub(r"\s+-\s+Apple\s*$", "", title, flags=re.IGNORECASE)
+
+
+def _voice_friendly_product_name(value: str) -> str:
+    return str(value or "").replace("\u2013", "-").replace("\u2014", "-").replace("\u2011", "-")
+
+
 def browser_built_in_plan(goal: str | None = None) -> dict[str, Any]:
     clean_goal = re.sub(r"\s+", " ", str(goal or "")).strip(" .?!")
     reply = (
@@ -13373,6 +13969,7 @@ _FAST_CHAT_STREAM_FALLBACK_CORE_TOOLS = {
     "browser.bookmarks_search",
     "browser.bookmark_open",
     "browser.built_in_plan",
+    "commerce.price_convert",
     "tools.more",
     "codex.job",
     "codex.chat_plan",
