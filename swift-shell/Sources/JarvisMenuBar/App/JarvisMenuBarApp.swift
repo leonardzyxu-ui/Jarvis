@@ -385,7 +385,7 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     static func menuBarItemEnabled(environment: [String: String]) -> Bool {
-        return true
+        JarvisMenuBarApp.environmentFlag("JARVIS_SHOW_MAIN_STATUS_ITEM", environment: environment) == true
     }
 
     static func speechMuteMenuTitle(muted: Bool) -> String {

@@ -196,11 +196,11 @@ enum JarvisMenuBarSelfTest {
         guard JarvisMenuBarApp.activationPolicy(environment: ["JARVIS_SHOW_DOCK_ICON": "no"]) == .accessory else {
             throw SelfTestError.failed("Debug Dock-icon override should allow accessory activation policy.")
         }
-        guard JarvisAppDelegate.menuBarItemEnabled(environment: [:]) else {
-            throw SelfTestError.failed("Menu-bar item should be enabled by default beside normal Dock app mode.")
+        guard !JarvisAppDelegate.menuBarItemEnabled(environment: [:]) else {
+            throw SelfTestError.failed("Main app menu-bar item should be disabled by default; the status helper owns the visible head.")
         }
-        guard JarvisAppDelegate.menuBarItemEnabled(environment: [:]) else {
-            throw SelfTestError.failed("Menu-bar item should stay enabled for the speech mute safety control.")
+        guard JarvisAppDelegate.menuBarItemEnabled(environment: ["JARVIS_SHOW_MAIN_STATUS_ITEM": "yes"]) else {
+            throw SelfTestError.failed("Debug override should allow the main app status item when explicitly requested.")
         }
         guard JarvisAppDelegate.statusItemTitle.isEmpty else {
             throw SelfTestError.failed("Menu-bar status item should use the icon without a text title.")

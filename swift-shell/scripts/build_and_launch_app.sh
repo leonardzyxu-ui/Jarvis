@@ -88,7 +88,7 @@ diagnose_launch_state() {
 stop_existing
 REPLACE_APP="${REPLACE_APP:-1}" "$SCRIPT_DIR/build_app_bundle.sh"
 for attempt in 1 2; do
-  if ! /usr/bin/open -n "$APP_PATH"; then
+  if ! /usr/bin/open "$APP_PATH"; then
     printf 'open failed for %s on attempt %s\n' "$APP_PATH" "$attempt" >&2
     if [[ "$attempt" -lt 2 ]]; then
       sleep 1
