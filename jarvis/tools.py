@@ -637,7 +637,7 @@ def tool_registry() -> dict[str, Any]:
                 "mode": "safe_execute",
                 "risk": "local_audio_playback",
                 "available": LOCALOS_MUSIC_SNAPSHOT_PATH.exists(),
-                "description": "Plays a selected Local OS Music track, preferring the Local OS bridge and using a tracked local fallback only when Chrome blocks audio.",
+                "description": "Queues a selected track in the Local OS Music Player. Music playback stays in LocalOS; Jarvis does not start a separate hidden player.",
             },
             {
                 "id": "localos.music_stop",
@@ -645,7 +645,7 @@ def tool_registry() -> dict[str, Any]:
                 "mode": "safe_execute",
                 "risk": "local_audio_control",
                 "available": True,
-                "description": "Stops Jarvis-owned fallback music playback without touching unrelated system audio.",
+                "description": "Stops LocalOS music commands and emergency-stops any old Jarvis-owned audio leftovers without starting new playback.",
             },
             {
                 "id": "localos.music_recommendations",
@@ -3026,7 +3026,13 @@ def localos_music_search(query: str, limit: int | str | None = None) -> dict[str
 
 def _localos_music_native_fallback_reason(error: Any) -> bool:
     text = _localos_clean_text(error, 400).lower()
-    return "user didn't interact" in text or "user gesture" in text or "autoplay" in text
+    return (
+        "user didn't interact" in text
+        or "user gesture" in text
+        or "autoplay" in text
+        or "needs one click" in text
+        or "press play once" in text
+    )
 
 
 def _localos_music_autoplay_blocked_reply(track: dict[str, Any]) -> str:
@@ -4744,7 +4750,7 @@ def _music_direct_field_bonus(query_norm: str, track: dict[str, Any]) -> float:
 
 def _music_match_aliases(query_norm: str) -> list[tuple[str, list[str]]]:
     aliases: list[str] = []
-    if {"waving", "through", "window"}.issubset(set(_music_match_tokens(query_norm))):
+    if _music_query_looks_like_waving_through_window(query_norm):
         aliases.extend(["dear evan hansen 2017 tony awards", "dear evan hansen"])
     seen: set[str] = set()
     normalized_aliases: list[tuple[str, list[str]]] = []
@@ -4758,7 +4764,7 @@ def _music_match_aliases(query_norm: str) -> list[tuple[str, list[str]]]:
 
 
 def _music_alias_preference_bonus(query_norm: str, haystack_norm: str) -> float:
-    if {"waving", "through", "window"}.issubset(set(_music_match_tokens(query_norm))):
+    if _music_query_looks_like_waving_through_window(query_norm):
         if "dear evan hansen" not in haystack_norm:
             return 0.0
         if "for forever" in haystack_norm:
@@ -4767,6 +4773,12 @@ def _music_alias_preference_bonus(query_norm: str, haystack_norm: str) -> float:
             return 10.0
         return 8.0
     return 0.0
+
+
+def _music_query_looks_like_waving_through_window(query_norm: str) -> bool:
+    tokens = set(_music_match_tokens(query_norm))
+    window_like = {"window", "wyndham", "windham", "windom", "winham"}
+    return "waving" in tokens and "through" in tokens and bool(tokens.intersection(window_like))
 
 
 def _normalize_music_match_text(value: Any) -> str:
@@ -4926,8 +4938,8 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "calendar.today_schedule", "kind": "private_read", "description": "Read today's Calendar schedule without creating, changing, accepting, or deleting events."},
         {"id": "diagnostics.memory_usage", "kind": "read_only", "description": "Report Activity Monitor-style RAM and memory-pressure status without opening Activity Monitor."},
         {"id": "models.test_plan", "kind": "read_only_plan", "description": "Plan a safe AI model test, preferring the MacBook Air for heavy models before touching this 16 GB Mac."},
-        {"id": "localos.music_play", "kind": "safe_execute", "description": "Play a named or chosen song locally, preferring the Local OS bridge and using a tracked fallback only when Chrome blocks audio."},
-        {"id": "localos.music_stop", "kind": "safe_execute", "description": "Stop Jarvis-started LocalOS music playback without touching unrelated system audio."},
+        {"id": "localos.music_play", "kind": "safe_execute", "description": "Play a named or chosen song through the Local OS bridge only. If Chrome blocks audio, report that LocalOS needs one click instead of starting hidden playback."},
+        {"id": "localos.music_stop", "kind": "safe_execute", "description": "Stop LocalOS music commands and emergency-stop old Jarvis-owned audio leftovers without starting new playback."},
         {"id": "localos.music_recommendations", "kind": "read_only", "description": "Read the Local OS Music Player Your Pick recommendation snapshot after the music page publishes it to Jarvis."},
         {"id": "localos.music_choose_from_your_pick", "kind": "read_only_model_choice", "description": "Feed the Your Pick candidate list to Jarvis's fast model so it can choose one track naturally."},
         {"id": "localos.music_search", "kind": "read_only", "description": "Search the full Local OS Music library snapshot by title, artist, group, or filename."},

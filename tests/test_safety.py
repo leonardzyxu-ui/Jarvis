@@ -1639,6 +1639,35 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(pending["status"], "available")
         self.assertEqual(pending["command"]["track"]["file_name"], "Dear Evan Hansen.mp3")
 
+    def test_localos_music_play_maps_waving_through_wyndham_alias_to_available_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            control_path = Path(tmpdir) / "localos_music_control.json"
+            mp3_dir = Path(tmpdir) / "mp3"
+            mp3_dir.mkdir()
+            (mp3_dir / "Dear Evan Hansen.mp3").write_bytes(b"")
+            (mp3_dir / "DragonForce - Through the Fire and Flames.mp3").write_bytes(b"")
+            payload = {
+                "source": "localos-music-player",
+                "allSongsCount": 2,
+                "jarvisControlBridgeVersion": 2,
+                "jarvisControlPollingActive": True,
+                "library": [],
+            }
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_MP3_DIR", mp3_dir):
+                store_localos_music_snapshot(payload)
+                result = localos_music_play("Waving Through A Wyndham", user_request="play Waving Through A Wyndham", limit=5)
+                pending = localos_music_pending_control()
+
+        self.assertEqual(result["status"], "queued")
+        self.assertEqual(result["source_status"], "matched")
+        self.assertEqual(result["selected_track"]["file_name"], "Dear Evan Hansen.mp3")
+        self.assertEqual(result["selected_track"]["match_kind"], "alias")
+        self.assertEqual(pending["status"], "available")
+        self.assertEqual(pending["command"]["track"]["file_name"], "Dear Evan Hansen.mp3")
+
     def test_localos_music_search_tolerates_small_dictation_mishear(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
