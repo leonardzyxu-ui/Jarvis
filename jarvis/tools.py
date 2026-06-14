@@ -3029,6 +3029,13 @@ def _localos_music_native_fallback_reason(error: Any) -> bool:
     return "user didn't interact" in text or "user gesture" in text or "autoplay" in text
 
 
+def _localos_music_autoplay_blocked_reply(track: dict[str, Any]) -> str:
+    return (
+        f"I found {_localos_music_found_phrase(track)}, but Local OS needs one click in the music player "
+        "before Chrome will allow audio."
+    )
+
+
 def _localos_music_audio_path(track: dict[str, Any]) -> Path | None:
     raw_candidates = [
         _localos_clean_text(track.get("path"), 500),
@@ -3412,16 +3419,12 @@ def localos_music_play(
             confirmation = _localos_music_playback_confirmation(command, selected)
             confirmation_status = str(confirmation.get("status") or "unconfirmed")
             page_confirmation_status = confirmation_status
-            native_fallback: dict[str, Any] | None = None
-            if confirmation_status == "failed" and _localos_music_native_fallback_reason(confirmation.get("error")):
-                native_fallback = _play_localos_music_native_fallback(selected, reason=confirmation.get("error") or "")
-                if native_fallback.get("played"):
-                    confirmation_status = "native_fallback_playing"
+            autoplay_blocked = confirmation_status == "failed" and _localos_music_native_fallback_reason(confirmation.get("error"))
             bridge_version = confirmation.get("bridge_version")
             if confirmation_status == "playing":
                 reply = f"Playing {_localos_music_found_phrase(selected)} in Local OS."
-            elif confirmation_status == "native_fallback_playing":
-                reply = f"Playing {_localos_music_found_phrase(selected)} from your Local OS music library."
+            elif autoplay_blocked:
+                reply = _localos_music_autoplay_blocked_reply(selected)
             elif confirmation_status == "failed":
                 reply = f"I found {_localos_music_found_phrase(selected)}, but Local OS could not start it."
             elif confirmation_status == "ignored":
@@ -3440,22 +3443,23 @@ def localos_music_play(
                     f"I queued {_localos_music_found_phrase(selected)} in Local OS. "
                     "If it does not start, refresh the LocalOS music window once."
                 )
-            result_status = "playing" if confirmation_status in {"playing", "native_fallback_playing"} else "queued"
+            result_status = "playing" if confirmation_status == "playing" else "queued"
             if confirmation_status in {"accepted", "failed", "ignored"}:
                 result_status = "not_queued"
             return {
                 **base,
                 "status": result_status,
-                "played_by": "localos_native_file_fallback" if confirmation_status == "native_fallback_playing" else "localos",
-                "jarvis_played_audio": confirmation_status == "native_fallback_playing",
+                "played_by": "localos",
+                "jarvis_played_audio": False,
                 "available": True,
                 "source_tool": source_result.get("tool"),
                 "source_status": source_result.get("status"),
                 "selected_track": selected,
                 "control": command,
                 "control_lane": "localos_polling_bridge_opened_player",
-                "playback_confirmation": "native_fallback_playing" if confirmation_status == "native_fallback_playing" else confirmation_status,
-                **({"localos_page_playback_confirmation": page_confirmation_status, "native_fallback": native_fallback} if native_fallback else {}),
+                "playback_confirmation": confirmation_status,
+                "localos_page_playback_confirmation": page_confirmation_status,
+                "localos_autoplay_blocked": autoplay_blocked,
                 "localos_bridge_version": bridge_version,
                 "localos_bridge_polling_active": confirmation.get("polling_active"),
                 "localos_bridge_latest_command_id": confirmation.get("latest_command_id"),
@@ -3502,16 +3506,12 @@ def localos_music_play(
     confirmation = _localos_music_playback_confirmation(command, selected)
     confirmation_status = str(confirmation.get("status") or "unconfirmed")
     page_confirmation_status = confirmation_status
-    native_fallback: dict[str, Any] | None = None
-    if confirmation_status == "failed" and _localos_music_native_fallback_reason(confirmation.get("error")):
-        native_fallback = _play_localos_music_native_fallback(selected, reason=confirmation.get("error") or "")
-        if native_fallback.get("played"):
-            confirmation_status = "native_fallback_playing"
+    autoplay_blocked = confirmation_status == "failed" and _localos_music_native_fallback_reason(confirmation.get("error"))
     bridge_version = confirmation.get("bridge_version")
     if confirmation_status == "playing":
         reply = f"Playing {_localos_music_found_phrase(selected)} in Local OS."
-    elif confirmation_status == "native_fallback_playing":
-        reply = f"Playing {_localos_music_found_phrase(selected)} from your Local OS music library."
+    elif autoplay_blocked:
+        reply = _localos_music_autoplay_blocked_reply(selected)
     elif confirmation_status == "failed":
         reply = f"I found {_localos_music_found_phrase(selected)}, but Local OS could not start it."
     elif confirmation_status == "ignored":
@@ -3527,22 +3527,23 @@ def localos_music_play(
             f"I queued {_localos_music_found_phrase(selected)} in Local OS. "
             "If it does not start, refresh the LocalOS music window once."
         )
-    result_status = "playing" if confirmation_status in {"playing", "native_fallback_playing"} else "queued"
+    result_status = "playing" if confirmation_status == "playing" else "queued"
     if confirmation_status in {"accepted", "failed", "ignored"}:
         result_status = "not_queued"
     return {
         **base,
         "status": result_status,
-        "played_by": "localos_native_file_fallback" if confirmation_status == "native_fallback_playing" else "localos",
-        "jarvis_played_audio": confirmation_status == "native_fallback_playing",
+        "played_by": "localos",
+        "jarvis_played_audio": False,
         "control_lane": "localos_polling_bridge",
         "available": True,
         "source_tool": source_result.get("tool"),
         "source_status": source_result.get("status"),
         "selected_track": selected,
         "control": command,
-        "playback_confirmation": "native_fallback_playing" if confirmation_status == "native_fallback_playing" else confirmation_status,
-        **({"localos_page_playback_confirmation": page_confirmation_status, "native_fallback": native_fallback} if native_fallback else {}),
+        "playback_confirmation": confirmation_status,
+        "localos_page_playback_confirmation": page_confirmation_status,
+        "localos_autoplay_blocked": autoplay_blocked,
         "localos_bridge_version": bridge_version,
         "localos_bridge_polling_active": confirmation.get("polling_active"),
         "localos_bridge_latest_command_id": confirmation.get("latest_command_id"),

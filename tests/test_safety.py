@@ -1695,7 +1695,7 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["localos_bridge_version"], 2)
         self.assertIn("Playing Waving Through A Window by Dear Evan Hansen", result["reply"])
 
-    def test_localos_music_play_uses_native_fallback_when_chrome_blocks_audio(self):
+    def test_localos_music_play_does_not_use_hidden_native_fallback_when_chrome_blocks_audio(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
             control_path = Path(tmpdir) / "localos_music_control.json"
@@ -1724,23 +1724,20 @@ class PlannerTests(unittest.TestCase):
                      "current_track_playing": False,
                      "error": "play() failed because the user didn't interact with the document first.",
                  }), \
-                 patch("jarvis.tools._play_localos_music_native_fallback", return_value={
-                     "status": "playing",
-                     "played": True,
-                     "player": "afplay",
-                     "path": "/tmp/Imagine Dragons - Natural.mp3",
-                 }) as native_mock:
+                 patch("jarvis.tools._play_localos_music_native_fallback") as native_mock:
                 store_localos_music_snapshot(payload)
                 result = localos_music_play("natural", user_request="play natural", limit=5)
 
-        self.assertEqual(result["status"], "playing")
-        self.assertEqual(result["played_by"], "localos_native_file_fallback")
-        self.assertTrue(result["jarvis_played_audio"])
-        self.assertEqual(result["playback_confirmation"], "native_fallback_playing")
+        self.assertEqual(result["status"], "not_queued")
+        self.assertEqual(result["played_by"], "localos")
+        self.assertFalse(result["jarvis_played_audio"])
+        self.assertEqual(result["playback_confirmation"], "failed")
         self.assertEqual(result["localos_page_playback_confirmation"], "failed")
-        self.assertEqual(result["native_fallback"]["player"], "afplay")
-        self.assertIn("from your Local OS music library", result["reply"])
-        native_mock.assert_called_once()
+        self.assertTrue(result["localos_autoplay_blocked"])
+        self.assertIn("needs one click in the music player", result["reply"])
+        self.assertNotIn("from your Local OS music library", result["reply"])
+        self.assertNotIn("native_fallback", result)
+        native_mock.assert_not_called()
 
     def test_localos_music_native_path_resolves_file_name_fallback(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2618,6 +2615,7 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("markJarvisMusicCommandStatus", source)
         self.assertIn("allowMutedAutoplayRetry", source)
         self.assertIn("isAutoplayGestureError", source)
+        self.assertIn("Chrome needs one click in this music player", source)
         self.assertIn("audioEl.muted = true", source)
         self.assertIn("playing: audioPlaying", source)
         self.assertIn("playTrackById", source)
