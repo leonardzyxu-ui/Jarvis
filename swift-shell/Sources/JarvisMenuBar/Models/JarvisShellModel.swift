@@ -71,6 +71,8 @@ final class JarvisShellModel: ObservableObject {
     var onSpeechPlaybackLikelyStarted: (() -> Void)?
     private static let busyReplyText = "I am still finishing the current task. Send that again in a moment."
     private static let speechMuteStatusPollNanoseconds: UInt64 = 2_000_000_000
+    private static let teamsVisibleReadRetryAttempts = 4
+    private static let teamsVisibleReadRetryDelayNanoseconds: UInt64 = 1_600_000_000
     private static let speechBargeInGraceSeconds: TimeInterval = 3.5
     private static let speechBargeInMinimumTokenCount = 4
     private static let smokeTestPrompts = [
@@ -1331,8 +1333,7 @@ final class JarvisShellModel: ObservableObject {
                     _ = try? await client.speakStatus(statusText)
                 }
                 recordTurnPhase("Working", detail: statusText)
-                try await Task.sleep(nanoseconds: 2_200_000_000)
-                response = try await runNativeVisibleScreenRead(commandText)
+                response = try await runNativeVisibleScreenReadWithRetry(commandText)
             }
 
             tool = response.tool ?? "unknown"
@@ -1893,6 +1894,45 @@ final class JarvisShellModel: ObservableObject {
                 )
             )
         }
+    }
+
+    private func runNativeVisibleScreenReadWithRetry(_ commandText: String) async throws -> CommandResponse {
+        var latestResponse: CommandResponse?
+        let attempts = max(1, Self.teamsVisibleReadRetryAttempts)
+        for attempt in 1...attempts {
+            try await Task.sleep(nanoseconds: Self.teamsVisibleReadRetryDelayNanoseconds)
+            let response = try await runNativeVisibleScreenRead(commandText)
+            latestResponse = response
+            if Self.visibleScreenReadResponseLooksUseful(response) || attempt == attempts {
+                return response
+            }
+        }
+        if let latestResponse {
+            return latestResponse
+        }
+        return try await runNativeVisibleScreenRead(commandText)
+    }
+
+    static func visibleScreenReadResponseLooksUseful(_ response: CommandResponse) -> Bool {
+        guard response.tool == "screen.visible_text",
+              let object = response.result?.objectValue else {
+            return false
+        }
+        let status = object["status"]?.stringValue ?? ""
+        if status == "checked" {
+            return true
+        }
+        let assignmentItems = object["assignment_digest_items"]?.arrayValue ?? []
+        if !assignmentItems.isEmpty {
+            return true
+        }
+        let digestItems = object["page_digest_items"]?.arrayValue ?? []
+        if !digestItems.isEmpty, status != "native_ocr_empty", status != "native_capture_failed" {
+            return true
+        }
+        return (object["visible_text_chars"]?.intValue ?? 0) >= 160
+            && status != "native_ocr_empty"
+            && status != "native_capture_failed"
     }
 
     private func assistantReply(for response: CommandResponse) -> String {

@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.425 makes the real app's Teams follow-up less brittle: after opening signed-in Chrome, native visible-screen OCR now retries up to four times and stops early once useful assignment/page text appears.",
     "The eight-prompt overnight regression matrix is now a reusable script: `scripts/run_regression_prompt_matrix.py` runs the Teams, Music, RAM, Codex, Calendar, model-test, email-contact, and Magic Keyboard prompts with speech/audio side effects suppressed.",
     "Jarvis 0.1.424 keeps the visible speech chip honest: the main app now syncs `/api/speech/mute` every two seconds, so `Speech On` does not stay stale after the helper or verifier mutes Jarvis.",
     "Jarvis 0.1.423 hardens the real Teams handoff: if targeted Chrome-window OCR returns empty or useless text, native screen reading falls back to the main display and can still summarize the visible Teams page.",
@@ -167,6 +168,10 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
+    "Live Jarvis 0.1.425 build 425 launched from bundled app resources with worker_launch_matches_bundle=true and exactly one app, one parent-bound status helper, and one worker.",
+    "Full Python safety suite passed 619/619 after the 0.1.425 Teams OCR retry patch.",
+    "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-041133.json`.",
+    "Full safe verifier passed 100/100 at `runtime/verification/verify-safe-20260615-041502.json` after the 0.1.425 build.",
     "Reusable 0.1.424 eight-prompt speech-audit matrix passed 8/8 at `runtime/regression_prompt_matrix/20260615-040014/summary.json` using local STT and suppressed audio actions.",
     "Live Jarvis 0.1.424 build 424 launched from bundled app resources with worker_launch_matches_bundle=true and exactly one app, one parent-bound status helper, and one worker.",
     "Full Python safety suite passed 618/618 after the 0.1.424 speech-status sync patch.",
@@ -906,6 +911,8 @@ def render_report(context: dict[str, Any]) -> str:
 
 def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
+        ("done", "Ship Jarvis 0.1.425", "Live app is bundled, launched, and reports Jarvis 0.1.425 build 425."),
+        ("done", "Retry Teams visible OCR", "After Chrome handoff, the app retries native OCR up to four times instead of racing Teams with one fixed delay."),
         ("done", "Make the prompt matrix reusable", "scripts/run_regression_prompt_matrix.py now owns the eight overnight target prompts and runs them quietly."),
         ("done", "Verify 0.1.424 prompt matrix", "The reusable matrix passed 8/8 at runtime/regression_prompt_matrix/20260615-040014/summary.json."),
         ("done", "Ship Jarvis 0.1.424", "Live app is bundled, launched, and reports Jarvis 0.1.424 build 424."),
