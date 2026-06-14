@@ -14,6 +14,7 @@ enum JarvisPermissionService {
             speechRecognitionStatus(),
             screenRecordingStatus(),
             accessibilityStatus(),
+            calendarCacheStatus(),
         ]
         permissions.append(await notificationStatus())
         return permissions
@@ -186,6 +187,39 @@ enum JarvisPermissionService {
             detail: ready ? "Desktop control can be enabled later." : "Computer-control tools need Accessibility permission.",
             isReady: ready
         )
+    }
+
+    private static func calendarCacheStatus() -> PermissionReadiness {
+        let dbURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers/group.com.apple.calendar/Calendar.sqlitedb")
+        guard FileManager.default.fileExists(atPath: dbURL.path) else {
+            return PermissionReadiness(
+                id: "calendar-cache",
+                label: "Calendar Cache",
+                state: "Missing",
+                detail: "No local Calendar cache is available to read.",
+                isReady: false
+            )
+        }
+        do {
+            let handle = try FileHandle(forReadingFrom: dbURL)
+            try? handle.close()
+            return PermissionReadiness(
+                id: "calendar-cache",
+                label: "Calendar Cache",
+                state: "Ready",
+                detail: "Schedule summaries can read the local Calendar cache.",
+                isReady: true
+            )
+        } catch {
+            return PermissionReadiness(
+                id: "calendar-cache",
+                label: "Calendar Cache",
+                state: "Needs Full Disk Access",
+                detail: "Calendar summaries need Full Disk Access for Jarvis.app, then quit and reopen Jarvis.",
+                isReady: false
+            )
+        }
     }
 
     private static func notificationStatus() async -> PermissionReadiness {

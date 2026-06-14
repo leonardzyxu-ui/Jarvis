@@ -787,7 +787,7 @@ def run_bundle_checks(results: list[CheckResult], base_url: str) -> None:
             "temporary_app_permission_self_test",
             [str(executable), "--permission-self-test"],
             timeout=60,
-            expect="Permission rows: 5",
+            expect="Permission rows: 6",
         )
     )
     results.append(
@@ -1420,7 +1420,7 @@ def run_checks() -> dict[str, Any]:
                     "swift_permission_self_test",
                     ["swift", "run", "--package-path", "swift-shell", "jarvis-menu-bar", "--permission-self-test"],
                     timeout=120,
-                    expect="Permission rows: 5",
+                    expect="Permission rows: 6",
                 ),
                 run_command(
                     "swift_menu_bar_self_test",

@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.373 adds a Calendar Cache permission tile so the app shows whether the current Jarvis identity can read the local Calendar database; when blocked it names Full Disk Access for Jarvis.app and tells Leo to reopen Jarvis.",
     "Jarvis 0.1.372 fixes private-read safety for natural plural wording: `summarize all the emails...` is now visibly logged as private email access instead of being mislabeled as local conversation.",
     "Jarvis 0.1.371 makes Chrome page-reading failures actionable: if macOS blocks Automation, Jarvis now says the exact Google Chrome permission needed, keeps the signed-in Chrome strategy, and still refuses to copy cookies or sessions into WebKit.",
     "Jarvis 0.1.370 turns the Teams browser lane into a usable next step: Teams assignment plans can carry the imported Teams bookmark into the visible Jarvis browser/Chrome handoff, and `what's on this page?` now reads a concise local page digest instead of raw page text.",
@@ -243,7 +244,7 @@ TRY_ITEMS = [
 ]
 
 RISK_ITEMS = [
-    "Jarvis 0.1.346 cannot yet read Calendar from the live app identity; it now fails fast, but Leo may need to grant the current Jarvis/Python app identity Calendar or Full Disk access for actual schedules.",
+    "Calendar reading still depends on the new Jarvis 0.1.373 Calendar Cache tile being Ready; if it says Needs Full Disk Access, grant Jarvis.app Full Disk Access and reopen Jarvis before expecting real schedule summaries.",
     "Chrome active-page reading now routes correctly, but the live app currently gets `automation_not_allowed` from macOS when it tries to read Chrome page text; Leo may need to grant Jarvis Automation access to Google Chrome before Teams-page summaries work.",
     "The LocalOS music page likely needs a reload or active Chrome tab to pick up the playback-state bridge; Jarvis now reports missing/stale bridge status honestly, but live audible playback was not triggered while Leo was asleep.",
     "MacBook Air remote-worker probing currently cannot proceed because Tailscale is stopped on this Mac; Jarvis now detects that quickly and should ask before running model tests locally.",

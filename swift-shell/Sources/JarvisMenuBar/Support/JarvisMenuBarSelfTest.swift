@@ -317,7 +317,7 @@ enum JarvisMenuBarSelfTest {
 
     static func runPermissionReadiness() async throws {
         let snapshot = await JarvisPermissionService.snapshot()
-        let expectedIds = Set(["microphone", "speech-recognition", "screen-recording", "accessibility", "notifications"])
+        let expectedIds = Set(["microphone", "speech-recognition", "screen-recording", "accessibility", "calendar-cache", "notifications"])
         let actualIds = Set(snapshot.map(\.id))
         guard actualIds == expectedIds else {
             throw SelfTestError.failed("Permission snapshot missing expected items: \(actualIds.sorted().joined(separator: ", "))")

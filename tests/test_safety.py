@@ -1104,7 +1104,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 return verify_safe.CheckResult(
                     name=name,
                     passed=False,
-                    summary="missing expected text: Permission rows: 5",
+                    summary="missing expected text: Permission rows: 6",
                     returncode=-9,
                     stdout_tail="",
                     stderr_tail="",
@@ -1115,7 +1115,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 passed=True,
                 summary="passed",
                 returncode=0,
-                stdout_tail="Permission rows: 5",
+                stdout_tail="Permission rows: 6",
                 stderr_tail="",
                 duration_seconds=0.001,
             )
@@ -1128,7 +1128,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 "temporary_app_permission_self_test",
                 ["Jarvis.app/Contents/MacOS/jarvis-menu-bar", "--permission-self-test"],
                 timeout=60,
-                expect="Permission rows: 5",
+                expect="Permission rows: 6",
             )
 
         self.assertTrue(result.passed)
@@ -7620,6 +7620,10 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertIn('"App perms: \\(readyCount)/\\(permissions.count) ready"', service_source)
         self.assertNotIn('"\\(readyCount)/\\(permissions.count) permissions ready"', service_source)
+        self.assertIn('id: "calendar-cache"', service_source)
+        self.assertIn('label: "Calendar Cache"', service_source)
+        self.assertIn("Needs Full Disk Access", service_source)
+        self.assertIn("Calendar summaries need Full Disk Access for Jarvis.app", service_source)
 
     def test_swift_wake_start_preflights_permissions_without_prompting(self):
         model_source = (
