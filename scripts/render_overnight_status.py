@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.426 makes Shut Up persistent: speech mute now survives worker restarts, app relaunches, and rebuilds by loading `runtime/state/speech_mute.json` on startup.",
     "Jarvis 0.1.425 makes the real app's Teams follow-up less brittle: after opening signed-in Chrome, native visible-screen OCR now retries up to four times and stops early once useful assignment/page text appears.",
     "The eight-prompt overnight regression matrix is now a reusable script: `scripts/run_regression_prompt_matrix.py` runs the Teams, Music, RAM, Codex, Calendar, model-test, email-contact, and Magic Keyboard prompts with speech/audio side effects suppressed.",
     "Jarvis 0.1.424 keeps the visible speech chip honest: the main app now syncs `/api/speech/mute` every two seconds, so `Speech On` does not stay stale after the helper or verifier mutes Jarvis.",
@@ -168,6 +169,11 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
+    "Live Jarvis 0.1.426 build 426 launched from bundled app resources with worker_launch_matches_bundle=true and exactly one app, one parent-bound status helper, and one worker.",
+    "Full Python safety suite passed 620/620 after the 0.1.426 persistent Shut Up patch.",
+    "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-042825.json`.",
+    "Full safe verifier passed 100/100 at `runtime/verification/verify-safe-20260615-043159.json` after the 0.1.426 build.",
+    "Live speech remained muted after relaunch and after verification: `/api/speech/mute` reports muted=true, active_speech=false, and speech_mute_persistent=true.",
     "Live Jarvis 0.1.425 build 425 launched from bundled app resources with worker_launch_matches_bundle=true and exactly one app, one parent-bound status helper, and one worker.",
     "Full Python safety suite passed 619/619 after the 0.1.425 Teams OCR retry patch.",
     "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-041133.json`.",
@@ -911,6 +917,8 @@ def render_report(context: dict[str, Any]) -> str:
 
 def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
+        ("done", "Ship Jarvis 0.1.426", "Live app is bundled, launched, and reports Jarvis 0.1.426 build 426."),
+        ("done", "Persist Shut Up across relaunches", "Speech mute now loads from runtime/state/speech_mute.json on worker startup and stayed muted after verifier restore."),
         ("done", "Ship Jarvis 0.1.425", "Live app is bundled, launched, and reports Jarvis 0.1.425 build 425."),
         ("done", "Retry Teams visible OCR", "After Chrome handoff, the app retries native OCR up to four times instead of racing Teams with one fixed delay."),
         ("done", "Make the prompt matrix reusable", "scripts/run_regression_prompt_matrix.py now owns the eight overnight target prompts and runs them quietly."),

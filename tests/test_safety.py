@@ -8281,6 +8281,22 @@ Pages occupied by compressor:             10.
 
 
 class RuntimeSurfaceTests(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self._speech_mute_state_dir = tempfile.TemporaryDirectory()
+        self._speech_mute_state_path = jarvis_tools.SPEECH_MUTE_STATE_PATH
+        self._speech_muted = jarvis_tools.SPEECH_MUTED
+        jarvis_tools.SPEECH_MUTE_STATE_PATH = Path(self._speech_mute_state_dir.name) / "speech_mute.json"
+        with jarvis_tools.SPEECH_LOCK:
+            jarvis_tools.SPEECH_MUTED = False
+
+    def tearDown(self):
+        jarvis_tools.SPEECH_MUTE_STATE_PATH = self._speech_mute_state_path
+        with jarvis_tools.SPEECH_LOCK:
+            jarvis_tools.SPEECH_MUTED = self._speech_muted
+        self._speech_mute_state_dir.cleanup()
+        super().tearDown()
+
     def test_swift_header_displays_bundle_version(self):
         model_source = (
             PROJECT_ROOT
@@ -10313,6 +10329,35 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(result["status"], "muted")
         self.assertEqual(result["text_preview"], "Jarvis should stay quiet.")
         self.assertTrue(status["muted"])
+
+    def test_speech_mute_persists_across_worker_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "speech_mute.json"
+            original_path = jarvis_tools.SPEECH_MUTE_STATE_PATH
+            original_muted = jarvis_tools.SPEECH_MUTED
+            try:
+                jarvis_tools.SPEECH_MUTE_STATE_PATH = state_path
+                with jarvis_tools.SPEECH_LOCK:
+                    jarvis_tools.SPEECH_MUTED = False
+
+                muted = jarvis_tools.set_speech_muted(True)
+                with jarvis_tools.SPEECH_LOCK:
+                    jarvis_tools.SPEECH_MUTED = False
+                    restored = jarvis_tools._restore_persisted_speech_mute_state()
+                result = jarvis_tools.speak_text_async("Jarvis should remain quiet after restart.", reason="final", force=True)
+                status = jarvis_tools.speech_mute_status()
+                saved = json.loads(state_path.read_text(encoding="utf-8"))
+            finally:
+                jarvis_tools.SPEECH_MUTE_STATE_PATH = original_path
+                with jarvis_tools.SPEECH_LOCK:
+                    jarvis_tools.SPEECH_MUTED = original_muted
+
+        self.assertTrue(muted["speech_mute_persisted"])
+        self.assertTrue(saved["muted"])
+        self.assertTrue(restored)
+        self.assertTrue(status["muted"])
+        self.assertFalse(result["spoken"])
+        self.assertEqual(result["status"], "muted")
 
     def test_speech_mute_interrupts_active_audio_when_enabled(self):
         class FakeProcess:

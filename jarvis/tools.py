@@ -110,7 +110,49 @@ SPEECH_PROCESS_REASON: str | None = None
 SPEECH_GENERATION = 0
 LOCALOS_NATIVE_MUSIC_PROCESS: Any | None = None
 LOCALOS_NATIVE_MUSIC_TRACK: dict[str, Any] | None = None
-SPEECH_MUTED = False
+SPEECH_MUTE_STATE_PATH = RUNTIME_DIR / "state" / "speech_mute.json"
+
+
+def _load_persisted_speech_muted() -> bool:
+    try:
+        data = json.loads(SPEECH_MUTE_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return False
+    return bool(data.get("muted")) if isinstance(data, dict) else False
+
+
+def _persist_speech_mute_state(muted: bool) -> dict[str, Any]:
+    path = SPEECH_MUTE_STATE_PATH
+    payload = {
+        "muted": bool(muted),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "source": "jarvis",
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temp_path, path)
+    except OSError as error:
+        return {
+            "speech_mute_persisted": False,
+            "speech_mute_state_path": str(path),
+            "speech_mute_persistence_error": str(error),
+        }
+    return {
+        "speech_mute_persisted": True,
+        "speech_mute_state_path": str(path),
+        "speech_mute_persistence_error": "",
+    }
+
+
+def _restore_persisted_speech_mute_state() -> bool:
+    global SPEECH_MUTED
+    SPEECH_MUTED = _load_persisted_speech_muted()
+    return SPEECH_MUTED
+
+
+SPEECH_MUTED = _load_persisted_speech_muted()
 SPEECH_LOCK = threading.Lock()
 STATUS_TO_FINAL_QUEUE_TIMEOUT_SECONDS = 2.8
 PIPER_WORKER_PROCESS: subprocess.Popen[str] | None = None
@@ -2355,6 +2397,8 @@ def speech_mute_status() -> dict[str, Any]:
             "muted": SPEECH_MUTED,
             "active_speech": active,
             "speech_reason": SPEECH_PROCESS_REASON,
+            "speech_mute_persistent": True,
+            "speech_mute_state_path": str(SPEECH_MUTE_STATE_PATH),
             "reply": "Jarvis speech is muted." if SPEECH_MUTED else "Jarvis speech is on.",
         }
 
@@ -2366,6 +2410,7 @@ def set_speech_muted(muted: bool) -> dict[str, Any]:
     with SPEECH_LOCK:
         previous = SPEECH_MUTED
         SPEECH_MUTED = bool(muted)
+        persist_status = _persist_speech_mute_state(SPEECH_MUTED)
         if SPEECH_MUTED:
             SPEECH_GENERATION += 1
             stop_status = _stop_active_speech_locked(timeout_seconds=0.6)
@@ -2382,6 +2427,7 @@ def set_speech_muted(muted: bool) -> dict[str, Any]:
         "active_speech": active,
         "started_audio": False,
         "played_audio": False,
+        **persist_status,
         **stop_status,
         "interrupted_previous": bool(stop_status.get("interrupted_previous") or stop_status.get("piper_worker_interrupted")),
         **_duration_fields(started_at),
