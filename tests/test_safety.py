@@ -2612,6 +2612,31 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result["external_model_allowed"])
         self.assertFalse(result["called_model"])
 
+    def test_browser_read_page_permission_error_is_actionable_without_copying_login_state(self):
+        with patch("jarvis.tools._find_executable", return_value="/usr/bin/osascript"), \
+             patch("jarvis.tools._run_osascript", return_value={
+                 "ok": False,
+                 "stdout": "",
+                 "stderr": "Not authorized to send Apple events to Google Chrome.",
+                 "returncode": 1,
+             }):
+            result = browser_read_page(max_chars=1000)
+
+        self.assertEqual(result["tool"], "browser.read_page")
+        self.assertEqual(result["status"], "automation_not_allowed")
+        self.assertEqual(result["permission_issue"], "chrome_automation")
+        self.assertTrue(result["requires_user_action"])
+        self.assertIn("Automation", " ".join(result["next_steps"]))
+        self.assertIn("Google Chrome", " ".join(result["next_steps"]))
+        self.assertFalse(result["external_model_allowed"])
+        self.assertFalse(result["called_model"])
+        self.assertFalse(result["copied_chrome_cookies"])
+        self.assertFalse(result["copied_chrome_passwords"])
+        self.assertFalse(result["copied_chrome_session_storage"])
+        self.assertFalse(result["can_migrate_chrome_logged_in_state"])
+        self.assertIn("Automation permission", result["spoken_summary"])
+        self.assertIn("will not copy Chrome logins", result["spoken_summary"])
+
     def test_browser_search_and_builtin_plans_do_not_execute(self):
         search = browser_search_plan("GPT OSS 120B browser tools")
         built_in = browser_built_in_plan("use Chrome for logged-in sites")
@@ -2752,6 +2777,7 @@ class PlannerTests(unittest.TestCase):
                 "page_text_chars": 12,
                 "reply": "I read Private Dashboard.",
                 "injection_scan": {"status": "ok", "findings": []},
+                "stderr": "Access not allowed. (-1723)",
             },
         )
 
@@ -2760,6 +2786,7 @@ class PlannerTests(unittest.TestCase):
         self.assertNotIn("page_text", safe)
         self.assertNotIn("title", safe)
         self.assertNotIn("url", safe)
+        self.assertNotIn("stderr", safe)
         self.assertEqual(safe["injection_findings_count"], 0)
 
     def test_browser_stream_status_text_is_plan_accurate(self):

@@ -1563,7 +1563,7 @@ def _audit_safe_result(tool: str, result: dict[str, Any]) -> dict[str, Any]:
         safe = {
             key: value
             for key, value in result.items()
-            if key not in {"page_text", "reply", "injection_scan", "title", "url"}
+            if key not in {"page_text", "reply", "injection_scan", "title", "url", "stdout", "stderr"}
         }
         injection_scan = result.get("injection_scan") if isinstance(result, dict) else None
         if isinstance(injection_scan, dict):

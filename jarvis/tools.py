@@ -10102,17 +10102,20 @@ end tell
     completed = _run_osascript(script, timeout=4.0, stdout_tail_chars=max(1200, int(text_limit) + 1200))
     if not completed.get("ok"):
         stderr = str(completed.get("stderr") or "")
+        lower_stderr = stderr.lower()
         status = "automation_error"
-        if "not allowed" in stderr.lower() or "not authorized" in stderr.lower() or "not permitted" in stderr.lower():
+        if "not allowed" in lower_stderr or "not authorized" in lower_stderr or "not permitted" in lower_stderr:
             status = "automation_not_allowed"
-        if include_page_text and ("javascript" in stderr.lower() or "apple events" in stderr.lower()):
+        elif include_page_text and ("javascript" in lower_stderr or "apple events" in lower_stderr):
             status = "chrome_javascript_unavailable"
+        details = _browser_error_details(status, include_page_text=include_page_text)
         return {
             **base,
             "status": status,
             "returncode": completed.get("returncode"),
             "stderr": stderr,
             "reply": _browser_error_reply(status),
+            **details,
         }
     fields = str(completed.get("stdout") or "").split(BROWSER_FIELD_DELIMITER)
     status = fields[0].strip() if fields else "unknown"
@@ -10123,6 +10126,7 @@ end tell
             "title": "",
             "url": "",
             "reply": _browser_error_reply(status),
+            **_browser_error_details(status, include_page_text=include_page_text),
         }
     title = fields[1].strip() if len(fields) > 1 else ""
     url = fields[2].strip() if len(fields) > 2 else ""
@@ -10332,11 +10336,64 @@ def _browser_error_reply(status: str) -> str:
     labels = {
         "not_running": "Chrome is not running, so I cannot inspect a tab yet.",
         "no_window": "Chrome is running but has no open browser window.",
-        "automation_not_allowed": "macOS is not allowing Jarvis to automate Chrome yet.",
-        "chrome_javascript_unavailable": "Chrome did not allow Jarvis to read page text through AppleScript JavaScript.",
+        "automation_not_allowed": "macOS is blocking Jarvis from controlling Google Chrome. Grant Jarvis Automation access to Chrome, then try again.",
+        "chrome_javascript_unavailable": "Chrome allowed tab metadata, but did not allow Jarvis to read page text from the active page.",
         "osascript_not_found": "macOS AppleScript tooling is unavailable.",
     }
     return labels.get(status, "I could not read the current Chrome tab.")
+
+
+def _browser_error_details(status: str, *, include_page_text: bool) -> dict[str, Any]:
+    base = {
+        "external_model_allowed": False,
+        "called_model": False,
+        "copied_chrome_cookies": False,
+        "copied_chrome_passwords": False,
+        "copied_chrome_session_storage": False,
+        "can_migrate_chrome_logged_in_state": False,
+    }
+    if status == "automation_not_allowed":
+        return {
+            **base,
+            "permission_issue": "chrome_automation",
+            "requires_user_action": True,
+            "next_steps": [
+                "Open System Settings > Privacy & Security > Automation.",
+                "Allow Jarvis to control Google Chrome.",
+                "If Jarvis is not listed yet, run a Chrome page-read while awake so macOS can show the Automation prompt.",
+            ],
+            "spoken_summary": "I need Automation permission before I can read the current Chrome page. I will not copy Chrome logins into Jarvis.",
+        }
+    if status == "chrome_javascript_unavailable":
+        return {
+            **base,
+            "permission_issue": "chrome_page_javascript",
+            "requires_user_action": False,
+            "next_steps": [
+                "Keep the logged-in site open in Chrome.",
+                "Try reading the current tab metadata first, then ask Jarvis to read the visible page text again.",
+                "If macOS shows an Automation prompt, allow Jarvis to control Google Chrome.",
+            ],
+            "spoken_summary": (
+                "I can see the Chrome tab, but Chrome would not give me the visible page text. "
+                "I will keep using signed-in Chrome rather than copying your login."
+            ),
+        }
+    if status in {"not_running", "no_window"}:
+        return {
+            **base,
+            "permission_issue": "",
+            "requires_user_action": True,
+            "next_steps": ["Open Google Chrome to the page you want Jarvis to inspect."],
+        }
+    if include_page_text:
+        return {
+            **base,
+            "permission_issue": "",
+            "requires_user_action": False,
+            "next_steps": ["Keep the target page open in Chrome, then try the page read again."],
+        }
+    return base
 
 
 def _browser_safe_domain(url: Any) -> str:
