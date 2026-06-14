@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.427 makes Calendar answers more speakable: schedule summaries now use clean English course names and natural times like `8 AM`, while raw event details stay in structured diagnostics.",
     "Jarvis 0.1.426 makes Shut Up persistent: speech mute now survives worker restarts, app relaunches, and rebuilds by loading `runtime/state/speech_mute.json` on startup.",
     "Jarvis 0.1.425 makes the real app's Teams follow-up less brittle: after opening signed-in Chrome, native visible-screen OCR now retries up to four times and stops early once useful assignment/page text appears.",
     "The eight-prompt overnight regression matrix is now a reusable script: `scripts/run_regression_prompt_matrix.py` runs the Teams, Music, RAM, Codex, Calendar, model-test, email-contact, and Magic Keyboard prompts with speech/audio side effects suppressed.",
@@ -169,6 +170,12 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
+    "Live Jarvis 0.1.427 build 427 launched from bundled app resources with worker_launch_matches_bundle=true and exactly one app, one parent-bound status helper, and one worker.",
+    "Full Python safety suite passed 621/621 after the 0.1.427 Calendar speech polish.",
+    "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-045256.json`.",
+    "Full safe verifier passed 100/100 at `runtime/verification/verify-safe-20260615-045903.json` after the 0.1.427 build.",
+    "Live Calendar probe returned clean English schedule text with `8 AM`, `8:55 AM`, and no Chinese characters in the visible reply while speech stayed muted.",
+    "Live eight-prompt speech-audit matrix passed 8/8 at `runtime/regression_prompt_matrix/20260615-045930/summary.json` on Jarvis 0.1.427 after the Calendar speech polish.",
     "Live Jarvis 0.1.426 build 426 launched from bundled app resources with worker_launch_matches_bundle=true and exactly one app, one parent-bound status helper, and one worker.",
     "Full Python safety suite passed 620/620 after the 0.1.426 persistent Shut Up patch.",
     "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-042825.json`.",
@@ -918,6 +925,8 @@ def render_report(context: dict[str, Any]) -> str:
 
 def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
+        ("done", "Ship Jarvis 0.1.427", "Live app is bundled, launched, and reports Jarvis 0.1.427 build 427."),
+        ("done", "Polish Calendar speech", "Calendar summaries now strip Chinese course labels from visible/spoken replies and use natural AM/PM times."),
         ("done", "Ship Jarvis 0.1.426", "Live app is bundled, launched, and reports Jarvis 0.1.426 build 426."),
         ("done", "Persist Shut Up across relaunches", "Speech mute now loads from runtime/state/speech_mute.json on worker startup and stayed muted after verifier restore."),
         ("done", "Ship Jarvis 0.1.425", "Live app is bundled, launched, and reports Jarvis 0.1.425 build 425."),

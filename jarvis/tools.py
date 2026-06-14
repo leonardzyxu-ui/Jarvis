@@ -5615,11 +5615,38 @@ def _parse_calendar_events_output(output: str) -> list[dict[str, Any]]:
 
 
 def _calendar_event_phrase(event: dict[str, Any]) -> str:
-    title = _clean_local_field(event.get("title")) or "(no title)"
-    start = _clean_local_field(event.get("start"))
+    title = _calendar_reply_title(event.get("title"))
+    start = _calendar_reply_time(event.get("start"))
     if event.get("all_day"):
         return f"{title} all day"
     return f"{title} at {start}" if start else title
+
+
+def _calendar_reply_title(value: Any) -> str:
+    raw = _clean_local_field(value)
+    if not raw:
+        return "(no title)"
+    without_cjk = re.sub(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+", " ", raw)
+    without_cjk = re.sub(r"\s+", " ", without_cjk)
+    without_cjk = re.sub(r"\s*-\s*", " - ", without_cjk).strip(" -")
+    title = without_cjk or _sanitize_spoken_text(raw) or "Calendar event"
+    return re.sub(r"\b[A-Z]{3,}\b", lambda match: match.group(0).capitalize(), title)
+
+
+def _calendar_reply_time(value: Any) -> str:
+    raw = _clean_local_field(value)
+    match = re.match(r"^\d{4}-\d{2}-\d{2}\s+(?P<hour>\d{1,2}):(?P<minute>\d{2})$", raw)
+    if not match:
+        return raw
+    hour = _safe_int(match.group("hour"))
+    minute = _safe_int(match.group("minute"))
+    if hour is None or minute is None:
+        return raw
+    suffix = "AM" if hour < 12 else "PM"
+    hour_12 = hour % 12 or 12
+    if minute == 0:
+        return f"{hour_12} {suffix}"
+    return f"{hour_12}:{minute:02d} {suffix}"
 
 
 def app_identity_status(app_name: str = "Jarvis", search_dirs: list[Path] | None = None, *, limit: int = 120) -> dict[str, Any]:

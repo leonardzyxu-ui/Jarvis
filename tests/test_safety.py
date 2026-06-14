@@ -6269,8 +6269,22 @@ Pages occupied by compressor:             10.
         self.assertFalse(result["changed_calendar"])
         self.assertEqual(result["event_count"], 1)
         self.assertIn("Math class", result["reply"])
-        self.assertIn("09:00", result["reply"])
+        self.assertIn("9 AM", result["reply"])
         run_mock.assert_not_called()
+
+    def test_calendar_schedule_reply_uses_english_titles_and_natural_times(self):
+        phrase = jarvis_tools._calendar_event_phrase(
+            {
+                "title": "7 GENERAL MUSIC 综合音乐 - 7H",
+                "start": "2026-06-15 11:05",
+                "end": "2026-06-15 11:50",
+                "all_day": False,
+            }
+        )
+
+        self.assertEqual(phrase, "7 General Music - 7H at 11:05 AM")
+        self.assertNotRegex(phrase, r"[\u3400-\u9fff]")
+        self.assertNotIn("2026-06-15", phrase)
 
     def test_calendar_schedule_deduplicates_identical_all_day_cache_events(self):
         with tempfile.TemporaryDirectory() as temp_dir:
