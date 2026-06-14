@@ -843,7 +843,7 @@ def _stream_status_text(preview: dict[str, Any]) -> str:
         "shell.read_only": "Checking that locally now.",
         "terminal.read_only": "Checking that locally now.",
         "workflow.app_task_plan": "Preparing the app workflow plan now.",
-        "teams.assignment": "Preparing the Teams assignment plan now.",
+        "teams.assignment": "Opening Teams now.",
         "ui.overlay": "Planning the Jarvis overlay now.",
         "quick.local_control": "Handling that now.",
         "conversation.math_check": "Checking your answer now.",

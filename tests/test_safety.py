@@ -5302,8 +5302,17 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.result["status"], "needs_contact_confirmation")
         self.assertEqual(result.result["sender_query"], "Ms Sharpay")
         self.assertIn("Ms Sharpay", result.result["reply"])
-        self.assertEqual(status_text, "Checking your newest email from Ms Sharpay now.")
+        self.assertEqual(status_text, "Checking emails from Ms Sharpay over the past month now.")
         mail_mock.assert_not_called()
+
+    def test_email_status_does_not_say_newest_for_plural_date_range_summary(self):
+        status_text = email_request_status_text(
+            "Summarize all the emails from Ms. Sharpay in the past month.",
+            {"sender_query": "Sharpay", "selection": "latest", "date_range": "past_month"},
+        )
+
+        self.assertEqual(status_text, "Checking emails from Ms Sharpay over the past month now.")
+        self.assertNotIn("newest", status_text.lower())
 
     def test_email_model_failure_recovers_with_local_metadata_route(self):
         model_timeout = {

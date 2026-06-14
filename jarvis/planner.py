@@ -524,7 +524,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "description": "Prepare a safe Microsoft Teams assignment workflow plan without opening Teams, reading the screen, clicking, typing, downloading, submitting, calling Codex, or changing schoolwork.",
         "entities": ["goal"],
         "examples": [
-            'Preparing the Teams assignment plan now. \\tool({"tool":"teams.assignment","entities":{"goal":"Go to Teams, open Music class, and find the newest assignment."}})',
+            'Opening Teams now. \\tool({"tool":"teams.assignment","entities":{"goal":"Go to Teams, open Music class, and find the newest assignment."}})',
         ],
     },
     {
@@ -3494,13 +3494,27 @@ def email_request_status_text(text: str, entities: dict[str, Any] | None = None)
         or _email_selection_from_entities(safe_entities)
         or _extract_email_selection_constraint(text)
     )
+    date_range = _normalize_email_date_range(
+        _clean_optional_entity(safe_entities.get("date_range"))
+        or _extract_email_date_range_constraint(text)
+    )
+    date_phrase = _email_date_range_status_phrase(date_range)
+    asks_for_multiple = _looks_like_multi_email_summary_request(text)
     if sender_query:
+        if date_phrase and asks_for_multiple:
+            return f"Checking emails from {sender_query} {date_phrase} now."
         if selection and selection.lower() == "latest":
+            if date_phrase:
+                return f"Checking the newest email from {sender_query} {date_phrase} now."
             return f"Checking your newest email from {sender_query} now."
+        if date_phrase:
+            return f"Checking email from {sender_query} {date_phrase} now."
         return f"Checking your email from {sender_query} now."
     if selection:
         lowered = selection.lower()
         if lowered == "latest":
+            if date_phrase:
+                return f"Checking the newest email {date_phrase} now."
             return "Checking your newest email now."
         if lowered == "unread_first":
             return "Checking your unread email now."
@@ -3514,7 +3528,23 @@ def email_request_status_text(text: str, entities: dict[str, Any] | None = None)
             start = int(range_match.group(1))
             end = int(range_match.group(2))
             return f"Checking emails {start} through {end} now."
+    if date_phrase and asks_for_multiple:
+        return f"Checking emails {date_phrase} now."
     return "Checking your email now."
+
+
+def _email_date_range_status_phrase(date_range: str | None) -> str:
+    if date_range == "past_month":
+        return "over the past month"
+    return ""
+
+
+def _looks_like_multi_email_summary_request(text: str) -> bool:
+    lower = str(text or "").casefold()
+    return bool(
+        re.search(r"\b(?:all|every|emails|messages|mail from|mails from)\b", lower)
+        or re.search(r"\b(?:summarize|summarise|summary of)\b", lower)
+    )
 
 
 def _email_sender_query_from_entities_and_prompt(text: str, entities: dict[str, Any]) -> str | None:
@@ -3971,7 +4001,7 @@ def _voice_loop_status_text_for_tool(tool: str) -> str:
         "browser.bookmark_open": "Opening that bookmark now.",
         "terminal.read_only": "Checking that locally now.",
         "shell.read_only": "Checking that locally now.",
-        "teams.assignment": "Preparing the Teams assignment plan now.",
+        "teams.assignment": "Opening Teams now.",
         "ui.overlay": "Planning the Jarvis overlay now.",
         "codex.chat_plan": "Choosing the Codex chat now.",
         "quick.local_control": "Handling that now.",

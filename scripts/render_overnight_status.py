@@ -21,6 +21,7 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.421 polishes spoken working lines: month-long email summaries no longer say `newest email`, and Teams assignment handoff no longer exposes `assignment plan` wording.",
     "Jarvis 0.1.420 now asks useful follow-up questions after Teams assignment OCR when Leo asks for enough information to finish the assignment.",
     "The automatic Teams OCR pass now preserves Leo's original command, so `ask me questions` survives the Chrome handoff and native screen-read step.",
     "Jarvis 0.1.419 makes Teams OCR summaries more useful: visible Teams text now prefers assignment title, due time, instructions, rubric, class, and project lines over generic Teams navigation noise.",
@@ -160,11 +161,19 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
+    "Live Jarvis 0.1.421 build 421 launched from bundled app resources with worker_launch_matches_bundle=true.",
+    "Full Python safety suite passed 615/615 after the 0.1.421 status-line polish.",
+    "Swift command-routing self-test passed after the 0.1.421 status-line polish.",
+    "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-023001.json`.",
+    "Full safe verifier passed 100/100 at `runtime/verification/verify-safe-20260615-023431.json` after the 0.1.421 build.",
+    "Focused speech-audit proof: `Summarize all the emails from Ms. Sharpay in the past month` now speaks `Checking emails from Ms Sharpay over the past month now` with 1.0 local STT similarity and zero leaks.",
+    "Focused speech-audit proof: the Teams assignment handoff status now speaks `Opening Teams now` with zero leaks.",
     "Live Jarvis 0.1.420 build 420 launched from bundled app resources with worker_launch_matches_bundle=true.",
     "Full Python safety suite passed 614/614 after the Teams follow-up question route.",
     "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-020859.json`.",
     "Muted live `/api/screen/visible-text` probe produced five assignment follow-up questions and stayed muted.",
     "Full safe verifier passed 100/100 at `runtime/verification/verify-safe-20260615-021232.json` after the 0.1.420 build.",
+    "Live eight-prompt speech-audit matrix passed 8/8 at `runtime/regression_prompt_matrix/20260615-021451/summary.json` on Jarvis 0.1.420, covering Teams assignment handoff, LocalOS music, RAM, Codex Default-chat confirmation, Calendar, model-test planning, Ms. Sharpay contact handling, and Magic Keyboard yuan conversion with no spoken-output leaks.",
     "Live Jarvis 0.1.419 build 419 launched from bundled app resources with worker_launch_matches_bundle=true.",
     "Full Python safety suite passed 613/613 after the Teams assignment OCR digest improvement.",
     "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-015853.json`.",
@@ -870,6 +879,8 @@ def render_report(context: dict[str, Any]) -> str:
 
 def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
+        ("done", "Ship Jarvis 0.1.421", "Live app is bundled, launched, and reports Jarvis 0.1.421 build 421."),
+        ("done", "Polish spoken working lines", "Month-long email summaries no longer say newest email, and Teams no longer says assignment plan."),
         ("done", "Ship Jarvis 0.1.420", "Live app is bundled, launched, and reports Jarvis 0.1.420 build 420."),
         ("done", "Ask assignment follow-up questions", "When Leo asks for enough information to finish the assignment, OCR summaries now include targeted questions."),
         ("done", "Preserve original Teams prompt", "The automatic OCR follow-up now receives Leo's original command instead of a generic read-screen command."),
