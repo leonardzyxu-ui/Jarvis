@@ -3250,22 +3250,44 @@ def cleanup_background_audio(*, reason: str = "cleanup") -> dict[str, Any]:
 
 
 def localos_music_stop() -> dict[str, Any]:
-    """Stop only Jarvis-owned LocalOS native fallback music playback."""
+    """Stop Jarvis-owned LocalOS music playback across the bridge and native fallback."""
     started_at = time.monotonic()
-    stopped = _stop_localos_native_music()
-    interrupted = bool(stopped.get("was_running"))
+    stopped_native = _stop_localos_native_music()
+    interrupted_native = bool(stopped_native.get("was_running"))
+    command = _queue_localos_music_control("pause", None, user_request="stop Jarvis music playback")
+    confirmation = _localos_music_control_confirmation(command, expected_statuses={"paused", "stopped"})
+    confirmation_status = str(confirmation.get("status") or "unconfirmed")
+    interrupted_page = confirmation_status in {"paused", "stopped"}
+    interrupted = interrupted_native or interrupted_page
+    status = "stopped" if interrupted else "queued" if confirmation_status in {"accepted", "unconfirmed", "bridge_not_polling"} else "idle"
+    if interrupted:
+        reply = "Stopped Jarvis music playback."
+    elif status == "queued":
+        reply = "I sent the stop command to Local OS."
+    else:
+        reply = "No Jarvis-owned music was playing."
     return {
         "tool": "localos.music_stop",
-        "status": "stopped" if interrupted else "idle",
+        "status": status,
         "executed": True,
         "started_audio": False,
         "played_audio": False,
         "recorded_audio": False,
         "read_private_content": False,
-        **stopped,
+        **stopped_native,
+        "native_stop": stopped_native,
+        "control": command,
+        "control_lane": "localos_polling_bridge",
+        "localos_page_stop_confirmation": confirmation_status,
+        "localos_bridge_version": confirmation.get("bridge_version"),
+        "localos_bridge_polling_active": confirmation.get("polling_active"),
+        "localos_bridge_latest_command_id": confirmation.get("latest_command_id"),
+        "localos_bridge_latest_command_status": confirmation.get("latest_command_status"),
+        "localos_command_error": confirmation.get("error"),
+        "bridge_recovery": _localos_music_bridge_recovery(),
         "interrupted_previous": interrupted,
         **_duration_fields(started_at),
-        "reply": "Stopped Jarvis music playback." if interrupted else "No Jarvis-owned music was playing.",
+        "reply": reply,
     }
 
 
@@ -3660,9 +3682,8 @@ def localos_music_pending_control(since: str | None = None) -> dict[str, Any]:
     }
 
 
-def _queue_localos_music_control(action: str, track: dict[str, Any], *, user_request: str = "") -> dict[str, Any]:
+def _queue_localos_music_control(action: str, track: dict[str, Any] | None, *, user_request: str = "") -> dict[str, Any]:
     now = time.time()
-    public_track = _sanitize_localos_music_track(track, rank=_safe_int(track.get("rank")) or 1) or {}
     command = {
         "schema": "jarvis.localos.music.control.v1",
         "id": f"music-{uuid.uuid4().hex[:12]}",
@@ -3670,8 +3691,11 @@ def _queue_localos_music_control(action: str, track: dict[str, Any], *, user_req
         "created_at": now,
         "expires_at": now + LOCALOS_MUSIC_CONTROL_TTL_SECONDS,
         "user_request": _localos_clean_text(user_request, 220),
-        "track": public_track,
     }
+    if isinstance(track, dict):
+        public_track = _sanitize_localos_music_track(track, rank=_safe_int(track.get("rank")) or 1) or {}
+        if public_track:
+            command["track"] = public_track
     LOCALOS_MUSIC_CONTROL_PATH.parent.mkdir(parents=True, exist_ok=True)
     temp_path = LOCALOS_MUSIC_CONTROL_PATH.with_suffix(".json.tmp")
     temp_path.write_text(json.dumps(command, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
@@ -4180,6 +4204,72 @@ def _localos_music_playback_confirmation(
                     "error": "localos_music_window_not_polling_or_not_refreshed",
                 }
             return last_confirmation or {"status": "unconfirmed", "bridge_version": bridge_version}
+        time.sleep(0.15)
+
+
+def _localos_music_control_confirmation(
+    command: dict[str, Any],
+    *,
+    expected_statuses: set[str],
+    timeout_seconds: float = 2.0,
+) -> dict[str, Any]:
+    snapshot_result = _read_localos_music_snapshot_for_tool()
+    snapshot = snapshot_result.get("snapshot") if isinstance(snapshot_result.get("snapshot"), dict) else {}
+    bridge_version = _safe_int(snapshot.get("jarvis_control_bridge_version")) if snapshot else None
+    if not bridge_version:
+        return {"status": "unconfirmed", "bridge_version": None, "polling_active": None, "error": "bridge_status_missing"}
+
+    command_id = _localos_clean_text(command.get("id"), 80)
+    command_created_at = _safe_float(command.get("created_at"))
+    normalized_expected = {str(status).lower() for status in expected_statuses}
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    last_confirmation: dict[str, Any] = {}
+    while True:
+        snapshot_result = _read_localos_music_snapshot_for_tool()
+        snapshot = snapshot_result.get("snapshot") if isinstance(snapshot_result.get("snapshot"), dict) else {}
+        status = snapshot.get("jarvis_control_status") if isinstance(snapshot.get("jarvis_control_status"), dict) else {}
+        received_at = _safe_float(snapshot.get("received_at"))
+        snapshot_after_command = (
+            received_at >= command_created_at - 0.05
+            if received_at is not None and command_created_at is not None
+            else None
+        )
+        last_command_id = _localos_clean_text(
+            snapshot.get("last_jarvis_command_id") or status.get("last_command_id"),
+            80,
+        )
+        last_command_status = _localos_clean_text(
+            snapshot.get("last_jarvis_command_status") or status.get("last_command_status"),
+            80,
+        ).lower()
+        last_command_error = _localos_clean_text(
+            snapshot.get("last_jarvis_command_error") or status.get("last_command_error"),
+            220,
+        )
+        last_confirmation = {
+            "status": last_command_status if last_command_id == command_id and last_command_status else "unconfirmed",
+            "bridge_version": _safe_int(snapshot.get("jarvis_control_bridge_version") or status.get("bridge_version")),
+            "polling_active": bool(snapshot.get("jarvis_control_polling_active") or status.get("polling_active")),
+            "latest_command_id": last_command_id,
+            "latest_command_status": last_command_status,
+            "snapshot_after_command": snapshot_after_command,
+            "error": last_command_error,
+        }
+        if last_command_id == command_id and last_command_status in normalized_expected:
+            return last_confirmation
+        if last_command_id == command_id and last_command_status in {"failed", "ignored"}:
+            return last_confirmation
+        if time.monotonic() >= deadline:
+            if (
+                last_confirmation.get("latest_command_id") != command_id
+                and last_confirmation.get("snapshot_after_command") is False
+            ):
+                return {
+                    **last_confirmation,
+                    "status": "bridge_not_polling",
+                    "error": "localos_music_window_not_polling_or_not_refreshed",
+                }
+            return last_confirmation
         time.sleep(0.15)
 
 
@@ -4728,7 +4818,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "diagnostics.memory_usage", "kind": "read_only", "description": "Report Activity Monitor-style RAM and memory-pressure status without opening Activity Monitor."},
         {"id": "models.test_plan", "kind": "read_only_plan", "description": "Plan a safe AI model test, preferring the MacBook Air for heavy models before touching this 16 GB Mac."},
         {"id": "localos.music_play", "kind": "safe_execute", "description": "Play a named or chosen song locally, preferring the Local OS bridge and using a tracked fallback only when Chrome blocks audio."},
-        {"id": "localos.music_stop", "kind": "safe_execute", "description": "Stop Jarvis-owned fallback music playback without touching unrelated system audio."},
+        {"id": "localos.music_stop", "kind": "safe_execute", "description": "Stop Jarvis-started LocalOS music playback without touching unrelated system audio."},
         {"id": "localos.music_recommendations", "kind": "read_only", "description": "Read the Local OS Music Player Your Pick recommendation snapshot after the music page publishes it to Jarvis."},
         {"id": "localos.music_choose_from_your_pick", "kind": "read_only_model_choice", "description": "Feed the Your Pick candidate list to Jarvis's fast model so it can choose one track naturally."},
         {"id": "localos.music_search", "kind": "read_only", "description": "Search the full Local OS Music library snapshot by title, artist, group, or filename."},

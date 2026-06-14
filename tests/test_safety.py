@@ -1485,7 +1485,7 @@ class PlannerTests(unittest.TestCase):
             result = Planner().handle("stop the music")
 
         self.assertEqual(result.tool, "localos.music_stop")
-        self.assertEqual(result.summary, "Stopped Jarvis-owned music playback.")
+        self.assertEqual(result.summary, "Stopped Jarvis music playback.")
         stop_mock.assert_called_once_with()
         fast_chat_mock.assert_not_called()
 
@@ -1789,6 +1789,44 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result["interrupted_previous"])
         self.assertFalse(state_path.exists())
         kill_mock.assert_called_once_with(4242, jarvis_tools.signal.SIGTERM)
+
+    def test_localos_music_stop_queues_pause_for_localos_bridge(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
+            control_path = Path(tmpdir) / "localos_music_control.json"
+            payload = {
+                "source": "localos-music-player",
+                "jarvisControlBridgeVersion": 4,
+                "jarvisControlPollingActive": True,
+                "playing": True,
+                "currentTrack": {
+                    "id": "track-2",
+                    "title": "Waving Through A Window",
+                    "artist": "Dear Evan Hansen",
+                    "playing": True,
+                },
+            }
+            with patch.object(jarvis_tools, "LOCALOS_MUSIC_SNAPSHOT_PATH", snapshot_path), \
+                 patch.object(jarvis_tools, "LOCALOS_MUSIC_CONTROL_PATH", control_path), \
+                 patch("jarvis.tools._stop_localos_native_music", return_value={"was_running": False, "stopped_process": {"stopped": False}}), \
+                 patch("jarvis.tools._localos_music_control_confirmation", return_value={
+                     "status": "paused",
+                     "bridge_version": 4,
+                     "polling_active": True,
+                     "latest_command_id": "music-stop-test",
+                     "latest_command_status": "paused",
+                 }):
+                store_localos_music_snapshot(payload)
+                result = localos_music_stop()
+                pending = localos_music_pending_control()
+
+        self.assertEqual(result["status"], "stopped")
+        self.assertEqual(result["localos_page_stop_confirmation"], "paused")
+        self.assertTrue(result["interrupted_previous"])
+        self.assertEqual(pending["status"], "available")
+        self.assertEqual(pending["command"]["action"], "pause")
+        self.assertNotIn("track", pending["command"])
+        self.assertEqual(result["reply"], "Stopped Jarvis music playback.")
 
     def test_localos_music_confirmation_requires_audio_playing_flag(self):
         snapshot = {
@@ -2571,7 +2609,7 @@ class PlannerTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("JARVIS_MUSIC_CONTROL_URL", source)
-        self.assertIn("JARVIS_MUSIC_CONTROL_BRIDGE_VERSION = 3", source)
+        self.assertIn("JARVIS_MUSIC_CONTROL_BRIDGE_VERSION = 4", source)
         self.assertIn("/api/integrations/localos/music/control", source)
         self.assertIn("jarvisControlStatus", source)
         self.assertIn('mode: "cors"', source)
@@ -2583,6 +2621,9 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("audioEl.muted = true", source)
         self.assertIn("playing: audioPlaying", source)
         self.assertIn("playTrackById", source)
+        self.assertIn("pauseForJarvisControl", source)
+        self.assertIn('command.action === "pause"', source)
+        self.assertIn('markJarvisMusicCommandStatus("paused"', source)
         self.assertIn('command.action !== "play_track"', source)
         self.assertIn('String(source).startsWith("mp3/")', source)
         self.assertIn("setInterval(pollJarvisMusicControl, 900)", source)

@@ -158,7 +158,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     },
     {
         "tool": "localos.music_stop",
-        "description": "Stop Jarvis-owned fallback music playback. Use when Leo asks Jarvis to stop or pause music that Jarvis started.",
+        "description": "Stop or pause music that Jarvis started through the Local OS Music Player or its tracked local fallback.",
         "entities": [],
         "examples": [
             'Stopping that music now. \\tool({"tool":"localos.music_stop","entities":{}})',
@@ -846,7 +846,7 @@ class Planner:
         if _looks_like_stop_speaking(lower):
             return self._result(text, "voice.stop_speaking", "Stopped Jarvis speech playback.", assessment, stop_speaking(), True)
         if _looks_like_music_stop_request(lower):
-            return self._result(text, "localos.music_stop", "Stopped Jarvis-owned music playback.", assessment, localos_music_stop(), True)
+            return self._result(text, "localos.music_stop", "Stopped Jarvis music playback.", assessment, localos_music_stop(), True)
         if _looks_like_remote_worker_status(lower):
             return self._result(text, "diagnostics.remote_worker", "Read remote MacBook Air worker status.", assessment, remote_worker_status(), True)
         if _looks_like_elevation_status(lower):
@@ -1469,12 +1469,12 @@ class Planner:
             )
         if selected_tool == "localos.music_stop":
             if not execute:
-                return self._preview_result(text, "localos.music_stop", assessment, True, plan={"intent": intent, "stops": "jarvis_owned_fallback_music_only"})
+                return self._preview_result(text, "localos.music_stop", assessment, True, plan={"intent": intent, "stops": "localos_music_or_tracked_fallback"})
             stop_result = localos_music_stop()
             return self._result(
                 text,
                 "localos.music_stop",
-                "Stopped Jarvis-owned music playback.",
+                "Stopped Jarvis music playback.",
                 assessment,
                 stop_result,
                 True,
