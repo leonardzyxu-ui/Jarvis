@@ -12270,10 +12270,15 @@ def visible_screen_text_summary(
 
     assignment_context = _is_visible_teams_assignment_context(command, diagnostics, clean_text)
     assignment_items = _visible_assignment_digest_items(clean_text) if assignment_context else []
+    follow_up_questions = _visible_assignment_follow_up_questions(command, assignment_items) if assignment_items else []
     digest_items = assignment_items or _browser_page_digest_items(clean_text, max_items=5, max_chars=180)
     digest = "; ".join(digest_items)
     if assignment_items:
         reply = f"I read the visible Teams screen. I can see assignment-related text: {digest}."
+        if follow_up_questions:
+            reply += " Questions I need answered: " + " ".join(
+                f"{index + 1}. {question}" for index, question in enumerate(follow_up_questions)
+            )
     elif digest:
         reply = f"I read {source_label}. I can see: {digest}."
     else:
@@ -12283,6 +12288,7 @@ def visible_screen_text_summary(
         "status": "checked" if digest else "read_without_digest",
         "detected_assignment_context": assignment_context,
         "assignment_digest_items": assignment_items,
+        "follow_up_questions": follow_up_questions,
         "injection_scan": injection_scan,
         "prompt_injection_findings": 0,
         "page_digest": digest,
@@ -12367,6 +12373,31 @@ def _visible_assignment_digest_items(text: str, *, max_items: int = 6, max_chars
             line = line[: max_chars - 3].rstrip() + "..."
         items.append(line)
     return items
+
+
+def _visible_assignment_follow_up_questions(command: Any, assignment_items: list[str]) -> list[str]:
+    command_text = str(command or "").casefold()
+    if not any(term in command_text for term in ["ask me", "questions", "enough information", "finish"]):
+        return []
+    combined = " ".join(assignment_items).casefold()
+    questions = [
+        "What exact topic or angle should the assignment use?",
+        "What personal details, examples, or opinions do you want included?",
+        "Are there any teacher requirements not visible here?",
+    ]
+    if "poster" in combined or "visual" in combined:
+        questions.insert(1, "What visual style or main image should the poster use?")
+    if "rubric" in combined or "criteria" in combined:
+        questions.append("Which rubric points matter most if we need to prioritize?")
+    if "music" in combined or "musical" in combined:
+        questions.append("Which song, artist, instrument, or musical example should I focus on?")
+    deduped: list[str] = []
+    for question in questions:
+        if question not in deduped:
+            deduped.append(question)
+        if len(deduped) >= 5:
+            break
+    return deduped
 
 
 def outlook_read_only_check(

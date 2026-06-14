@@ -3568,6 +3568,27 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("Instructions", digest)
         self.assertIn("Rubric", digest)
         self.assertNotIn("Activity", digest)
+        self.assertEqual(result["follow_up_questions"], [])
+
+    def test_visible_screen_text_summary_asks_assignment_follow_up_questions_when_requested(self):
+        result = visible_screen_text_summary(
+            "\n".join([
+                "Microsoft Teams",
+                "Music Class",
+                "Newest assignment: Musical theatre poster",
+                "Due Monday 9:00 AM",
+                "Instructions: create one poster and include one visual example.",
+                "Rubric: title, explanation, and source list.",
+            ]),
+            command="Look in Teams for my newest Music assignment and ask me questions so you can finish it.",
+            diagnostics={"target_app_name": "Google Chrome", "window_title": "Microsoft Teams"},
+        )
+
+        self.assertTrue(result["detected_assignment_context"])
+        self.assertGreaterEqual(len(result["follow_up_questions"]), 3)
+        self.assertIn("Questions I need answered", result["reply"])
+        self.assertIn("visual style", " ".join(result["follow_up_questions"]))
+        self.assertIn("rubric", " ".join(result["follow_up_questions"]).lower())
 
     def test_visible_screen_text_summary_blocks_prompt_injection_without_speaking_raw_text(self):
         fake_scan = {"status": "suspicious", "findings": [{"kind": "instruction_override"}]}

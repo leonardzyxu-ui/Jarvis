@@ -21,6 +21,8 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.420 now asks useful follow-up questions after Teams assignment OCR when Leo asks for enough information to finish the assignment.",
+    "The automatic Teams OCR pass now preserves Leo's original command, so `ask me questions` survives the Chrome handoff and native screen-read step.",
     "Jarvis 0.1.419 makes Teams OCR summaries more useful: visible Teams text now prefers assignment title, due time, instructions, rubric, class, and project lines over generic Teams navigation noise.",
     "The 0.1.419 audit filter also omits `assignment_digest_items`, so private OCR-derived assignment snippets do not linger in the long-term audit log.",
     "Jarvis 0.1.418 fuses the Teams handoff with the new native OCR path: after a `teams.assignment` command opens signed-in Chrome, assignment-reading requests automatically try a read-only visible Teams screen pass.",
@@ -158,6 +160,11 @@ SHIPPED_ITEMS = [
 ]
 
 PROOF_ITEMS = [
+    "Live Jarvis 0.1.420 build 420 launched from bundled app resources with worker_launch_matches_bundle=true.",
+    "Full Python safety suite passed 614/614 after the Teams follow-up question route.",
+    "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-020859.json`.",
+    "Muted live `/api/screen/visible-text` probe produced five assignment follow-up questions and stayed muted.",
+    "Full safe verifier passed 100/100 at `runtime/verification/verify-safe-20260615-021232.json` after the 0.1.420 build.",
     "Live Jarvis 0.1.419 build 419 launched from bundled app resources with worker_launch_matches_bundle=true.",
     "Full Python safety suite passed 613/613 after the Teams assignment OCR digest improvement.",
     "No-prompt live verifier passed 12/12 at `runtime/verification_no_prompt/verify-no-prompt-20260615-015853.json`.",
@@ -863,6 +870,9 @@ def render_report(context: dict[str, Any]) -> str:
 
 def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
+        ("done", "Ship Jarvis 0.1.420", "Live app is bundled, launched, and reports Jarvis 0.1.420 build 420."),
+        ("done", "Ask assignment follow-up questions", "When Leo asks for enough information to finish the assignment, OCR summaries now include targeted questions."),
+        ("done", "Preserve original Teams prompt", "The automatic OCR follow-up now receives Leo's original command instead of a generic read-screen command."),
         ("done", "Ship Jarvis 0.1.419", "Live app is bundled, launched, and reports Jarvis 0.1.419 build 419."),
         ("done", "Extract assignment OCR lines", "Visible Teams OCR now prefers assignment title, due time, instructions, rubric, class, and project lines."),
         ("done", "Redact assignment digest audit", "Audit logs omit assignment_digest_items after a focused test caught private digest leakage."),
@@ -924,7 +934,7 @@ def render_workboard(context: dict[str, Any]) -> str:
         ("done", "Explain wake pauses visibly", "The chat now shows why Hey Jarvis paused instead of silently stopping."),
         ("done", "Add report loopback URLs", "The master report and workboard are reachable from the running Jarvis worker."),
         ("done", "Add menu report shortcut", "The menu bar can open the overnight report route directly."),
-        ("working", "Next: real Teams assignment proof", "The OCR digest works on controlled text; the next hard part is proving it on Leo's actual Teams page and asking the right follow-up questions."),
+        ("working", "Next: real Teams assignment proof", "The OCR digest and question generator work on controlled text; the next hard part is proving them on Leo's actual Teams page."),
     ]
     items = "\n".join(task_item(*task) for task in tasks)
     return f"""<!doctype html>
@@ -945,8 +955,8 @@ def render_workboard(context: dict[str, Any]) -> str:
   <main>
     <section>
       <h2>Current Focus</h2>
-      <p>Jarvis {e(context["version"])} is live with native visible-screen OCR, automatic read-only Teams follow-up after Chrome handoff, assignment-line OCR extraction, cleaner Teams read failures, preserved contact aliases, quieter wake acknowledgement, and an 8/8 live regression matrix. The remaining product gap is proving this on Leo's real Teams page and turning the result into precise follow-up questions.</p>
-      <div class="meter"><div style="width: 97%"></div></div>
+      <p>Jarvis {e(context["version"])} is live with native visible-screen OCR, automatic read-only Teams follow-up after Chrome handoff, assignment-line OCR extraction, targeted follow-up questions, cleaner Teams read failures, preserved contact aliases, quieter wake acknowledgement, and an 8/8 live regression matrix. The remaining product gap is proving this on Leo's real Teams page.</p>
+      <div class="meter"><div style="width: 98%"></div></div>
     </section>
     <section>
       <h2>Checklist</h2>

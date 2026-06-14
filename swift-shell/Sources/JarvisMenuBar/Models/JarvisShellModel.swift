@@ -1311,7 +1311,7 @@ final class JarvisShellModel: ObservableObject {
                 }
                 recordTurnPhase("Working", detail: statusText)
                 try await Task.sleep(nanoseconds: 2_200_000_000)
-                response = try await runNativeVisibleScreenRead("read the visible Teams screen")
+                response = try await runNativeVisibleScreenRead(commandText)
             }
 
             tool = response.tool ?? "unknown"
