@@ -10,6 +10,7 @@ import re
 import signal
 import shutil
 import shlex
+import socket
 import sqlite3
 import ssl
 import subprocess
@@ -13515,6 +13516,7 @@ def codex_delegate_plan(
     workdir = str(_safe_root(project_dir))
     selected_model = (model or DEFAULT_CODEX_MODEL).strip() or DEFAULT_CODEX_MODEL
     delegated_prompt = _codex_fast_prompt(prompt)
+    proxy_plan = _codex_proxy_plan()
     command = [
         codex_path or "codex",
         "--model",
@@ -13542,6 +13544,7 @@ def codex_delegate_plan(
         "sandbox": "read-only",
         "reasoning_effort": DEFAULT_CODEX_REASONING_EFFORT,
         "ephemeral": ephemeral,
+        "proxy": proxy_plan,
         "planned_command": command,
         "status": "dry_run",
         "note": "Codex CLI execution sends the prompt and any files it chooses to read to the configured model. This route uses a read-only sandbox.",
@@ -13553,6 +13556,7 @@ def run_codex_chat(prompt: str, project_dir: str | None = None, model: str | Non
     selected_model = (model or DEFAULT_CODEX_MODEL).strip() or DEFAULT_CODEX_MODEL
     workdir = str(_safe_root(project_dir))
     local_reply = _local_conversation_reply(prompt)
+    proxy_plan = _codex_proxy_plan()
     if not codex_path:
         return {
             "tool": "conversation.codex",
@@ -13597,6 +13601,7 @@ def run_codex_chat(prompt: str, project_dir: str | None = None, model: str | Non
                 stderr=subprocess.PIPE,
                 timeout=CODEX_CHAT_TIMEOUT_SECONDS,
                 check=False,
+                env=_codex_child_env(proxy_plan),
             )
             last_message = output_path.read_text(encoding="utf-8").strip() if output_path.exists() else ""
         except subprocess.TimeoutExpired:
@@ -13608,6 +13613,7 @@ def run_codex_chat(prompt: str, project_dir: str | None = None, model: str | Non
                 "executed": True,
                 "fallback_used": True,
                 "model": selected_model,
+                "proxy": proxy_plan,
                 "timeout_seconds": CODEX_CHAT_TIMEOUT_SECONDS,
                 **duration,
                 "reply": local_reply,
@@ -13621,6 +13627,7 @@ def run_codex_chat(prompt: str, project_dir: str | None = None, model: str | Non
                 "executed": False,
                 "fallback_used": True,
                 "model": selected_model,
+                "proxy": proxy_plan,
                 "error": str(error),
                 **duration,
                 "reply": local_reply,
@@ -13638,6 +13645,7 @@ def run_codex_chat(prompt: str, project_dir: str | None = None, model: str | Non
             "executed": True,
             "fallback_used": False,
             "model": selected_model,
+            "proxy": proxy_plan,
             **duration,
             "reply": reply[-1800:] if reply else local_reply,
         }
@@ -13648,6 +13656,7 @@ def run_codex_chat(prompt: str, project_dir: str | None = None, model: str | Non
         "executed": True,
         "fallback_used": True,
         "model": selected_model,
+        "proxy": proxy_plan,
         "stderr": stderr,
         **duration,
         "reply": local_reply,
@@ -15343,6 +15352,7 @@ def run_codex_delegate(prompt: str, project_dir: str | None = None, model: str |
                 stderr=subprocess.PIPE,
                 timeout=CODEX_TIMEOUT_SECONDS,
                 check=False,
+                env=_codex_child_env(plan.get("proxy") if isinstance(plan.get("proxy"), dict) else None),
             )
             last_message = output_path.read_text(encoding="utf-8").strip() if output_path.exists() else ""
         except subprocess.TimeoutExpired as error:
@@ -16275,6 +16285,7 @@ def _codex_delegate_job_worker(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=1,
+                env=_codex_child_env(plan.get("proxy") if isinstance(plan.get("proxy"), dict) else None),
             )
         except OSError as error:
             duration = _duration_fields(started_at)
@@ -16467,6 +16478,90 @@ def _codex_command_preview(plan: dict[str, Any]) -> str:
         f"--model {plan.get('model') or DEFAULT_CODEX_MODEL} "
         f"--sandbox {plan.get('sandbox') or 'read-only'}"
     )
+
+
+CODEX_PROXY_ENV_KEYS = (
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+)
+
+
+def _codex_proxy_plan() -> dict[str, Any]:
+    mode = str(os.environ.get("JARVIS_CODEX_PROXY_MODE") or "auto").strip().lower() or "auto"
+    host = str(os.environ.get("JARVIS_CODEX_LOCAL_PROXY_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+    try:
+        port = int(str(os.environ.get("JARVIS_CODEX_LOCAL_PROXY_PORT") or "7890").strip())
+    except ValueError:
+        port = 7890
+    port = max(1, min(port, 65535))
+    proxy_url = f"http://{host}:{port}"
+    socks_url = f"socks5://{host}:{port}"
+    if mode in {"none", "off", "disabled"}:
+        return {
+            "mode": mode,
+            "selected": "none",
+            "local_proxy_host": host,
+            "local_proxy_port": port,
+            "local_proxy_reachable": None,
+            "reason": "disabled",
+        }
+    reachable = _codex_proxy_host_reachable(host, port)
+    if reachable or mode in {"local", "clash", "clashx", "force_local"}:
+        return {
+            "mode": mode,
+            "selected": "local_clash",
+            "local_proxy_host": host,
+            "local_proxy_port": port,
+            "local_proxy_reachable": reachable,
+            "http_proxy": proxy_url,
+            "https_proxy": proxy_url,
+            "all_proxy": socks_url,
+            "reason": "local_proxy_reachable" if reachable else "local_proxy_forced",
+        }
+    return {
+        "mode": mode,
+        "selected": "inherited",
+        "local_proxy_host": host,
+        "local_proxy_port": port,
+        "local_proxy_reachable": False,
+        "reason": "local_proxy_unreachable",
+    }
+
+
+def _codex_proxy_host_reachable(host: str, port: int, *, timeout: float = 0.25) -> bool:
+    try:
+        connection = socket.create_connection((host, port), timeout=timeout)
+    except OSError:
+        return False
+    try:
+        connection.close()
+    except OSError:
+        pass
+    return True
+
+
+def _codex_child_env(proxy_plan: dict[str, Any] | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    plan = proxy_plan or _codex_proxy_plan()
+    if plan.get("selected") == "local_clash":
+        http_proxy = str(plan.get("http_proxy") or "")
+        https_proxy = str(plan.get("https_proxy") or http_proxy)
+        all_proxy = str(plan.get("all_proxy") or "")
+        for key in ("http_proxy", "HTTP_PROXY"):
+            env[key] = http_proxy
+        for key in ("https_proxy", "HTTPS_PROXY"):
+            env[key] = https_proxy
+        for key in ("all_proxy", "ALL_PROXY"):
+            if all_proxy:
+                env[key] = all_proxy
+    elif plan.get("selected") == "none":
+        for key in CODEX_PROXY_ENV_KEYS:
+            env.pop(key, None)
+    return env
 
 
 def _codex_resume_command_preview(plan: dict[str, Any]) -> str:

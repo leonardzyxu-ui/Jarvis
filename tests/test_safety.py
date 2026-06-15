@@ -13599,6 +13599,40 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(command[-1], plan["planned_command"][-1])
         self.assertIn("Visible project file map:", command[-1])
 
+    def test_codex_proxy_plan_auto_selects_reachable_local_clash(self):
+        fake_socket = io.StringIO()
+        fake_socket.close = lambda: None
+        with patch.dict(os.environ, {
+            "JARVIS_CODEX_PROXY_MODE": "auto",
+            "JARVIS_CODEX_LOCAL_PROXY_HOST": "127.0.0.1",
+            "JARVIS_CODEX_LOCAL_PROXY_PORT": "7890",
+        }, clear=True), \
+             patch("jarvis.tools.socket.create_connection", return_value=fake_socket) as create_connection:
+            proxy = jarvis_tools._codex_proxy_plan()
+            env = jarvis_tools._codex_child_env(proxy)
+
+        create_connection.assert_called_once_with(("127.0.0.1", 7890), timeout=0.25)
+        self.assertEqual(proxy["selected"], "local_clash")
+        self.assertTrue(proxy["local_proxy_reachable"])
+        self.assertEqual(env["https_proxy"], "http://127.0.0.1:7890")
+        self.assertEqual(env["HTTPS_PROXY"], "http://127.0.0.1:7890")
+        self.assertEqual(env["all_proxy"], "socks5://127.0.0.1:7890")
+
+    def test_codex_proxy_plan_auto_keeps_inherited_env_when_local_proxy_is_unreachable(self):
+        with patch.dict(os.environ, {
+            "JARVIS_CODEX_PROXY_MODE": "auto",
+            "JARVIS_CODEX_LOCAL_PROXY_HOST": "127.0.0.1",
+            "JARVIS_CODEX_LOCAL_PROXY_PORT": "7890",
+        }, clear=True), \
+             patch("jarvis.tools.socket.create_connection", side_effect=OSError("closed")):
+            proxy = jarvis_tools._codex_proxy_plan()
+            env = jarvis_tools._codex_child_env(proxy)
+
+        self.assertEqual(proxy["selected"], "inherited")
+        self.assertFalse(proxy["local_proxy_reachable"])
+        self.assertNotIn("https_proxy", env)
+        self.assertNotIn("HTTPS_PROXY", env)
+
     def test_codex_delegate_job_uses_default_named_chat(self):
         session_id = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
         with tempfile.TemporaryDirectory() as temp_dir:
