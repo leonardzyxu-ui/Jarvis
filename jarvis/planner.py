@@ -144,7 +144,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     },
     {
         "tool": "localos.music_play",
-        "description": "Play a named song or a chosen Your Pick song through the Local OS Music Player. Use when the user asks to play, queue, start, or listen to music; LocalOS is preferred, with a tracked local fallback only if Chrome blocks the page audio.",
+        "description": "Play a named song or a chosen Your Pick song through the Local OS Music Player. Use when the user asks to play, queue, start, or listen to music. LocalOS owns normal music playback; Jarvis must not start a separate hidden player.",
         "entities": ["query", "from_your_pick", "limit"],
         "entity_details": {
             "query": "Song title, artist, or phrase to search for. Leave empty when from_your_pick is true.",
@@ -158,7 +158,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     },
     {
         "tool": "localos.music_stop",
-        "description": "Stop or pause music that Jarvis started through the Local OS Music Player or its tracked local fallback.",
+        "description": "Stop or pause music through the Local OS Music Player, with emergency cleanup only for old Jarvis-owned orphan playback.",
         "entities": [],
         "examples": [
             'Stopping that music now. \\tool({"tool":"localos.music_stop","entities":{}})',
@@ -1324,7 +1324,7 @@ class Planner:
         if _looks_like_builtin_browser_plan_request(lower):
             return self._preview_result(text, "browser.built_in_plan", assessment, True, plan={"goal": text})
         if _looks_like_music_stop_request(lower):
-            return self._preview_result(text, "localos.music_stop", assessment, True, plan={"stops": "jarvis_owned_fallback_music_only"})
+            return self._preview_result(text, "localos.music_stop", assessment, True, plan={"stops": "localos_music_and_emergency_cleanup"})
         if _looks_like_your_pick_choice(text):
             selected_tool = "localos.music_play" if _looks_like_music_play_request(text) else "localos.music_choose_from_your_pick"
             return self._preview_result(
@@ -1536,7 +1536,7 @@ class Planner:
             )
         if selected_tool == "localos.music_stop":
             if not execute:
-                return self._preview_result(text, "localos.music_stop", assessment, True, plan={"intent": intent, "stops": "localos_music_or_tracked_fallback"})
+                return self._preview_result(text, "localos.music_stop", assessment, True, plan={"intent": intent, "stops": "localos_music_and_emergency_cleanup"})
             stop_result = localos_music_stop()
             return self._result(
                 text,

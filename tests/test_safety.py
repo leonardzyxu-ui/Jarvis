@@ -1555,6 +1555,24 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(preview.result["plan"]["query"], "Waving Through a Window")
         self.assertTrue(preview.result["plan"]["deterministic_preview"])
 
+    def test_music_tool_prompt_keeps_playback_owned_by_localos(self):
+        music_specs = [
+            spec
+            for spec in NATURAL_LANGUAGE_TOOL_SPECS
+            if str(spec.get("tool", "")).startswith("localos.music")
+        ]
+        prompt_contract = json.dumps(music_specs, ensure_ascii=False).lower()
+
+        self.assertIn("localos owns normal music playback", prompt_contract)
+        self.assertIn("must not start a separate hidden player", prompt_contract)
+        self.assertNotIn("tracked local fallback", prompt_contract)
+        self.assertNotIn("chrome blocks the page audio", prompt_contract)
+
+        stop_preview = Planner().preview("stop the music")
+        self.assertEqual(stop_preview.tool, "localos.music_stop")
+        self.assertEqual(stop_preview.result["plan"]["stops"], "localos_music_and_emergency_cleanup")
+        self.assertNotIn("fallback", json.dumps(stop_preview.result["plan"]).lower())
+
     def test_primitive_music_play_extracts_dictated_song_phrase(self):
         fake_result = {
             "tool": "localos.music_play",
