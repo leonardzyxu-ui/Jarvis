@@ -2588,6 +2588,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 "latency_budget_label": "8/8 passed",
                 "slowest_case_id": "email_sharpay_month",
                 "slowest_case_seconds": 45.327,
+                "duration_seconds": 132.456,
             },
             "worker_source_kind": "bundled app resources",
             "launch_mode": "regular Dock app",
@@ -2751,6 +2752,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 "latency_budget_label": "8/8 passed",
                 "slowest_case_id": "email_sharpay_month",
                 "slowest_case_seconds": 45.327,
+                "duration_seconds": 132.456,
             },
         )
         self.assertTrue(any(
@@ -2761,6 +2763,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             "latency budgets 8/8 passed, slowest email_sharpay_month 45.327s" in item
             for item in full_loop_proof
         ))
+        self.assertTrue(any("total 132.456s" in item for item in full_loop_proof))
         self.assertEqual(render_overnight_status.bundle_label("0.1.439", "439"), "Jarvis 0.1.439 build 439")
         self.assertEqual(render_overnight_status.bundle_label("unknown", "unknown"), "live bundle metadata unavailable")
         self.assertEqual(render_overnight_status.launch_label("unknown"), "not inspected")

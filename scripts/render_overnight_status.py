@@ -796,9 +796,12 @@ def proof_items_with_verification(
         latency_label = str(full_loop.get("latency_budget_label") or "")
         slowest_case = str(full_loop.get("slowest_case_id") or "")
         slowest_seconds = float(full_loop.get("slowest_case_seconds") or 0.0)
+        duration_seconds = float(full_loop.get("duration_seconds") or 0.0)
         speed_note = ""
         if latency_label and slowest_case:
             speed_note = f", latency budgets {latency_label}, slowest {slowest_case} {slowest_seconds:.3f}s"
+        if duration_seconds > 0.0:
+            speed_note = f"{speed_note}, total {duration_seconds:.3f}s"
         items.append(
             "Latest full-loop real-action regression: "
             f"{full_loop['label']}, command {full_loop['command']!r}, "
@@ -1310,6 +1313,7 @@ def latest_full_loop_regression() -> dict[str, Any]:
         "case_summary": ", ".join(case_ids),
         "slowest_case_id": str(slowest.get("case_id") or ""),
         "slowest_case_seconds": round(float(slowest.get("_total_seconds_float") or 0.0), 3),
+        "duration_seconds": round(float(data.get("duration_seconds") or 0.0), 3),
         "latency_budget_label": f"{budget_passed}/{budget_total} passed" if budget_total else "",
         "latency_budget_failed": budget_failed,
         "selected_title": str(action_proof.get("selected_title") or ""),

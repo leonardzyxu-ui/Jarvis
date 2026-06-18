@@ -119,6 +119,7 @@ def main() -> int:
 
     base_url = normalize_base_url(args.base_url)
     run_dir = allocate_run_dir(Path(args.output_dir).resolve())
+    suite_started = time.monotonic()
     cases = []
     if args.case in {"music", "all"}:
         cases.append(MUSIC_WAVING_CASE)
@@ -236,6 +237,7 @@ def main() -> int:
         "warning": warnings,
         "failed": failed,
         "total": len(results),
+        "duration_seconds": round(time.monotonic() - suite_started, 3),
         "results": results,
     }
     write_summary(summary, run_dir, Path(args.output_dir).resolve(), update_latest=bool(summary["canonical_latest"]))
