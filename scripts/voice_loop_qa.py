@@ -610,6 +610,8 @@ def run_voice_loop(
             reply_tts = final_audit_item.get("tts") if isinstance(final_audit_item.get("tts"), dict) else {}
             reply_transcription = final_audit_item.get("stt") if isinstance(final_audit_item.get("stt"), dict) else {}
             reply_audio_source = "speech_audit_final_payload"
+            reply_expected_text = str(final_audit_item.get("text_preview") or "").strip() or visible_reply
+            reply_similarity_target = "spoken_payload"
         else:
             stage_started = time.monotonic()
             reply_tts = synthesize(visible_reply or "No visible reply.", reply_audio, length_scale=length_scale)
@@ -625,8 +627,10 @@ def run_voice_loop(
             )
             stage_timings.append(stage_timing("reply_stt", stage_started))
             reply_audio_source = "visible_reply_resynthesized"
+            reply_expected_text = visible_reply
+            reply_similarity_target = "visible_reply"
         reply_transcript = str(reply_transcription.get("transcript") or "").strip()
-        similarity = text_similarity(visible_reply, reply_transcript)
+        similarity = text_similarity(reply_expected_text, reply_transcript)
 
         status = "passed"
         warnings: list[str] = []
@@ -638,7 +642,7 @@ def run_voice_loop(
             warnings.append(f"Reply STT status was {reply_transcription.get('status')}.")
         if similarity < 0.68:
             status = "warning"
-            warnings.append("Reply transcript differed meaningfully from visible reply.")
+            warnings.append(f"Reply transcript differed meaningfully from {reply_similarity_target}.")
         if speech_audit.get("status") == "failed":
             status = "failed"
             warnings.append("Speech audit found internal text in spoken output.")
@@ -674,6 +678,8 @@ def run_voice_loop(
             "reply_stt": reply_transcription,
             "reply_transcript": reply_transcript,
             "reply_similarity": similarity,
+            "reply_similarity_target": reply_similarity_target,
+            "reply_expected_text_preview": reply_expected_text[:500],
         }
         return report
     except Exception as error:

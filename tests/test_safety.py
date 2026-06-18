@@ -2376,6 +2376,62 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(report["result"]["speech_runtime"]["active_observed"])
         self.assertFalse(stream_mock.call_args.kwargs["suppress_speech"])
 
+    def test_voice_loop_qa_scores_final_audio_against_spoken_payload(self):
+        final_events = [
+            {
+                "event": "final",
+                "data": {
+                    "tool": "calendar.today_schedule",
+                    "reply": "Today's Calendar schedule: Juneteenth all day.",
+                    "speech": {
+                        "spoken": True,
+                        "status": "started",
+                        "provider": "macos",
+                        "reason": "final",
+                        "spoken_text": "Today's Calendar schedule, June nineteenth holiday all day.",
+                    },
+                },
+            }
+        ]
+        speech_audit = {
+            "status": "passed",
+            "payload_count": 1,
+            "leak_count": 0,
+            "warnings": [],
+            "items": [
+                {
+                    "source": "final",
+                    "text_preview": "Today's Calendar schedule, June nineteenth holiday all day.",
+                    "tts": {"provider": "test", "output": "/tmp/reply.wav"},
+                    "stt": {"status": "completed", "provider": "faster_whisper", "transcript": "Today's calendar schedule, June nineteenth holiday all day."},
+                    "transcript": "Today's calendar schedule, June nineteenth holiday all day.",
+                    "similarity": 1.0,
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch("scripts.voice_loop_qa.synthesize", return_value={"provider": "test", "output": str(Path(temp_dir) / "command.wav")}), \
+             patch("scripts.voice_loop_qa.transcribe_audio", return_value={"status": "completed", "provider": "faster_whisper", "transcript": "Hey Jarvis check my calendar"}), \
+             patch("scripts.voice_loop_qa.stream_command_events", return_value=final_events), \
+             patch("scripts.voice_loop_qa.audit_spoken_payloads", return_value=speech_audit), \
+             patch("scripts.voice_loop_qa.fetch_speech_state", return_value={"status": "unmuted", "muted": False, "active_speech": False}), \
+             patch("scripts.voice_loop_qa.time.sleep"):
+            report = voice_loop_qa.run_voice_loop(
+                command_text="Hey Jarvis, check my calendar.",
+                base_url="http://127.0.0.1:8765",
+                run_dir=Path(temp_dir),
+                length_scale=0.85,
+                timeout=5.0,
+                stt_provider="local",
+                no_permission_prompts=True,
+                exercise_live_speech=False,
+            )
+
+        self.assertEqual(report["result"]["status"], "passed")
+        self.assertEqual(report["result"]["reply_similarity_target"], "spoken_payload")
+        self.assertIn("June nineteenth holiday", report["result"]["reply_expected_text_preview"])
+        self.assertEqual(report["result"]["visible_reply_preview"], "Today's Calendar schedule: Juneteenth all day.")
+
     def test_voice_loop_qa_writes_stable_latest_markdown_and_refreshes_report(self):
         report = {
             "input": {"command_text": "Hey Jarvis status", "stt_provider": "local"},
@@ -10381,6 +10437,17 @@ Pages occupied by compressor:             10.
         self.assertIn("7 General Music - 7H at 11 oh 5 AM", spoken)
         self.assertIn("Student Leadership Video (Y7 StuCo) at 12 PM", spoken)
         self.assertNotRegex(spoken, r"[\u3400-\u9fff]")
+
+    def test_calendar_schedule_spoken_summary_disambiguates_juneteenth(self):
+        event = {
+            "title": "Juneteenth",
+            "start": "2026-06-19 00:00",
+            "end": "2026-06-20 00:00",
+            "all_day": True,
+        }
+
+        self.assertEqual(jarvis_tools._calendar_event_phrase(event), "Juneteenth all day")
+        self.assertIn("June nineteenth holiday all day", jarvis_tools._calendar_spoken_events_reply([event]))
 
     def test_calendar_schedule_deduplicates_identical_all_day_cache_events(self):
         with tempfile.TemporaryDirectory() as temp_dir:

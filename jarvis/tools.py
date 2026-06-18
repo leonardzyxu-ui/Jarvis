@@ -6649,7 +6649,7 @@ def _calendar_event_phrase(event: dict[str, Any]) -> str:
 
 
 def _calendar_spoken_event_phrase(event: dict[str, Any]) -> str:
-    title = _calendar_reply_title(event.get("title"))
+    title = _calendar_spoken_title(event.get("title"))
     start = _calendar_spoken_time(event.get("start"))
     if event.get("all_day"):
         return f"{title} all day"
@@ -6665,6 +6665,16 @@ def _calendar_reply_title(value: Any) -> str:
     without_cjk = re.sub(r"\s*-\s*", " - ", without_cjk).strip(" -")
     title = without_cjk or _sanitize_spoken_text(raw) or "Calendar event"
     return re.sub(r"\b[A-Z]{3,}\b", lambda match: match.group(0).capitalize(), title)
+
+
+def _calendar_spoken_title(value: Any) -> str:
+    title = _calendar_reply_title(value)
+    replacements = {
+        "Juneteenth": "June nineteenth holiday",
+    }
+    for source, spoken in replacements.items():
+        title = re.sub(rf"\b{re.escape(source)}\b", spoken, title, flags=re.IGNORECASE)
+    return title
 
 
 def _calendar_reply_time(value: Any) -> str:
