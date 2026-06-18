@@ -536,6 +536,20 @@ def visible_screen_follow_up_gate(
     user_action_required = False
     blocking_reason = ""
     status = str(visible_screen_follow_up.get("status") or "")
+    honest_terminal_statuses = {"assignment_subject_mismatch"}
+    if status in honest_terminal_statuses:
+        expected_tool = str(expect_tool or "").strip()
+        if expected_tool and str(visible_screen_follow_up.get("tool") or "") != expected_tool:
+            return {
+                "passed": False,
+                "failures": [
+                    f"Visible screen follow-up tool was {visible_screen_follow_up.get('tool') or '(none)'}, expected {expected_tool}."
+                ],
+                "environment_blocked": False,
+                "user_action_required": False,
+                "blocking_reason": "",
+            }
+        return {"passed": True, "failures": [], "environment_blocked": False, "user_action_required": False, "blocking_reason": ""}
     if status != "completed":
         failures.append(f"Visible screen follow-up status was {status or 'missing'}.")
     if not visible_screen_follow_up.get("used"):

@@ -13905,6 +13905,36 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(gate["blocking_reason"], "chrome_automation")
         self.assertIn("Chrome Automation blocked Jarvis from reading the signed-in browser page.", gate["failures"])
 
+    def test_regression_prompt_matrix_accepts_assignment_subject_mismatch_as_honest_followup(self):
+        gate = run_regression_prompt_matrix.visible_screen_follow_up_gate(
+            {
+                "status": "assignment_subject_mismatch",
+                "used": False,
+                "tool": "screen.visible_text",
+            },
+            required=True,
+            expect_tool="screen.visible_text",
+        )
+
+        self.assertTrue(gate["passed"])
+        self.assertFalse(gate["environment_blocked"])
+        self.assertFalse(gate["user_action_required"])
+        self.assertEqual(gate["failures"], [])
+
+    def test_regression_prompt_matrix_rejects_assignment_subject_mismatch_from_wrong_tool(self):
+        gate = run_regression_prompt_matrix.visible_screen_follow_up_gate(
+            {
+                "status": "assignment_subject_mismatch",
+                "used": False,
+                "tool": "browser.read_page",
+            },
+            required=True,
+            expect_tool="screen.visible_text",
+        )
+
+        self.assertFalse(gate["passed"])
+        self.assertIn("expected screen.visible_text", gate["failures"][0])
+
     def test_regression_prompt_matrix_marks_login_gate_followup_as_non_environment_blocked_failure(self):
         gate = run_regression_prompt_matrix.visible_screen_follow_up_gate(
             {
