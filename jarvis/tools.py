@@ -230,6 +230,9 @@ MUSIC_APP_BRIDGE_BASE_URL = os.environ.get("JARVIS_MUSIC_APP_BRIDGE_URL", "http:
 MUSIC_APP_BRIDGE_TOKEN_FILE = Path(
     os.environ.get("JARVIS_MUSIC_APP_BRIDGE_TOKEN_FILE", "~/Library/Application Support/Music/control-token.txt")
 ).expanduser()
+MUSIC_APP_BUNDLE_PATH = Path(
+    os.environ.get("JARVIS_MUSIC_APP_PATH", str(PROJECT_ROOT.parent / "Music App" / "dist" / "Music.app"))
+).expanduser()
 CODEX_PROXY_BENCHMARK_DIR = RUNTIME_DIR / "codex_cli_proxy_benchmarks"
 LOCALOS_MUSIC_SNAPSHOT_MAX_TRACKS = 25
 LOCALOS_MUSIC_LIBRARY_MAX_TRACKS = 500
@@ -3358,6 +3361,81 @@ def _music_app_bridge_request(
         return {"ok": False, "error": {"code": "music_bridge_unreachable", "message": f"{type(error).__name__}: {error}"}}
 
 
+def _music_app_bridge_open_app(*, timeout_seconds: float = 3.5) -> dict[str, Any]:
+    started_at = time.monotonic()
+    if not MUSIC_APP_BUNDLE_PATH.exists():
+        return {
+            "status": "unavailable",
+            "opened": False,
+            "error": "music_app_bundle_missing",
+            "app_path": str(MUSIC_APP_BUNDLE_PATH),
+            **_duration_fields(started_at),
+        }
+    open_path = _find_executable("open")
+    if not open_path:
+        return {
+            "status": "unavailable",
+            "opened": False,
+            "error": "open_tool_missing",
+            "app_path": str(MUSIC_APP_BUNDLE_PATH),
+            **_duration_fields(started_at),
+        }
+    try:
+        completed = subprocess.run(
+            [open_path, str(MUSIC_APP_BUNDLE_PATH)],
+            shell=False,
+            cwd=PROJECT_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5.0,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "open_timeout",
+            "opened": False,
+            "error": "open_timed_out",
+            "app_path": str(MUSIC_APP_BUNDLE_PATH),
+            **_duration_fields(started_at),
+        }
+    except OSError as error:
+        return {
+            "status": "open_failed",
+            "opened": False,
+            "error": str(error),
+            "app_path": str(MUSIC_APP_BUNDLE_PATH),
+            **_duration_fields(started_at),
+        }
+
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    health: dict[str, Any] = {}
+    while True:
+        health = _music_app_bridge_request("GET", "/health", auth=False, timeout=0.8)
+        if health.get("ok") is True:
+            return {
+                "status": "live",
+                "opened": completed.returncode == 0,
+                "returncode": completed.returncode,
+                "stderr": _text_tail(completed.stderr or "", 500),
+                "app_path": str(MUSIC_APP_BUNDLE_PATH),
+                "health": health,
+                **_duration_fields(started_at),
+            }
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.25)
+    return {
+        "status": "opened_unconfirmed" if completed.returncode == 0 else "open_failed",
+        "opened": completed.returncode == 0,
+        "returncode": completed.returncode,
+        "stderr": _text_tail(completed.stderr or "", 500),
+        "app_path": str(MUSIC_APP_BUNDLE_PATH),
+        "health": health,
+        **_duration_fields(started_at),
+    }
+
+
 def _music_app_bridge_song_phrase(song: dict[str, Any]) -> str:
     title = str(song.get("title") or song.get("fileName") or "that song").strip()
     artist = str(song.get("artist") or "").strip()
@@ -3376,8 +3454,19 @@ def _music_app_bridge_play(
     if not _music_app_bridge_enabled_for_live_path() or audio_actions_are_suppressed():
         return None
     health = _music_app_bridge_request("GET", "/health", auth=False, timeout=1.2)
+    startup: dict[str, Any] = {}
     if health.get("ok") is not True:
-        return None
+        startup = _music_app_bridge_open_app(timeout_seconds=3.5)
+        health = startup.get("health") if isinstance(startup.get("health"), dict) else health
+        if health.get("ok") is not True:
+            return {
+                "status": "music_app_not_playing",
+                "music_app_bridge": {
+                    "health": health,
+                    "startup": startup,
+                },
+            }
+    clean_query = ""
     if from_your_pick:
         play = _music_app_bridge_request("POST", "/playlist/play", query={"name": "Your Pick"}, timeout=4.0)
     else:
@@ -3385,12 +3474,20 @@ def _music_app_bridge_play(
         if not clean_query:
             return None
         play = _music_app_bridge_request("POST", "/play", query={"query": clean_query}, timeout=4.0)
+    play_error = play.get("error") if isinstance(play.get("error"), dict) else {}
+    if play.get("ok") is not True and play_error.get("code") == "missing_music_bridge_token":
+        startup = _music_app_bridge_open_app(timeout_seconds=3.5)
+        if from_your_pick:
+            play = _music_app_bridge_request("POST", "/playlist/play", query={"name": "Your Pick"}, timeout=4.0)
+        elif clean_query:
+            play = _music_app_bridge_request("POST", "/play", query={"query": clean_query}, timeout=4.0)
     if play.get("ok") is not True:
         return {
             "status": "music_app_not_playing",
             "music_app_bridge": {
                 "health": health,
                 "play": play,
+                "startup": startup,
             },
         }
     time.sleep(0.9)
@@ -3428,6 +3525,7 @@ def _music_app_bridge_play(
             "health": health,
             "play": play,
             "playback": playback,
+            "startup": startup,
         },
         "reply": f"Playing {phrase} in Music.",
         **_duration_fields(started_at),

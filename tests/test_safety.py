@@ -4420,6 +4420,62 @@ class PlannerTests(unittest.TestCase):
         music_mock.assert_called_once()
         localos_search.assert_not_called()
 
+    def test_music_app_bridge_open_app_waits_for_health(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app_path = Path(tmpdir) / "Music.app"
+            app_path.mkdir()
+            completed = subprocess.CompletedProcess(["/usr/bin/open", str(app_path)], 0, "", "")
+            with patch.object(jarvis_tools, "MUSIC_APP_BUNDLE_PATH", app_path), \
+                 patch("jarvis.tools._find_executable", return_value="/usr/bin/open"), \
+                 patch("jarvis.tools.subprocess.run", return_value=completed) as run_mock, \
+                 patch("jarvis.tools._music_app_bridge_request", return_value={"ok": True, "app": "Music"}), \
+                 patch("jarvis.tools.time.sleep"):
+                result = jarvis_tools._music_app_bridge_open_app(timeout_seconds=0.0)
+
+        self.assertEqual(result["status"], "live")
+        self.assertTrue(result["opened"])
+        run_mock.assert_called_once()
+        self.assertEqual(run_mock.call_args.args[0], ["/usr/bin/open", str(app_path)])
+
+    def test_music_app_bridge_play_opens_music_app_when_bridge_is_down(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            app_path = Path(tmpdir) / "Music.app"
+            app_path.mkdir()
+            completed = subprocess.CompletedProcess(["/usr/bin/open", str(app_path)], 0, "", "")
+            bridge_responses = iter([
+                {"ok": False, "error": {"code": "music_bridge_unreachable"}},
+                {"ok": True, "app": "Music"},
+                {"ok": True, "song": {"id": "song-1", "title": "Dear Evan Hansen | 2017 Tony Awards"}},
+                {
+                    "ok": True,
+                    "playing": True,
+                    "nowPlaying": {
+                        "id": "song-1",
+                        "title": "Dear Evan Hansen | 2017 Tony Awards",
+                        "artist": "Matt Hagmeier Curtis",
+                        "fileName": "Dear Evan Hansen.mp3",
+                    },
+                },
+            ])
+            with patch.object(jarvis_tools, "MUSIC_APP_BUNDLE_PATH", app_path), \
+                 patch("jarvis.tools._find_executable", return_value="/usr/bin/open"), \
+                 patch("jarvis.tools.subprocess.run", return_value=completed), \
+                 patch("jarvis.tools._music_app_bridge_request", side_effect=lambda *_args, **_kwargs: next(bridge_responses)), \
+                 patch("jarvis.tools.time.sleep"):
+                result = jarvis_tools._music_app_bridge_play(
+                    query="Waving Through A Window",
+                    user_request="play Waving Through A Window",
+                    from_your_pick=False,
+                    started_at=time.monotonic(),
+                )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["status"], "playing")
+        self.assertEqual(result["played_by"], "music_app")
+        self.assertEqual(result["music_app_bridge"]["startup"]["status"], "live")
+        self.assertIn("in Music", result["reply"])
+
     def test_music_app_bridge_disabled_when_localos_paths_are_patched(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
