@@ -27,6 +27,7 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 SHIPPED_ITEMS = [
+    "Jarvis now has a single pre-build proof gate: `scripts/pre_build_gate.py` runs the Python safety suite, all eight spoken-command full-loop regressions, Chrome test-tab cleanup, and report refresh before a build is treated as saveable.",
     "Jarvis 0.1.454 moves normal music playback proof to the native Music app bridge: `Waving Through a Window` now resolves to the Dear Evan Hansen Tony Awards track, Jarvis confirms actual Music playback before claiming success, Stop Music calls the same bridge, and the new full-loop regression runner can allow real audio actions, verify playback, audit speech payloads, and clean up afterward.",
     "Jarvis 0.1.453 hardens LocalOS music ownership: the old hidden `afplay` music starter is removed, while Stop Music can still clean up old orphaned `afplay` processes; the LocalOS reopen cooldown now verifies the Chrome tab still exists before refusing to reopen it.",
     "Jarvis 0.1.452 makes email/contact no-result replies speakable: scan counts stay in structured metadata, but Jarvis no longer says `I scanned X messages` when it cannot find a sender or requested email number.",
@@ -512,6 +513,7 @@ SUPPORTING_FILES = [
     ("http://127.0.0.1:8765/overnight-workboard/", "Loopback overnight workboard"),
     ("runtime/overnight_status/index.html", "Live overnight workboard"),
     ("runtime/overnight_status/report.html", "This master report"),
+    ("scripts/pre_build_gate.py", "Single pre-build proof gate for safety tests, full-loop regressions, cleanup, and report refresh"),
     ("scripts/report_refresh.py", "Standalone master report refresh helper"),
     ("scripts/cleanup_chrome_test_tabs.py", "Morning handoff helper that closes only Jarvis/Codex LocalOS music-player Chrome tabs"),
     ("http://127.0.0.1:8765/wake-audition/", "Hey Jarvis wake audition lab"),
@@ -535,6 +537,9 @@ SUPPORTING_FILES = [
     ("runtime/full_loop_regression/latest.json", "Latest full-loop real-action regression report"),
     ("runtime/full_loop_regression/latest.md", "Latest full-loop real-action regression notes"),
     ("runtime/full_loop_regression/", "Full-loop real-action regression artifacts"),
+    ("runtime/pre_build_gate/latest.json", "Latest pre-build proof gate summary"),
+    ("runtime/pre_build_gate/latest.md", "Latest pre-build proof gate notes"),
+    ("runtime/pre_build_gate/", "Pre-build proof gate artifacts"),
     ("runtime/codex_cli_proxy_benchmarks/latest.json", "Latest Codex CLI proxy benchmark summary"),
     ("runtime/codex_cli_proxy_benchmarks/latest.md", "Latest Codex CLI proxy benchmark notes"),
     ("runtime/model_comparison/", "Cloud-first middle model comparison reports"),
