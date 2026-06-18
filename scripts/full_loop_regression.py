@@ -311,6 +311,7 @@ def run_music_waving_case(
     started = time.monotonic()
     run_dir.mkdir(parents=True, exist_ok=True)
     cleanup: dict[str, Any] = {}
+    result: dict[str, Any] | None = None
     try:
         preflight = music_bridge_request(music_bridge_url, "GET", "/health", timeout=3.5, auth=False)
 
@@ -344,7 +345,7 @@ def run_music_waving_case(
         if not action_proof["passed"]:
             status = "failed"
             warnings.extend(action_proof["failures"])
-        return {
+        result = {
             "case_id": case["id"],
             "status": status,
             "warnings": warnings,
@@ -357,8 +358,14 @@ def run_music_waving_case(
             "cleanup": cleanup,
             "total_seconds": round(time.monotonic() - started, 3),
         }
+        return result
     finally:
         cleanup["stop"] = music_bridge_request(music_bridge_url, "POST", "/stop", timeout=3.5)
+        cleanup["post_playback_state"] = music_bridge_request(music_bridge_url, "GET", "/playback-state", timeout=3.5)
+        cleanup["verified_stopped"] = (
+            cleanup["post_playback_state"].get("ok") is True
+            and cleanup["post_playback_state"].get("playing") is not True
+        )
         cleanup["close_window"] = music_bridge_request(
             music_bridge_url,
             "POST",
@@ -366,6 +373,16 @@ def run_music_waving_case(
             query={"action": "close"},
             timeout=3.5,
         )
+        if result is not None:
+            result["cleanup"] = cleanup
+            result["total_seconds"] = round(time.monotonic() - started, 3)
+            if not cleanup["verified_stopped"]:
+                result["status"] = "failed"
+                warnings = result.get("warnings")
+                if not isinstance(warnings, list):
+                    warnings = []
+                    result["warnings"] = warnings
+                warnings.append("Music cleanup did not verify playback stopped.")
         write_json(run_dir / "cleanup.json", cleanup)
 
 
