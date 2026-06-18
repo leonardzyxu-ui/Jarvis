@@ -273,6 +273,38 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(proof["passed"])
         self.assertIn("Calendar proof says it changed the calendar.", proof["failures"])
 
+    def test_full_loop_commerce_proof_accepts_official_yuan_conversion(self):
+        proof = full_loop_regression.verify_magic_keyboard_yuan({
+            "tool": "commerce.price_convert",
+            "status": "converted",
+            "opened_browser": False,
+            "changed_browser_state": False,
+            "source": {"source_type": "official_product_page", "brand": "Apple", "label": "Magic Keyboard"},
+            "price": {"currency": "USD", "amount": 99.0, "formatted_price": "$99.00"},
+            "exchange_rate": {"target": "CNY", "rate": 6.78},
+            "converted": {"currency": "CNY", "amount": 671.0, "formatted": "671 yuan"},
+            "reply": "Magic Keyboard is $99.00, which is about 671 yuan.",
+        })
+
+        self.assertTrue(proof["passed"])
+        self.assertEqual(proof["converted"], "671 yuan")
+
+    def test_full_loop_commerce_proof_rejects_browser_state_change(self):
+        proof = full_loop_regression.verify_magic_keyboard_yuan({
+            "tool": "commerce.price_convert",
+            "status": "converted",
+            "opened_browser": True,
+            "changed_browser_state": False,
+            "source": {"source_type": "official_product_page", "brand": "Apple", "label": "Magic Keyboard"},
+            "price": {"currency": "USD", "amount": 99.0, "formatted_price": "$99.00"},
+            "exchange_rate": {"target": "CNY", "rate": 6.78},
+            "converted": {"currency": "CNY", "amount": 671.0, "formatted": "671 yuan"},
+            "reply": "Magic Keyboard is $99.00, which is about 671 yuan.",
+        })
+
+        self.assertFalse(proof["passed"])
+        self.assertIn("Commerce proof opened or changed browser state.", proof["failures"])
+
     def test_voice_loop_stream_can_allow_audio_actions_for_live_regression(self):
         captured_payloads = []
 

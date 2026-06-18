@@ -86,3 +86,7 @@ spoken reply, time every stage, and clean up any app/browser state it created.
 - 2026-06-18 23:24 CST: combined full-loop regression passed 3/3 at
   `runtime/full_loop_regression/20260618-232344/summary.json`, adding read-only
   Calendar schedule proof. Full Python safety suite then passed 839/839.
+- 2026-06-18 23:33 CST: combined full-loop regression passed 4/4 at
+  `runtime/full_loop_regression/20260618-233216/summary.json`, adding the Magic
+  Keyboard official-price-to-yuan public web case. Full Python safety suite then
+  passed 841/841.
