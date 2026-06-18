@@ -2499,6 +2499,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("scripts/report_refresh.py", report)
         self.assertIn("scripts/pre_build_gate.py", report)
         self.assertIn("single pre-build proof gate", report)
+        self.assertIn("auto-start the native Music app bridge", report)
         self.assertIn("concise summary by default", report)
         self.assertIn("jarvis-status-helper --self-test", report)
         self.assertIn("no-approval overnight instruction", report)

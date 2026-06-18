@@ -27,6 +27,7 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 SHIPPED_ITEMS = [
+    "Jarvis can now auto-start the native Music app bridge for playback: if the bridge is down, it opens `Music.app`, waits for `/health`, retries the play command, and records the startup proof before falling back.",
     "Jarvis now has a single pre-build proof gate: `scripts/pre_build_gate.py` runs the Python safety suite, all eight spoken-command full-loop regressions, Chrome test-tab cleanup, and report refresh before a build is treated as saveable.",
     "Jarvis 0.1.454 moves normal music playback proof to the native Music app bridge: `Waving Through a Window` now resolves to the Dear Evan Hansen Tony Awards track, Jarvis confirms actual Music playback before claiming success, Stop Music calls the same bridge, and the new full-loop regression runner can allow real audio actions, verify playback, audit speech payloads, and clean up afterward.",
     "Jarvis 0.1.453 hardens LocalOS music ownership: the old hidden `afplay` music starter is removed, while Stop Music can still clean up old orphaned `afplay` processes; the LocalOS reopen cooldown now verifies the Chrome tab still exists before refusing to reopen it.",
