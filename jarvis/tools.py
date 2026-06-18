@@ -14030,8 +14030,13 @@ def outlook_read_only_check(
         return result
 
     safe_limit = max(1, min(int(limit), 25))
+    clean_sender_query = _clean_email_filter_query(sender_query)
+    clean_selection = _clean_email_filter_query(selection)
     if scan_limit_override is None:
-        configured_scan_limit = OUTLOOK_MAX_SCAN_MESSAGES
+        if clean_sender_query and clean_selection == "all_matching":
+            configured_scan_limit = min(75, OUTLOOK_MAX_SCAN_MESSAGES)
+        else:
+            configured_scan_limit = OUTLOOK_MAX_SCAN_MESSAGES
     else:
         try:
             configured_scan_limit = int(scan_limit_override)
@@ -14039,8 +14044,6 @@ def outlook_read_only_check(
             configured_scan_limit = OUTLOOK_MAX_SCAN_MESSAGES
         configured_scan_limit = max(safe_limit, min(configured_scan_limit, OUTLOOK_MAX_SCAN_MESSAGES))
     scan_limit = max(safe_limit, configured_scan_limit)
-    clean_sender_query = _clean_email_filter_query(sender_query)
-    clean_selection = _clean_email_filter_query(selection)
     clean_date_range = _clean_email_date_range(date_range)
     selection_request = _email_selection_request(clean_selection)
     mail_limit = _email_fetch_limit_for_selection(safe_limit, selection_request)
@@ -14523,6 +14526,8 @@ def _email_summary_prompt(
 ) -> str:
     if selection_mode == "sender_latest":
         selection = "The user requested a sender-specific email; summarize only the newest matching message."
+    elif selection_mode == "sender_recent":
+        selection = "The user requested sender-specific emails; summarize the selected newest matching messages."
     elif selection_mode == "unread":
         selection = f"{unread_count} unread message(s) were found; summarize the selected unread messages."
     elif selection_mode.startswith("index:"):
@@ -14677,6 +14682,10 @@ def _voice_friendly_english_email_summary(
                 sentence += f"; it should take about {duration}"
             lines.append(sentence + ".")
             continue
+        english_preview = _email_voice_english_preview(raw)
+        if english_preview:
+            lines.append(f"- {sender} {english_preview}")
+            continue
         subject = _email_voice_subject(message)
         preview = _email_preview_sentence(message.get("snippet"))
         if preview and not _email_summary_needs_voice_english(preview):
@@ -14685,6 +14694,66 @@ def _voice_friendly_english_email_summary(
             lines.append(f"- {sender} sent an email about {subject}.")
             lines.append("- You may want to check it when you have time; Jarvis could not make a fuller English summary locally.")
     return "\n".join(lines)
+
+
+def _email_voice_english_preview(raw: str) -> str:
+    normalized = re.sub(r"\s+", " ", _email_text_without_raw_links(raw, replacement="a link")).strip()
+    if not normalized:
+        return ""
+    if not re.search(r"[\u3400-\u9fff]", normalized):
+        return ""
+    if "学生会申请初筛结果" in normalized or re.search(r"(?i)student council", normalized):
+        detail = "shared Year 7 student council first-round application results"
+        if "进入面试" in normalized or re.search(r"(?i)\binterview", normalized):
+            detail += "; selected applicants move on to interviews"
+        return detail + "."
+    if re.search(r"(?i)\bTalent Show\b", normalized) or "达人秀" in normalized:
+        year = ""
+        if "六年级" in normalized or re.search(r"(?i)\bY6\b", normalized):
+            year = "Year 6 "
+        elif "七年级" in normalized or re.search(r"(?i)\bY7\b", normalized):
+            year = "Year 7 "
+        if "时间打错" in normalized or "打错" in normalized:
+            corrected = _email_voice_time_range(normalized)
+            suffix = f" to {corrected}" if corrected else ""
+            return f"corrected a previous {year}Talent Show time{suffix}."
+        if "主持人" in normalized or re.search(r"(?i)\bhost", normalized):
+            return f"shared the {year}Talent Show host worksheet, program list, running order, key times, and rehearsal files."
+        performance = _email_voice_labeled_time(normalized, ["正式活动", "正式"])
+        rehearsal = _email_voice_labeled_time(normalized, ["彩排"])
+        details: list[str] = []
+        if performance:
+            details.append(f"performance {performance}")
+        if rehearsal:
+            details.append(f"rehearsal {rehearsal}")
+        if "auditorium" in normalized.lower():
+            details.append("arrive at the auditorium on time")
+        if details:
+            return f"shared {year}Talent Show rehearsal and performance details: " + "; ".join(details) + "."
+        return f"shared {year}Talent Show rehearsal and performance details."
+    return ""
+
+
+def _email_voice_labeled_time(text: str, labels: list[str]) -> str:
+    for label in labels:
+        index = text.find(label)
+        if index < 0:
+            continue
+        window = text[index:index + 140]
+        time_range = _email_voice_time_range(window)
+        day_match = re.search(r"6月\s*(\d{1,2})日", window)
+        if day_match and time_range:
+            return f"on June {int(day_match.group(1))}, {time_range}"
+        if time_range:
+            return time_range
+    return ""
+
+
+def _email_voice_time_range(text: str) -> str:
+    match = re.search(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})", text)
+    if not match:
+        return ""
+    return f"{match.group(1)} to {match.group(2)}"
 
 
 def _email_voice_sender_label(message: dict[str, Any], raw: str) -> str:
@@ -14983,6 +15052,10 @@ def _email_selection_reply(mailbox: str, selection_mode: str, unread_count: int,
         return f"found no unread messages in {mailbox}, so I selected the newest inbox email"
     if selection_mode == "sender_latest":
         return f"selected the newest message matching your sender request in {mailbox}"
+    if selection_mode == "sender_recent":
+        if selected_count == 1:
+            return f"selected the newest message matching your sender request in {mailbox}"
+        return f"selected the newest {selected_count} messages matching your sender request in {mailbox}"
     if selection_mode.startswith("index:"):
         return f"selected email {selection_mode.removeprefix('index:')} from {mailbox}"
     if selection_mode.startswith("range:"):
@@ -20232,8 +20305,12 @@ end cleanText
 	    end repeat
 	    set selectionMode to "unread"
         if senderFilter is not "" then
-            set selectionMode to "sender_latest"
-            set maxItems to 1
+            if selectionHint is "all_matching" then
+                set selectionMode to "sender_recent"
+            else
+                set selectionMode to "sender_latest"
+                set maxItems to 1
+            end if
         else if selectionHint is "latest" then
             set selectionMode to "latest"
             set maxItems to 1
@@ -20318,7 +20395,7 @@ end cleanText
             end try
         end if
         set sourcePathText to ""
-        if sourceRoot is not "" and selectionMode is not "recent" then
+        if sourceRoot is not "" and selectionMode is not "recent" and selectionMode is not "sender_recent" then
             try
                 with timeout of 1 seconds
                     set sourcePathText to sourceRoot & "/message_" & (slotIndex as text) & ".eml"

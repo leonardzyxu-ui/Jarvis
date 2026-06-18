@@ -3372,7 +3372,11 @@ def email_request_metadata(
     entity_selection = _clean_optional_entity(safe_entities.get("selection"))
     structured_selection = _email_selection_from_entities(safe_entities)
     prompt_selection = _extract_email_selection_constraint(text)
-    selection = entity_selection or structured_selection or prompt_selection
+    selection = (
+        prompt_selection
+        if prompt_selection == "all_matching"
+        else entity_selection or structured_selection or prompt_selection
+    )
     sender_query = _email_sender_query_from_entities_and_prompt(text, safe_entities)
     entity_date_range = _clean_optional_entity(safe_entities.get("date_range"))
     prompt_date_range = _extract_email_date_range_constraint(text)
@@ -3614,6 +3618,8 @@ def _extract_email_selection_constraint(text: str) -> str | None:
         second = max(1, int(range_match.group(2)))
         start, end = sorted((first, second))
         return f"range:{start}-{end}"
+    if re.search(r"\b(?:all|every)\s+(?:the\s+)?(?:emails?|mail|messages?)\b", lower):
+        return "all_matching"
     if re.search(r"\b(?:newest|latest|most recent|first)\b", lower):
         return "latest"
     if re.search(r"\bunread\b", lower):

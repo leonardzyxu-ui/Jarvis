@@ -9265,10 +9265,12 @@ class PlannerTests(unittest.TestCase):
         lookup_mock.assert_called()
         kwargs = mail_mock.call_args.kwargs
         self.assertEqual(kwargs["sender_query"], "Ms Darbus")
+        self.assertEqual(kwargs["selection"], "all_matching")
         self.assertIn("Ms Sharpay", kwargs["original_prompt"])
         self.assertEqual(preview.result["plan"]["sender_query"], "Ms Sharpay")
         self.assertEqual(preview.result["plan"]["resolved_sender_query"], "Ms Darbus")
         self.assertEqual(preview.result["plan"]["contact_alias_lookup"]["status"], "found")
+        self.assertEqual(preview.result["plan"]["selection"], "all_matching")
 
     def test_email_sender_alias_handles_stt_his_for_ms(self):
         fake_result = {"status": "no_matching_messages", "messages": [], "message_count": 0}
@@ -9294,8 +9296,10 @@ class PlannerTests(unittest.TestCase):
             preview = Planner().preview("Summarize all the emails from Ms Sharpay in the past month.")
 
         self.assertEqual(preview.tool, "outlook.visible_summary")
+        self.assertEqual(preview.result["selection"], "all_matching")
         self.assertEqual(preview.result["date_range"], "past_month")
         self.assertEqual(preview.result["date_range_source"], "original_prompt")
+        self.assertEqual(preview.result["plan"]["selection"], "all_matching")
         self.assertEqual(preview.result["plan"]["date_range"], "past_month")
         infer_mock.assert_not_called()
         mail_mock.assert_not_called()
@@ -18163,6 +18167,52 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(result["email_summary_effective_backend"], "deterministic")
         urlopen_mock.assert_not_called()
 
+    def test_email_summary_fallback_interprets_chinese_school_mail_in_english(self):
+        messages = [
+            {
+                "sender": "Sharpay Cao 曹宗悦",
+                "subject": "Y7 Talent Show Rehearsal and performance document",
+                "received": "Today",
+                "read_state": "read",
+                "snippet": (
+                    "感谢各位积极报名参与本次的Talent Show活动。请大家注意，本次七年级Talent Show正式活动"
+                    "将会在6月25日（周四）上午8:45-9:30进行。在此之前，我们将安排一次彩排，彩排时间"
+                    "为6月24日（周三）15:00-15:35。当天请大家务必于15:00前到达auditorium。"
+                ),
+            },
+            {
+                "sender": "Sharpay Cao 曹宗悦",
+                "subject": "⭐️ 2026-2027学年学生会申请初筛结果 - Y7",
+                "received": "Today",
+                "read_state": "read",
+                "snippet": "由于本次申请人数众多且面试时间有限，本次我们仅通过10位七年级申请人进入面试环节。",
+            },
+            {
+                "sender": "Sharpay Cao 曹宗悦",
+                "subject": "Y6 Talent Show Rehearsal and performance document",
+                "received": "Today",
+                "read_state": "read",
+                "snippet": (
+                    "请大家注意，本次六年级Talent Show正式活动将会在6月25日（周四）上午8:00-8:45进行。"
+                    "彩排时间为6月24日（周三）12:20-12:55。当天请大家务必于12:20前到达auditorium。"
+                ),
+            },
+        ]
+        with patch("jarvis.tools.EMAIL_SUMMARY_BACKEND", "deterministic"):
+            result = jarvis_tools._summarize_email_messages(
+                messages,
+                mailbox="Apple Mail",
+                selection_mode="sender_recent",
+                unread_count=0,
+            )
+
+        self.assertIn("Year 7 Talent Show rehearsal and performance details", result["email_summary"])
+        self.assertIn("June 25, 8:45 to 9:30", result["email_summary"])
+        self.assertIn("June 24, 15:00 to 15:35", result["email_summary"])
+        self.assertIn("student council first-round application results", result["email_summary"])
+        self.assertIn("Year 6 Talent Show rehearsal and performance details", result["email_summary"])
+        self.assertNotIn("could not make a fuller English summary locally", result["email_summary"])
+
     def test_apple_mail_script_selects_unread_first_then_latest(self):
         script = jarvis_tools._apple_mail_newest_applescript(2, 250)
 
@@ -18402,6 +18452,50 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('if selectionMode is "recent" then', script)
         self.assertIn("set bestIndex to slotIndex", script)
         self.assertIn('if selectionMode is not "recent" then', script)
+
+    def test_apple_mail_script_has_sender_recent_selection_for_all_matching_sender_requests(self):
+        script = jarvis_tools._apple_mail_newest_applescript(
+            5,
+            250,
+            selection="all_matching",
+            sender_query="Sharpay Cao",
+            date_range="past_month",
+        )
+
+        self.assertIn('selectionHint is "all_matching"', script)
+        self.assertIn('set selectionMode to "sender_recent"', script)
+        self.assertIn('set selectionMode to "sender_latest"', script)
+        self.assertIn('selectionMode is not "sender_recent"', script)
+        self.assertIn('set sinceDate to (current date) - (30 * 24 * 60 * 60)', script)
+
+    def test_sender_all_matching_email_summary_uses_bounded_recent_scan(self):
+        mail_result = {
+            "status": "checked",
+            "messages": [{"sender": "Sharpay Cao", "subject": "Update", "received": "Today", "read_state": "read", "snippet": "Bring notes."}],
+            "summary_messages": [{"sender": "Sharpay Cao", "subject": "Update", "received": "Today", "read_state": "read", "snippet": "Bring notes."}],
+            "inbox_count": 100,
+            "scanned_count": 75,
+            "unread_count": 0,
+            "match_count": 12,
+            "selection_mode": "sender_recent",
+        }
+        with patch("jarvis.tools.app_availability", side_effect=[
+            {"available": True, "matches": ["/Applications/Microsoft Outlook.app"], "app": "Microsoft Outlook"},
+            {"available": True, "matches": ["/System/Applications/Mail.app"], "app": "Mail"},
+        ]), \
+             patch("jarvis.tools.shutil.which", return_value="/usr/bin/osascript"), \
+             patch("jarvis.tools.EMAIL_SUMMARY_BACKEND", "deterministic"), \
+             patch("jarvis.tools._apple_mail_messages", return_value=mail_result) as mail_mock:
+            result = outlook_read_only_check(
+                limit=5,
+                sender_query="Sharpay Cao",
+                selection="all_matching",
+                date_range="past_month",
+            )
+
+        self.assertEqual(result["status"], "checked")
+        self.assertEqual(result["selection_mode"], "sender_recent")
+        self.assertEqual(mail_mock.call_args.args[1], 75)
 
     def test_outlook_parser_keeps_mail_unicode_line_separators_inside_message_row(self):
         parsed = jarvis_tools._parse_outlook_newest_output(
