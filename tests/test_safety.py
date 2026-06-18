@@ -252,6 +252,25 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(run_voice_loop.called)
         self.assertIn(("POST", "/stop"), calls)
 
+    def test_full_loop_latency_budget_marks_slow_case_failed(self):
+        results = [{"case_id": "music_play_waving_through_window", "status": "passed", "total_seconds": 31.25}]
+
+        full_loop_regression.apply_latency_budgets(results, [full_loop_regression.MUSIC_WAVING_CASE])
+
+        self.assertEqual(results[0]["status"], "failed")
+        self.assertEqual(results[0]["latency_budget_status"], "failed")
+        self.assertEqual(results[0]["latency_budget_seconds"], 30.0)
+        self.assertIn("Case exceeded latency budget", results[0]["warnings"][0])
+
+    def test_full_loop_latency_budget_keeps_fast_case_passed(self):
+        results = [{"case_id": "music_play_waving_through_window", "status": "passed", "total_seconds": 11.25}]
+
+        full_loop_regression.apply_latency_budgets(results, [full_loop_regression.MUSIC_WAVING_CASE])
+
+        self.assertEqual(results[0]["status"], "passed")
+        self.assertEqual(results[0]["latency_budget_status"], "passed")
+        self.assertEqual(results[0]["latency_budget_seconds"], 30.0)
+
     def test_full_loop_memory_proof_accepts_activity_monitor_equivalent(self):
         proof = full_loop_regression.verify_memory_usage({
             "tool": "diagnostics.memory_usage",

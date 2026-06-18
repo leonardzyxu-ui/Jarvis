@@ -41,6 +41,7 @@ MUSIC_WAVING_CASE = {
     "expect_tool": ["localos.music_play"],
     "expect_visible_contains": ["Music", "Dear Evan Hansen"],
     "expect_routed_contains": ["play", "Waving"],
+    "latency_budget_seconds": 30.0,
 }
 RAM_ACTIVITY_CASE = {
     "id": "ram_activity_monitor",
@@ -48,6 +49,7 @@ RAM_ACTIVITY_CASE = {
     "expect_tool": ["diagnostics.memory_usage"],
     "expect_visible_contains": ["Memory", "GB"],
     "expect_routed_contains": ["Activity Monitor", "RAM"],
+    "latency_budget_seconds": 30.0,
 }
 CALENDAR_TODAY_CASE = {
     "id": "calendar_today_schedule",
@@ -55,6 +57,7 @@ CALENDAR_TODAY_CASE = {
     "expect_tool": ["calendar.today_schedule"],
     "expect_visible_contains": ["Calendar"],
     "expect_routed_contains": ["calendar", "schedule"],
+    "latency_budget_seconds": 30.0,
 }
 MAGIC_KEYBOARD_YUAN_CASE = {
     "id": "magic_keyboard_yuan",
@@ -62,6 +65,7 @@ MAGIC_KEYBOARD_YUAN_CASE = {
     "expect_tool": ["commerce.price_convert"],
     "expect_visible_contains": ["Magic Keyboard", "yuan"],
     "expect_routed_contains": ["Magic Keyboard"],
+    "latency_budget_seconds": 45.0,
 }
 GEMMA_MODEL_PLAN_CASE = {
     "id": "gemma_model_plan",
@@ -69,6 +73,7 @@ GEMMA_MODEL_PLAN_CASE = {
     "expect_tool": ["models.test_plan"],
     "expect_visible_contains": ["Gemma 3 4B"],
     "expect_routed_contains": ["Gemma", "4B"],
+    "latency_budget_seconds": 35.0,
 }
 CODEX_DEFAULT_PLAN_CASE = {
     "id": "codex_default_plan",
@@ -76,6 +81,7 @@ CODEX_DEFAULT_PLAN_CASE = {
     "expect_tool": ["codex.chat_plan"],
     "expect_visible_contains": ["Default", "confirmation"],
     "expect_routed_contains": ["prompt", "test", "default"],
+    "latency_budget_seconds": 35.0,
 }
 TEAMS_ASSIGNMENT_CASE = {
     "id": "teams_music_assignment_honesty",
@@ -85,12 +91,14 @@ TEAMS_ASSIGNMENT_CASE = {
     ),
     "expect_tool": ["teams.assignment"],
     "expect_routed_contains": ["Teams", "Music"],
+    "latency_budget_seconds": 45.0,
 }
 EMAIL_SHARPAY_CASE = {
     "id": "email_sharpay_month",
     "command": "Hey Jarvis, summarize all the emails from Ms. Sharpay in the past month.",
     "expect_tool": ["outlook.visible_summary"],
     "expect_routed_contains": ["Sharpay"],
+    "latency_budget_seconds": 75.0,
 }
 
 
@@ -212,6 +220,7 @@ def main() -> int:
                 )
             )
 
+    apply_latency_budgets(results, cases)
     passed = sum(1 for result in results if result.get("status") == "passed")
     failed = sum(1 for result in results if result.get("status") == "failed")
     warnings = sum(1 for result in results if result.get("status") == "warning")
@@ -257,6 +266,33 @@ def allocate_run_dir(output_dir: Path) -> Path:
     fallback = output_dir / f"{stamp}-{time.monotonic_ns()}"
     fallback.mkdir()
     return fallback
+
+
+def apply_latency_budgets(results: list[dict[str, Any]], cases: list[dict[str, Any]]) -> None:
+    case_by_id = {str(case.get("id") or ""): case for case in cases}
+    for result in results:
+        case = case_by_id.get(str(result.get("case_id") or ""))
+        if not case:
+            continue
+        try:
+            budget = float(case.get("latency_budget_seconds") or 0.0)
+            elapsed = float(result.get("total_seconds") or 0.0)
+        except (TypeError, ValueError):
+            budget = 0.0
+            elapsed = 0.0
+        if budget <= 0.0:
+            continue
+        result["latency_budget_seconds"] = round(budget, 3)
+        result["latency_budget_status"] = "passed" if elapsed <= budget else "failed"
+        if elapsed <= budget:
+            continue
+        warning = f"Case exceeded latency budget: {elapsed:.3f}s > {budget:.3f}s."
+        warnings = result.get("warnings")
+        if not isinstance(warnings, list):
+            warnings = []
+            result["warnings"] = warnings
+        warnings.append(warning)
+        result["status"] = "failed"
 
 
 def run_music_waving_case(
