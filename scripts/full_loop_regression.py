@@ -17,7 +17,14 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from jarvis.tools import calendar_today_schedule, commerce_price_convert, memory_usage_status, model_test_plan  # noqa: E402
+from jarvis.tools import (  # noqa: E402
+    calendar_today_schedule,
+    commerce_price_convert,
+    contact_data_lookup,
+    memory_usage_status,
+    model_test_plan,
+    outlook_read_only_check,
+)
 from jarvis.tools import codex_chat_plan  # noqa: E402
 from scripts import voice_loop_qa  # noqa: E402
 from scripts.render_overnight_status import normalize_base_url  # noqa: E402
@@ -79,6 +86,12 @@ TEAMS_ASSIGNMENT_CASE = {
     "expect_tool": ["teams.assignment"],
     "expect_routed_contains": ["Teams", "Music"],
 }
+EMAIL_SHARPAY_CASE = {
+    "id": "email_sharpay_month",
+    "command": "Hey Jarvis, summarize all the emails from Ms. Sharpay in the past month.",
+    "expect_tool": ["outlook.visible_summary"],
+    "expect_routed_contains": ["Sharpay"],
+}
 
 
 def main() -> int:
@@ -86,7 +99,11 @@ def main() -> int:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--music-bridge-url", default=DEFAULT_MUSIC_BRIDGE_URL)
     parser.add_argument("--output-dir", default=str(REPORT_DIR))
-    parser.add_argument("--case", choices=("music", "ram", "calendar", "magic", "gemma", "codex", "teams", "all"), default="all")
+    parser.add_argument(
+        "--case",
+        choices=("music", "ram", "calendar", "magic", "gemma", "codex", "teams", "email", "all"),
+        default="all",
+    )
     parser.add_argument("--timeout", type=float, default=75.0)
     parser.add_argument("--exercise-live-speech", action="store_true")
     parser.add_argument("--no-report-refresh", action="store_true")
@@ -109,6 +126,8 @@ def main() -> int:
         cases.append(CODEX_DEFAULT_PLAN_CASE)
     if args.case in {"teams", "all"}:
         cases.append(TEAMS_ASSIGNMENT_CASE)
+    if args.case in {"email", "all"}:
+        cases.append(EMAIL_SHARPAY_CASE)
     results = []
     for case in cases:
         if case["id"] == MUSIC_WAVING_CASE["id"]:
@@ -175,6 +194,16 @@ def main() -> int:
         elif case["id"] == TEAMS_ASSIGNMENT_CASE["id"]:
             results.append(
                 run_teams_assignment_case(
+                    case,
+                    base_url=base_url,
+                    run_dir=run_dir / case["id"],
+                    timeout=args.timeout,
+                    exercise_live_speech=args.exercise_live_speech,
+                )
+            )
+        elif case["id"] == EMAIL_SHARPAY_CASE["id"]:
+            results.append(
+                run_email_sharpay_case(
                     case,
                     base_url=base_url,
                     run_dir=run_dir / case["id"],
@@ -937,6 +966,124 @@ end tell
 
 def escape_applescript_string(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def run_email_sharpay_case(
+    case: dict[str, Any],
+    *,
+    base_url: str,
+    run_dir: Path,
+    timeout: float,
+    exercise_live_speech: bool,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    voice_report = voice_loop_qa.run_voice_loop(
+        command_text=case["command"],
+        base_url=base_url,
+        run_dir=run_dir / "voice-loop",
+        length_scale=0.85,
+        timeout=timeout,
+        stt_provider="local",
+        no_permission_prompts=True,
+        expect_tools=list(case["expect_tool"]),
+        expect_routed_contains=list(case["expect_routed_contains"]),
+        exercise_live_speech=exercise_live_speech,
+        allow_audio_actions=False,
+    )
+    write_json(run_dir / "voice-loop-report.json", voice_report)
+    email_filter_proof = email_sharpay_filter_proof()
+    write_json(run_dir / "email-filter-proof.json", email_filter_proof)
+    action_proof = verify_email_sharpay_honesty(voice_report, email_filter_proof=email_filter_proof)
+    status = "passed"
+    warnings: list[str] = []
+    voice_status = str(voice_report.get("result", {}).get("status") or "failed")
+    if voice_status == "failed":
+        status = "failed"
+        warnings.append("Voice loop failed.")
+    elif voice_status != "passed":
+        status = "warning"
+        warnings.append(f"Voice loop returned {voice_status}.")
+    if not action_proof["passed"]:
+        status = "failed"
+        warnings.extend(action_proof["failures"])
+    return {
+        "case_id": case["id"],
+        "status": status,
+        "warnings": warnings,
+        "command": case["command"],
+        "voice_loop_status": voice_status,
+        "voice_loop_report": str(run_dir / "voice-loop-report.json"),
+        "action_proof": action_proof,
+        "email_filter_proof": email_filter_proof,
+        "cleanup": {"required": False, "reason": "Read-only local email/contact check."},
+        "total_seconds": round(time.monotonic() - started, 3),
+    }
+
+
+def email_sharpay_filter_proof() -> dict[str, Any]:
+    lookup = contact_data_lookup("Ms Sharpay")
+    resolved = str(lookup.get("display_name") or "Ms Sharpay")
+    mail = outlook_read_only_check(
+        limit=5,
+        sender_query=resolved,
+        date_range="past_month",
+        original_prompt="Summarize all the emails from Ms. Sharpay in the past month.",
+    )
+    messages = [message for message in (mail.get("messages") or []) if isinstance(message, dict)]
+    sender_samples = [str(message.get("sender") or "") for message in messages[:5]]
+    all_senders_match = bool(messages) and all(
+        "sharpay" in sender.casefold() or resolved.casefold() in sender.casefold()
+        for sender in sender_samples
+    )
+    return {
+        "tool": "email.sharpay_filter_proof",
+        "lookup_status": str(lookup.get("status") or ""),
+        "resolved_sender": resolved,
+        "mail_status": str(mail.get("status") or ""),
+        "message_count": int(mail.get("message_count") or 0),
+        "match_count": int(mail.get("match_count") or 0),
+        "selection_mode": str(mail.get("selection_mode") or ""),
+        "all_senders_match": all_senders_match,
+        "sender_samples_redacted": [sender[:80] for sender in sender_samples],
+        "read_email_content": False,
+        "read_private_metadata": True,
+    }
+
+
+def verify_email_sharpay_honesty(
+    voice_report: dict[str, Any],
+    *,
+    email_filter_proof: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = voice_report.get("result") if isinstance(voice_report.get("result"), dict) else {}
+    visible_reply = str(result.get("visible_reply_preview") or "")
+    lower_reply = visible_reply.casefold()
+    email_filter_proof = email_filter_proof or {}
+    failures: list[str] = []
+    resolved_sharpay = "sharpay" in lower_reply
+    needs_confirmation = "do not know who ms sharpay means" in lower_reply or "possible matches" in lower_reply
+    filtered_sharpay = (
+        str(email_filter_proof.get("lookup_status") or "") == "found"
+        and str(email_filter_proof.get("mail_status") or "") == "checked"
+        and bool(email_filter_proof.get("all_senders_match"))
+    )
+    if not (resolved_sharpay or needs_confirmation or filtered_sharpay):
+        failures.append("Email proof neither resolved Sharpay nor asked for contact confirmation.")
+    if "newest email" in lower_reply and "sharpay" not in lower_reply:
+        failures.append("Email proof appears to have fallen back to an unrelated newest email.")
+    if "http://" in lower_reply or "https://" in lower_reply:
+        failures.append("Email proof exposed a raw link in the spoken/visible summary.")
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "resolved_sharpay": resolved_sharpay,
+        "needs_confirmation": needs_confirmation,
+        "filtered_sharpay": filtered_sharpay,
+        "resolved_sender": str(email_filter_proof.get("resolved_sender") or ""),
+        "message_count": int(email_filter_proof.get("message_count") or 0),
+        "visible_reply_preview": visible_reply[:500],
+    }
 
 
 def music_bridge_request(

@@ -390,6 +390,56 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(proof["passed"])
         self.assertIn("Teams proof regressed to a generic Chrome/YouTube visible-screen summary.", proof["failures"])
 
+    def test_full_loop_email_sharpay_accepts_resolved_sender_summary(self):
+        proof = full_loop_regression.verify_email_sharpay_honesty({
+            "result": {
+                "visible_reply_preview": "Sharpay Cao sent a document concerning the Y7 Talent Show rehearsals and performance.",
+            },
+        })
+
+        self.assertTrue(proof["passed"])
+        self.assertTrue(proof["resolved_sharpay"])
+
+    def test_full_loop_email_sharpay_accepts_filtered_sender_even_if_summary_omits_name(self):
+        proof = full_loop_regression.verify_email_sharpay_honesty(
+            {
+                "result": {
+                    "visible_reply_preview": "You have an interview on Monday and should bring your materials.",
+                },
+            },
+            email_filter_proof={
+                "lookup_status": "found",
+                "mail_status": "checked",
+                "all_senders_match": True,
+                "resolved_sender": "Sharpay Cao",
+                "message_count": 1,
+            },
+        )
+
+        self.assertTrue(proof["passed"])
+        self.assertTrue(proof["filtered_sharpay"])
+        self.assertEqual(proof["resolved_sender"], "Sharpay Cao")
+
+    def test_full_loop_email_sharpay_rejects_unrelated_newest_fallback(self):
+        proof = full_loop_regression.verify_email_sharpay_honesty({
+            "result": {
+                "visible_reply_preview": "The newest email is from another sender about lunch.",
+            },
+        })
+
+        self.assertFalse(proof["passed"])
+        self.assertIn("Email proof neither resolved Sharpay nor asked for contact confirmation.", proof["failures"])
+
+    def test_full_loop_email_sharpay_rejects_raw_links(self):
+        proof = full_loop_regression.verify_email_sharpay_honesty({
+            "result": {
+                "visible_reply_preview": "Sharpay sent a form at https://example.com/private.",
+            },
+        })
+
+        self.assertFalse(proof["passed"])
+        self.assertIn("Email proof exposed a raw link in the spoken/visible summary.", proof["failures"])
+
     def test_voice_loop_stream_can_allow_audio_actions_for_live_regression(self):
         captured_payloads = []
 

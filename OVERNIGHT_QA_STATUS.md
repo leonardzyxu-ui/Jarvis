@@ -126,3 +126,11 @@ spoken reply, time every stage, and clean up any app/browser state it created.
   assignment honesty to Music playback, RAM, Calendar, Magic Keyboard yuan
   conversion, Gemma 3 4B planning, and Codex Default-chat safety planning. Full
   Python safety suite then passed 850/850.
+- 2026-06-19 00:32 CST: focused Ms. Sharpay email/contact regression passed at
+  `runtime/full_loop_regression/20260619-003228/summary.json`, proving the local
+  contact alias resolves to a filtered Apple Mail sender even when the spoken
+  summary omits the sender name.
+- 2026-06-19 00:34 CST: combined full-loop regression passed 8/8 at
+  `runtime/full_loop_regression/20260619-003336/summary.json`, adding Ms. Sharpay
+  email/contact proof to the canonical prompt matrix. Full Python safety suite
+  then passed 854/854.
