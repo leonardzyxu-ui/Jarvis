@@ -245,6 +245,34 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(proof["passed"])
         self.assertIn("vm_stat was not available for memory proof.", proof["failures"])
 
+    def test_full_loop_calendar_proof_accepts_read_only_schedule(self):
+        proof = full_loop_regression.verify_calendar_today({
+            "tool": "calendar.today_schedule",
+            "status": "checked",
+            "read_private_content": True,
+            "changed_calendar": False,
+            "event_count": 3,
+            "source": "calendar_sqlite_cache",
+            "reply": "Today's Calendar schedule: three events.",
+        })
+
+        self.assertTrue(proof["passed"])
+        self.assertEqual(proof["event_count"], 3)
+
+    def test_full_loop_calendar_proof_rejects_mutation(self):
+        proof = full_loop_regression.verify_calendar_today({
+            "tool": "calendar.today_schedule",
+            "status": "checked",
+            "read_private_content": True,
+            "changed_calendar": True,
+            "event_count": 1,
+            "source": "calendar_sqlite_cache",
+            "reply": "Today's Calendar schedule: one event.",
+        })
+
+        self.assertFalse(proof["passed"])
+        self.assertIn("Calendar proof says it changed the calendar.", proof["failures"])
+
     def test_voice_loop_stream_can_allow_audio_actions_for_live_regression(self):
         captured_payloads = []
 

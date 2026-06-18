@@ -16,7 +16,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from jarvis.tools import memory_usage_status  # noqa: E402
+from jarvis.tools import calendar_today_schedule, memory_usage_status  # noqa: E402
 from scripts import voice_loop_qa  # noqa: E402
 from scripts.render_overnight_status import normalize_base_url  # noqa: E402
 
@@ -40,6 +40,13 @@ RAM_ACTIVITY_CASE = {
     "expect_visible_contains": ["Memory", "GB"],
     "expect_routed_contains": ["Activity Monitor", "RAM"],
 }
+CALENDAR_TODAY_CASE = {
+    "id": "calendar_today_schedule",
+    "command": "Hey Jarvis, check my calendar for my schedule today.",
+    "expect_tool": ["calendar.today_schedule"],
+    "expect_visible_contains": ["Calendar"],
+    "expect_routed_contains": ["calendar", "schedule"],
+}
 
 
 def main() -> int:
@@ -47,7 +54,7 @@ def main() -> int:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--music-bridge-url", default=DEFAULT_MUSIC_BRIDGE_URL)
     parser.add_argument("--output-dir", default=str(REPORT_DIR))
-    parser.add_argument("--case", choices=("music", "ram", "all"), default="all")
+    parser.add_argument("--case", choices=("music", "ram", "calendar", "all"), default="all")
     parser.add_argument("--timeout", type=float, default=75.0)
     parser.add_argument("--exercise-live-speech", action="store_true")
     parser.add_argument("--no-report-refresh", action="store_true")
@@ -60,6 +67,8 @@ def main() -> int:
         cases.append(MUSIC_WAVING_CASE)
     if args.case in {"ram", "all"}:
         cases.append(RAM_ACTIVITY_CASE)
+    if args.case in {"calendar", "all"}:
+        cases.append(CALENDAR_TODAY_CASE)
     results = []
     for case in cases:
         if case["id"] == MUSIC_WAVING_CASE["id"]:
@@ -76,6 +85,16 @@ def main() -> int:
         elif case["id"] == RAM_ACTIVITY_CASE["id"]:
             results.append(
                 run_ram_activity_case(
+                    case,
+                    base_url=base_url,
+                    run_dir=run_dir / case["id"],
+                    timeout=args.timeout,
+                    exercise_live_speech=args.exercise_live_speech,
+                )
+            )
+        elif case["id"] == CALENDAR_TODAY_CASE["id"]:
+            results.append(
+                run_calendar_today_case(
                     case,
                     base_url=base_url,
                     run_dir=run_dir / case["id"],
@@ -330,6 +349,87 @@ def verify_memory_usage(memory_proof: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def run_calendar_today_case(
+    case: dict[str, Any],
+    *,
+    base_url: str,
+    run_dir: Path,
+    timeout: float,
+    exercise_live_speech: bool,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    voice_report = voice_loop_qa.run_voice_loop(
+        command_text=case["command"],
+        base_url=base_url,
+        run_dir=run_dir / "voice-loop",
+        length_scale=0.85,
+        timeout=timeout,
+        stt_provider="local",
+        no_permission_prompts=True,
+        expect_tools=list(case["expect_tool"]),
+        expect_visible_contains=list(case["expect_visible_contains"]),
+        expect_routed_contains=list(case["expect_routed_contains"]),
+        exercise_live_speech=exercise_live_speech,
+        allow_audio_actions=False,
+    )
+    write_json(run_dir / "voice-loop-report.json", voice_report)
+    calendar_proof = calendar_today_schedule()
+    write_json(run_dir / "calendar-proof.json", calendar_proof)
+    action_proof = verify_calendar_today(calendar_proof)
+    status = "passed"
+    warnings: list[str] = []
+    voice_status = str(voice_report.get("result", {}).get("status") or "failed")
+    if voice_status == "failed":
+        status = "failed"
+        warnings.append("Voice loop failed.")
+    elif voice_status != "passed":
+        status = "warning"
+        warnings.append(f"Voice loop returned {voice_status}.")
+    if not action_proof["passed"]:
+        status = "failed"
+        warnings.extend(action_proof["failures"])
+    return {
+        "case_id": case["id"],
+        "status": status,
+        "warnings": warnings,
+        "command": case["command"],
+        "voice_loop_status": voice_status,
+        "voice_loop_report": str(run_dir / "voice-loop-report.json"),
+        "action_proof": action_proof,
+        "calendar_proof": calendar_proof,
+        "cleanup": {"required": False, "reason": "Read-only Calendar check does not open apps or change events."},
+        "total_seconds": round(time.monotonic() - started, 3),
+    }
+
+
+def verify_calendar_today(calendar_proof: dict[str, Any]) -> dict[str, Any]:
+    failures: list[str] = []
+    if calendar_proof.get("tool") != "calendar.today_schedule":
+        failures.append("Calendar proof did not come from calendar.today_schedule.")
+    if calendar_proof.get("status") != "checked":
+        failures.append("Calendar proof did not report checked status.")
+    if not calendar_proof.get("read_private_content"):
+        failures.append("Calendar proof did not mark itself as a private-content read.")
+    if calendar_proof.get("changed_calendar"):
+        failures.append("Calendar proof says it changed the calendar.")
+    try:
+        event_count = int(calendar_proof.get("event_count") or 0)
+    except (TypeError, ValueError):
+        event_count = 0
+    if event_count < 0:
+        failures.append("Calendar event count was negative.")
+    if not str(calendar_proof.get("reply") or "").strip():
+        failures.append("Calendar proof did not include a reply.")
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "event_count": event_count,
+        "source": str(calendar_proof.get("source") or ""),
+        "changed_calendar": bool(calendar_proof.get("changed_calendar")),
+    }
+
+
 def music_bridge_request(
     base_url: str,
     method: str,
@@ -394,6 +494,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
         proof_label = proof.get("selected_title") or (
             f"{proof.get('used_human')} of {proof.get('total_human')} used"
             if proof.get("used_human") and proof.get("total_human")
+            else f"{proof.get('event_count')} calendar events via {proof.get('source')}"
+            if proof.get("event_count") is not None and proof.get("source")
             else "(none)"
         )
         lines.extend(

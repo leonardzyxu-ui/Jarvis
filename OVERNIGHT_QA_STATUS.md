@@ -83,3 +83,6 @@ spoken reply, time every stage, and clean up any app/browser state it created.
   `runtime/full_loop_regression/20260618-231308/summary.json`, covering native
   Music playback plus Activity Monitor-style RAM usage. Full Python safety suite
   then passed 837/837.
+- 2026-06-18 23:24 CST: combined full-loop regression passed 3/3 at
+  `runtime/full_loop_regression/20260618-232344/summary.json`, adding read-only
+  Calendar schedule proof. Full Python safety suite then passed 839/839.
