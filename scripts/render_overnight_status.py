@@ -28,6 +28,8 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 SHIPPED_ITEMS = [
+    "Sharpay monthly email summaries are now complete without getting repetitive: if the model omits local feedback-form/link messages, Jarvis adds a concise aggregate line such as `gave two links to feedback forms`, while still suppressing raw URLs from visible and spoken output.",
+    "Focused behavior-matrix runs are now safe for debugging: one-case probes still write their own artifacts, but only all-eight canonical runs can update the master `runtime/regression_prompt_matrix/latest.json` and the morning report.",
     "Jarvis 0.1.455 packages the overnight reliability pass: Teams final speech now matches the visible mismatch answer, the master report opens with concise shipped highlights, and Sharpay email summaries keep the 75-message proof window while running much faster.",
     "Sharpay email summaries are much faster without shrinking the proof window: the Apple Mail path now keeps sender-recent candidates during the first bounded scan instead of rescanning the same 75-message window for every selected message.",
     "Jarvis's Teams proof now reads the visible Chrome window with native OCR even when Chrome page-text Automation is blocked, so it can say the current page is a Geography assignment instead of pretending it found the newest Music assignment.",
