@@ -3005,6 +3005,11 @@ class VerifySafeScriptTests(unittest.TestCase):
         proof = ["0.1.test proof: full Python safety suite passed 17/17 after the patch."]
         self.assertEqual(render_overnight_status.python_suite_label(proof), "17/17 passed")
 
+    def test_render_overnight_status_current_python_count_ignores_failed_import_stub(self):
+        failed = unittest.defaultTestLoader.loadTestsFromName("definitely_missing_test_module")
+        with patch("scripts.render_overnight_status.unittest.defaultTestLoader.loadTestsFromName", return_value=failed):
+            self.assertEqual(render_overnight_status.current_python_test_count(), 0)
+
     def test_render_overnight_status_build_context_uses_output_bundle_fallback(self):
         with patch("scripts.render_overnight_status.get_json", return_value={}), \
              patch("scripts.render_overnight_status.latest_verification", return_value={"label": "0/0 missing"}), \

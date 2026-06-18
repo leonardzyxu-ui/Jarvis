@@ -9,6 +9,7 @@ import json
 import plistlib
 import re
 import subprocess
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1411,10 +1412,25 @@ def python_suite_label(proof_items: list[str] | None = None) -> str:
 
 def current_python_test_count() -> int:
     try:
+        root = str(PROJECT_ROOT)
+        if root not in sys.path:
+            sys.path.insert(0, root)
         suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_safety")
-        return int(suite.countTestCases())
+        count = int(suite.countTestCases())
+        return 0 if count == 1 and _suite_has_failed_import(suite) else count
     except Exception:
         return 0
+
+
+def _suite_has_failed_import(suite: unittest.TestSuite) -> bool:
+    for test in suite:
+        if isinstance(test, unittest.TestSuite):
+            if _suite_has_failed_import(test):
+                return True
+            continue
+        if test.__class__.__name__ == "_FailedTest":
+            return True
+    return False
 
 
 def render_report(context: dict[str, Any]) -> str:
