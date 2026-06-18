@@ -661,6 +661,7 @@ def run_voice_loop(
             "wake_route": route,
             "routed_command": route["command"],
             "command_response_tool": command_response.get("tool"),
+            "command_response_result": command_response_result_summary(command_response),
             "final_visible_tool": effective_response.get("tool") if isinstance(effective_response, dict) else "",
             "visible_reply_preview": visible_reply[:500],
             "expectation": expectation,
@@ -1209,7 +1210,7 @@ def final_response_from_stream_events(events: list[dict[str, Any]]) -> dict[str,
 
 def command_response_result_summary(command_response: dict[str, Any]) -> dict[str, Any]:
     result = command_response.get("result") if isinstance(command_response.get("result"), dict) else {}
-    return {
+    summary = {
         "backend": result.get("backend"),
         "model": result.get("model"),
         "status": result.get("status"),
@@ -1221,6 +1222,25 @@ def command_response_result_summary(command_response: dict[str, Any]) -> dict[st
         "primary_status": result.get("primary_status"),
         "tool_catalog_compacted": bool(result.get("tool_catalog_compacted")),
     }
+    tool = str(command_response.get("tool") or result.get("tool") or "")
+    if tool == "outlook.visible_summary":
+        contact_lookup = result.get("contact_alias_lookup") if isinstance(result.get("contact_alias_lookup"), dict) else {}
+        summary.update(
+            {
+                "source": result.get("source"),
+                "sender_query": result.get("sender_query"),
+                "date_range": result.get("date_range"),
+                "selection_mode": result.get("selection_mode"),
+                "message_count": result.get("message_count"),
+                "match_count": result.get("match_count"),
+                "scanned_count": result.get("scanned_count"),
+                "unread_count": result.get("unread_count"),
+                "contact_alias_status": contact_lookup.get("status"),
+                "contact_alias": contact_lookup.get("alias"),
+                "contact_display_name": contact_lookup.get("display_name"),
+            }
+        )
+    return summary
 
 
 def stream_timing_summary(

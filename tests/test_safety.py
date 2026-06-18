@@ -477,6 +477,27 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(proof["filtered_sharpay"])
         self.assertEqual(proof["resolved_sender"], "Sharpay Cao")
 
+    def test_full_loop_email_sharpay_can_use_voice_loop_result_summary_without_rescan(self):
+        proof = full_loop_regression.email_sharpay_result_summary_proof({
+            "result": {
+                "command_response_tool": "outlook.visible_summary",
+                "command_response_result": {
+                    "status": "checked",
+                    "sender_query": "Sharpay Cao",
+                    "contact_alias": "Ms Sharpay",
+                    "contact_display_name": "Sharpay Cao",
+                    "message_count": 1,
+                    "match_count": 1,
+                    "selection_mode": "sender_latest",
+                },
+            },
+        })
+
+        self.assertTrue(proof["trusted_command_result"])
+        self.assertTrue(proof["all_senders_match"])
+        self.assertEqual(proof["proof_source"], "voice_loop_command_result")
+        self.assertEqual(proof["resolved_sender"], "Sharpay Cao")
+
     def test_full_loop_email_sharpay_rejects_unrelated_newest_fallback(self):
         proof = full_loop_regression.verify_email_sharpay_honesty({
             "result": {
@@ -1691,6 +1712,39 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(route["model"], "llama-3.3-70b-versatile")
         self.assertTrue(route["fallback_used"])
         self.assertTrue(route["tool_catalog_compacted"])
+
+    def test_voice_loop_qa_summarizes_email_result_without_private_body_text(self):
+        command_response = {
+            "tool": "outlook.visible_summary",
+            "reply": "Private summary.",
+            "result": {
+                "status": "checked",
+                "source": "apple_mail",
+                "sender_query": "Sharpay Cao",
+                "date_range": "past_month",
+                "selection_mode": "sender_latest",
+                "message_count": 1,
+                "match_count": 1,
+                "scanned_count": 12,
+                "unread_count": 0,
+                "contact_alias_lookup": {
+                    "status": "found",
+                    "alias": "Ms Sharpay",
+                    "display_name": "Sharpay Cao",
+                },
+                "messages": [{"subject": "Private subject", "snippet": "Private body"}],
+            },
+        }
+
+        summary = voice_loop_qa.command_response_result_summary(command_response)
+
+        self.assertEqual(summary["source"], "apple_mail")
+        self.assertEqual(summary["sender_query"], "Sharpay Cao")
+        self.assertEqual(summary["contact_alias"], "Ms Sharpay")
+        self.assertEqual(summary["match_count"], 1)
+        self.assertNotIn("messages", summary)
+        self.assertNotIn("Private subject", str(summary))
+        self.assertNotIn("Private body", str(summary))
 
     def test_voice_loop_qa_tracks_live_speech_runtime_when_exercised(self):
         events = [

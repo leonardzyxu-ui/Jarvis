@@ -1023,7 +1023,9 @@ def run_email_sharpay_case(
         allow_audio_actions=False,
     )
     write_json(run_dir / "voice-loop-report.json", voice_report)
-    email_filter_proof = email_sharpay_filter_proof()
+    email_filter_proof = email_sharpay_result_summary_proof(voice_report)
+    if not email_filter_proof.get("trusted_command_result"):
+        email_filter_proof = email_sharpay_filter_proof(fallback_reason=str(email_filter_proof.get("fallback_reason") or "missing_command_result"))
     write_json(run_dir / "email-filter-proof.json", email_filter_proof)
     action_proof = verify_email_sharpay_honesty(voice_report, email_filter_proof=email_filter_proof)
     status = "passed"
@@ -1052,7 +1054,44 @@ def run_email_sharpay_case(
     }
 
 
-def email_sharpay_filter_proof() -> dict[str, Any]:
+def email_sharpay_result_summary_proof(voice_report: dict[str, Any]) -> dict[str, Any]:
+    result = voice_report.get("result") if isinstance(voice_report.get("result"), dict) else {}
+    summary = result.get("command_response_result") if isinstance(result.get("command_response_result"), dict) else {}
+    sender_bits = " ".join(
+        str(summary.get(key) or "")
+        for key in ("sender_query", "contact_alias", "contact_display_name")
+    )
+    tool = str(result.get("command_response_tool") or "")
+    status = str(summary.get("status") or "")
+    match_count = int(summary.get("match_count") or 0)
+    message_count = int(summary.get("message_count") or 0)
+    all_senders_match = "sharpay" in sender_bits.casefold()
+    trusted = (
+        tool == "outlook.visible_summary"
+        and status == "checked"
+        and match_count > 0
+        and message_count > 0
+        and all_senders_match
+    )
+    return {
+        "tool": "email.sharpay_filter_proof",
+        "proof_source": "voice_loop_command_result",
+        "trusted_command_result": trusted,
+        "lookup_status": str(summary.get("contact_alias_status") or ""),
+        "resolved_sender": str(summary.get("contact_display_name") or summary.get("sender_query") or "Ms Sharpay"),
+        "mail_status": status,
+        "message_count": message_count,
+        "match_count": match_count,
+        "selection_mode": str(summary.get("selection_mode") or ""),
+        "all_senders_match": all_senders_match,
+        "sender_samples_redacted": [],
+        "read_email_content": False,
+        "read_private_metadata": True,
+        "fallback_reason": "" if trusted else "command_result_missing_or_untrusted",
+    }
+
+
+def email_sharpay_filter_proof(*, fallback_reason: str = "") -> dict[str, Any]:
     lookup = contact_data_lookup("Ms Sharpay")
     resolved = str(lookup.get("display_name") or "Ms Sharpay")
     mail = outlook_read_only_check(
@@ -1070,6 +1109,9 @@ def email_sharpay_filter_proof() -> dict[str, Any]:
     )
     return {
         "tool": "email.sharpay_filter_proof",
+        "proof_source": "direct_mail_rescan",
+        "trusted_command_result": False,
+        "fallback_reason": fallback_reason,
         "lookup_status": str(lookup.get("status") or ""),
         "resolved_sender": resolved,
         "mail_status": str(mail.get("status") or ""),
