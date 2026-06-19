@@ -10,8 +10,8 @@ BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"
 CONFIGURATION="${CONFIGURATION:-debug}"
 DEFAULT_OUTPUT_ROOT="$PROJECT_ROOT/output"
 OUTPUT_ROOT="${OUTPUT_ROOT:-$DEFAULT_OUTPUT_ROOT}"
-APP_VERSION="${APP_VERSION:-0.1.471}"
-BUILD_NUMBER="${BUILD_NUMBER:-471}"
+APP_VERSION="${APP_VERSION:-0.1.472}"
+BUILD_NUMBER="${BUILD_NUMBER:-472}"
 REPLACE_APP="${REPLACE_APP:-1}"
 ALLOW_NON_CANONICAL_JARVIS_BUNDLE="${ALLOW_NON_CANONICAL_JARVIS_BUNDLE:-0}"
 
@@ -164,6 +164,10 @@ elif [[ -f "$PROJECT_ROOT/assets/jarvis-logo-256.png" ]]; then
 fi
 if [[ -f "$PROJECT_ROOT/assets/jarvis-menu-head.png" ]]; then
   cp "$PROJECT_ROOT/assets/jarvis-menu-head.png" "$RESOURCES_DIR/JarvisMenuHead.png"
+fi
+if [[ ! -f "$RESOURCES_DIR/JarvisMenuHead.png" ]]; then
+  echo "Missing required menu-bar head image: $PROJECT_ROOT/assets/jarvis-menu-head.png" >&2
+  exit 1
 fi
 printf '%s\n' "$PROJECT_ROOT" > "$RESOURCES_DIR/JarvisWorkspaceRoot.txt"
 

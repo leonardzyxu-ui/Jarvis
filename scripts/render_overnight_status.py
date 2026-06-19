@@ -28,6 +28,7 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.472 makes the Shut Up menu-head harder to lose: app bundles now fail if the colored menu-bar head image is missing, and the bundled status-helper self-test verifies the image loads instead of silently creating an invisible status item.",
     "Jarvis 0.1.471 makes report discovery harder to lose: morning status now prints absolute master-report/workboard file paths plus loopback URLs, and the backend status payload carries those surfaces without reading the paths aloud.",
     "Jarvis 0.1.470 makes speech status truthful: `speech status` and `are you muted` now read the real `voice.speech_mute` backend state instead of asking the fast model to guess.",
     "Jarvis 0.1.470 keeps the tool catalog consistent: the new speech mute/status tool is visible to the first model and registered in the backend catalog, so diagnostics no longer report it as missing.",

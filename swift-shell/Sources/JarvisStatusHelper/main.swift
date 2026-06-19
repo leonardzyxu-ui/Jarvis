@@ -64,6 +64,12 @@ struct JarvisStatusHelperApp {
             fputs("Jarvis status helper self-test failed: status item must not fall back to a text icon.\n", stderr)
             Foundation.exit(1)
         }
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            guard JarvisStatusHelperDelegate.statusItemImage() != nil else {
+                fputs("Jarvis status helper self-test failed: bundled menu head image did not load.\n", stderr)
+                Foundation.exit(1)
+            }
+        }
         guard !JarvisStatusHelperDelegate.shouldOpenStatusMenu(eventType: .leftMouseUp, modifierFlags: []) else {
             fputs("Jarvis status helper self-test failed: left-click should open the Jarvis window.\n", stderr)
             Foundation.exit(1)
@@ -308,7 +314,7 @@ final class JarvisStatusHelperDelegate: NSObject, NSApplicationDelegate, NSMenuD
         )
     }
 
-    private static func statusItemImage() -> NSImage? {
+    fileprivate static func statusItemImage() -> NSImage? {
         let url = Bundle.main.url(forResource: "JarvisMenuHead", withExtension: "png")
             ?? Bundle.main.url(forResource: "JarvisLogo", withExtension: "png")
         guard let url,

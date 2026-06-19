@@ -285,6 +285,10 @@ Status legend:
      no longer fall back to text glyphs when the icon image is missing; the
      helper self-test now fails if a text fallback returns, focused Python
      source checks pass, and `jarvis-status-helper --self-test` builds/runs.
+   - 2026-06-20 proof update: Jarvis `0.1.472` makes the invisible-head failure
+     fail closed too. The app bundle build now refuses to finish without
+     `JarvisMenuHead.png`, and the bundled status-helper self-test verifies the
+     colored head image loads. Live safe verifier passed `105/105`.
    - 2026-06-19 proof update: Swift speech-activity tracking now treats
      backend `suppressed_by_request` and `deferred_to_follow_up` speech payloads
      as non-speaking states, so muted/suppressed/deferred responses cannot
