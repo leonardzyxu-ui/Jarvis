@@ -110,12 +110,15 @@ MIDDLE_TOOL_CONFIDENCE_FLOOR = 0.45
 
 def _localos_music_play_summary(result: dict[str, Any], *, from_your_pick: bool = False) -> str:
     status = str(result.get("status") or "")
+    confirmation = str(result.get("playback_confirmation") or result.get("localos_page_playback_confirmation") or "")
     suffix = " from Your Pick" if from_your_pick else ""
-    if status == "playing":
+    if status == "playing" or confirmation == "playing":
         return f"Started Local OS Music playback{suffix}."
-    if status == "queued":
-        return f"Asked Local OS Music to start playback{suffix}; playback is not confirmed yet."
-    return f"Tried Local OS Music playback{suffix}."
+    if status == "queued" or confirmation in {"unconfirmed", "bridge_not_polling"}:
+        return f"Sent Local OS Music playback request{suffix}; playback is not confirmed yet."
+    if confirmation in {"accepted", "activation_required", "music_app_not_playing", "wrong_track_playing"}:
+        return f"Local OS Music did not start playback{suffix}."
+    return f"Tried Local OS Music playback{suffix}; playback did not start."
 
 
 def _localos_music_stop_summary(result: dict[str, Any]) -> str:

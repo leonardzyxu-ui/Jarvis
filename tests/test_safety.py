@@ -6698,8 +6698,48 @@ class PlannerTests(unittest.TestCase):
             )
 
         self.assertEqual(result.tool, "localos.music_play")
-        self.assertEqual(result.summary, "Tried Local OS Music playback.")
+        self.assertEqual(result.summary, "Tried Local OS Music playback; playback did not start.")
         self.assertEqual(result.result["status"], "not_queued")
+
+    def test_localos_music_play_summary_does_not_sound_successful_when_audio_not_started(self):
+        fake_result = {
+            "tool": "localos.music_play",
+            "status": "not_queued",
+            "executed": True,
+            "available": True,
+            "playback_confirmation": "accepted",
+            "reply": "I found Waving Through A Window, but Local OS accepted the request and did not start audio.",
+        }
+        with patch("jarvis.planner.localos_music_play", return_value=fake_result):
+            result = Planner().handle_selected_tool(
+                "play Waving Through A Window",
+                "localos.music_play",
+                {"query": "Waving Through A Window"},
+            )
+
+        self.assertEqual(result.tool, "localos.music_play")
+        self.assertEqual(result.summary, "Local OS Music did not start playback.")
+        self.assertEqual(result.result["playback_confirmation"], "accepted")
+
+    def test_localos_music_play_summary_keeps_queued_as_unconfirmed_not_started(self):
+        fake_result = {
+            "tool": "localos.music_play",
+            "status": "queued",
+            "executed": True,
+            "available": True,
+            "playback_confirmation": "bridge_not_polling",
+            "reply": "Local OS has not confirmed playback yet.",
+        }
+        with patch("jarvis.planner.localos_music_play", return_value=fake_result):
+            result = Planner().handle_selected_tool(
+                "play Waving Through A Window",
+                "localos.music_play",
+                {"query": "Waving Through A Window"},
+            )
+
+        self.assertEqual(result.tool, "localos.music_play")
+        self.assertEqual(result.summary, "Sent Local OS Music playback request; playback is not confirmed yet.")
+        self.assertEqual(result.result["playback_confirmation"], "bridge_not_polling")
 
     def test_localos_music_play_summary_reports_started_when_confirmed(self):
         fake_result = {
@@ -6734,7 +6774,7 @@ class PlannerTests(unittest.TestCase):
                 {"limit": 8},
         )
         self.assertEqual(result.tool, "localos.music_play")
-        self.assertEqual(result.summary, "Asked Local OS Music to start playback from Your Pick; playback is not confirmed yet.")
+        self.assertEqual(result.summary, "Sent Local OS Music playback request from Your Pick; playback is not confirmed yet.")
         play_mock.assert_called_once_with(
             user_request="play me something from Your Pick",
             from_your_pick=True,
@@ -11278,8 +11318,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.464}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-464}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.465}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-465}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('cleanup_numbered_app_bundles()', script)
         self.assertIn("find \"$OUTPUT_ROOT\" -maxdepth 1 -type d -name \"$APP_NAME-*.app\" -exec rm -rf {} +", script)

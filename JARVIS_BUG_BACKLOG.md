@@ -482,3 +482,13 @@ Status legend:
    - Live proof: the Teams voice-loop report under the focused run above
      recorded two speech payloads, ending with the concise visible-screen
      mismatch summary.
+
+3. Fixed/proved: music playback status summaries no longer sound successful when
+   LocalOS or Music only accepted/queued a request without proving audio started.
+   - Tests:
+     `test_localos_music_play_summary_does_not_sound_successful_when_audio_not_started`
+     and
+     `test_localos_music_play_summary_keeps_queued_as_unconfirmed_not_started`.
+   - Product rule: only confirmed `playing` may become "Started Local OS Music
+     playback"; `accepted`, `bridge_not_polling`, and generic failures must say
+     playback did not start or is not confirmed yet.
