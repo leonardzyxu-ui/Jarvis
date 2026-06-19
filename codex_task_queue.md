@@ -84,6 +84,7 @@
 - [x] Refreshed the official gate after the Teams navigation-plan commit: `scripts/pre_build_gate.py --base-url http://127.0.0.1:8765` failed honestly `2/3` at `runtime/pre_build_gate/20260620-054349/summary.json`; Python safety and Chrome cleanup passed, while full-loop failed only because `teams_music_assignment_honesty` remains warning/incomplete.
 - [x] Added an explicit double-opt-in visible-navigation harness: `--exercise-visible-navigation` can now attempt the planned Teams click only when `JARVIS_ALLOW_LIVE_UI_NAVIGATION=1` is also set. Live no-unlock Teams proof at `runtime/full_loop_regression/20260620-055113/summary.json` reported `live_navigation_not_unlocked`; full `tests.test_safety` passed `973/973`.
 - [x] Refreshed canonical safe verification after the gated navigation harness: `scripts/verify_safe.py` passed `105/105` at `runtime/verification/verify-safe-20260620-055529.json`.
+- [x] Made `scripts/morning_status.py` explain the Teams blocker behind the red gate: live status now prints `Teams assignment is wrong_subject; Chrome page-read is blocked; Assignments no-click navigation plan is ready at (68.13, 577.17).`; full `tests.test_safety` passed `974/974`.
 - [x] Rebuilt the canonical `output/Jarvis.app` bundle at version `0.1.468`.
 - [x] Reran `scripts/verify_safe.py`; safe verification passed `105/105`.
 - [x] Refreshed report/workboard surfaces and reran `scripts/smoke_fast_latency.py`; fast latency passed `3/3`.

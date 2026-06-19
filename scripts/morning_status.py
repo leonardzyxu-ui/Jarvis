@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import plistlib
+import re
 import shlex
 import subprocess
 import sys
@@ -247,6 +248,9 @@ def print_latest_pre_build_gate() -> None:
         f"Latest pre-build gate: {summary['status']} {summary['passed']}/{summary['total']} "
         f"({report_display}, age {age}{step_suffix})"
     )
+    teams_blocker = pre_build_gate_teams_blocker(data)
+    if teams_blocker:
+        print(f"Teams blocker: {teams_blocker}")
 
 
 def pre_build_gate_summary(data: dict[str, Any]) -> dict[str, Any]:
@@ -274,6 +278,58 @@ def pre_build_gate_summary(data: dict[str, Any]) -> dict[str, Any]:
         "total": total,
         "step_ids": step_ids,
     }
+
+
+def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
+    full_loop_path = pre_build_gate_full_loop_report_path(data)
+    if not full_loop_path:
+        return ""
+    try:
+        full_loop = json.loads(full_loop_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    results = full_loop.get("results")
+    if not isinstance(results, list):
+        return ""
+    for item in results:
+        if not isinstance(item, dict) or item.get("case_id") != "teams_music_assignment_honesty":
+            continue
+        if str(item.get("status") or "") == "passed":
+            return ""
+        proof = item.get("action_proof") if isinstance(item.get("action_proof"), dict) else {}
+        completion = str(proof.get("completion_status") or item.get("status") or "unknown")
+        parts = [f"Teams assignment is {completion}"]
+        if proof.get("chrome_page_read_blocked"):
+            parts.append("Chrome page-read is blocked")
+        if proof.get("assignments_navigation_plan_ready"):
+            plan = proof.get("assignments_navigation_plan") if isinstance(proof.get("assignments_navigation_plan"), dict) else {}
+            point = plan.get("point") if isinstance(plan.get("point"), dict) else {}
+            point_text = ""
+            if point:
+                point_text = f" at ({point.get('x')}, {point.get('y')})"
+            parts.append(f"Assignments no-click navigation plan is ready{point_text}")
+        elif proof.get("assignments_target_found"):
+            parts.append("Assignments OCR target was found")
+        return "; ".join(parts) + "."
+    return ""
+
+
+def pre_build_gate_full_loop_report_path(data: dict[str, Any]) -> Path | None:
+    results = data.get("results")
+    if not isinstance(results, list):
+        return None
+    for item in results:
+        if not isinstance(item, dict) or item.get("id") != "full_loop_regression":
+            continue
+        text = "\n".join(str(item.get(key) or "") for key in ("stdout", "stdout_tail", "stderr", "stderr_tail"))
+        match = re.search(r"Report:\s+(.+?summary\.json)", text)
+        if not match:
+            continue
+        path = Path(match.group(1).strip())
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        return path
+    return None
 
 
 def print_latest_context_smoke() -> None:

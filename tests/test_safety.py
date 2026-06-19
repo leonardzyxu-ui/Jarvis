@@ -183,6 +183,7 @@ from scripts.morning_status import (
     format_uptime,
     latency_smoke_summary,
     normalize_base_url,
+    pre_build_gate_teams_blocker,
     pre_build_gate_summary,
     print_report_surfaces,
     print_latest_context_smoke,
@@ -24047,6 +24048,47 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(summary["passed"], 4)
         self.assertEqual(summary["total"], 4)
         self.assertIn("stop_speaking_probe", summary["step_ids"])
+
+    def test_morning_status_pre_build_gate_teams_blocker_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "summary.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "case_id": "teams_music_assignment_honesty",
+                                "status": "warning",
+                                "action_proof": {
+                                    "completion_status": "wrong_subject",
+                                    "chrome_page_read_blocked": True,
+                                    "assignments_navigation_plan_ready": True,
+                                    "assignments_navigation_plan": {
+                                        "point": {"x": 68.13, "y": 577.17}
+                                    },
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            blocker = pre_build_gate_teams_blocker(
+                {
+                    "results": [
+                        {
+                            "id": "full_loop_regression",
+                            "ok": False,
+                            "stdout_tail": f"Report: {report_path}\nteams_music_assignment_honesty: warning",
+                        }
+                    ]
+                }
+            )
+
+        self.assertIn("Teams assignment is wrong_subject", blocker)
+        self.assertIn("Chrome page-read is blocked", blocker)
+        self.assertIn("Assignments no-click navigation plan is ready at (68.13, 577.17)", blocker)
 
     def test_render_overnight_status_latest_latency_smoke_accepts_checked_success(self):
         with tempfile.TemporaryDirectory() as temp_dir:
