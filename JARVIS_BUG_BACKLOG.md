@@ -339,6 +339,11 @@ Status legend:
     - 2026-06-19 proof update: text-only voice-loop tool descriptions and wake
       debug next steps now say visual acknowledgement / wake acknowledgement
       echo instead of implying Jarvis normally speaks its own greeting.
+    - 2026-06-20 proof update: the native Swift wake callback now updates the
+      summon surface with title `Listening.` and detail `Listening for your
+      command.` without calling `client.speakStatus`. Regression coverage
+      asserts there is no `let greeting = "Yes sir?"`, no `text: greeting`, and
+      no `client.speakStatus(greeting)` path in the model source.
 
 13. Partially fixed/proved: STT punctuation is poor.
     - All tested STT options heard words but missed punctuation.
