@@ -546,6 +546,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Reports local text-to-speech readiness without playing audio.",
             },
             {
+                "id": "voice.speech_mute",
+                "label": "Speech Mute Status",
+                "mode": "read_only",
+                "risk": "local_audio_status",
+                "available": True,
+                "description": "Reports Jarvis speech mute/readiness state without playing audio.",
+            },
+            {
                 "id": "voice.stop_speaking",
                 "label": "Stop Speaking",
                 "mode": "execute",

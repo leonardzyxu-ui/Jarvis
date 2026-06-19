@@ -12487,6 +12487,9 @@ Pages occupied by compressor:             10.
         self.assertEqual(result.tool, "diagnostics.tool_catalog")
         self.assertTrue(result.result["first_model"]["catalog_supplied"])
         self.assertGreater(result.result["first_model"]["tool_count"], 0)
+        self.assertIn("voice.speech_mute", result.result["first_model"]["tool_ids"])
+        self.assertIn("voice.speech_mute", result.result["registry"]["tool_ids"])
+        self.assertNotIn("voice.speech_mute", result.result["comparison"]["missing_from_registry"])
         self.assertIn("the first model sees", result.result["reply"])
         self.assertNotIn("not attached", result.result["reply"])
 
