@@ -186,6 +186,11 @@ Status legend:
      tiny fallback rather than the smarter middle lane. This does not prove live
      model quality; it proves Jarvis will not burn Leo's Mac by silently loading
      a heavy local model.
+   - 2026-06-19 proof update: the middle-model comparison script now has a
+     second heavy-local latch. Passing `--allow-local-heavy` alone is not enough
+     to run `gpt-oss:20b`; the script also requires an explicit
+     `JARVIS_ALLOW_HEAVY_LOCAL_MODELS` unlock value, and the report records both
+     requested and effective heavy-local state.
 
 7. Open/unknown: GPT OSS 120B low-thinking plus browser/tool access is still a
    future capability, not a proved product.

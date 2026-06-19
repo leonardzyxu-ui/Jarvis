@@ -25,6 +25,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RUNTIME_DIR = PROJECT_ROOT / "runtime" / "model_comparison"
 OLLAMA_BASE_URL = os.environ.get("JARVIS_OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 GROQ_BASE_URL = os.environ.get("JARVIS_GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+HEAVY_LOCAL_UNLOCK_ENV = "JARVIS_ALLOW_HEAVY_LOCAL_MODELS"
+HEAVY_LOCAL_UNLOCK_VALUE = "I_UNDERSTAND_16GB_RISK"
 
 
 def load_user_env_file() -> None:
@@ -217,6 +219,10 @@ def ollama_num_predict(model: str) -> int:
     if "gpt-oss" in str(model).lower() and is_ollama_cloud_model(model):
         return 420
     return 180
+
+
+def heavy_local_unlock_active() -> bool:
+    return os.environ.get(HEAVY_LOCAL_UNLOCK_ENV, "") == HEAVY_LOCAL_UNLOCK_VALUE
 
 
 def call_ollama_audio_probe(model: str, audio_path: Path, *, timeout: int) -> dict[str, Any]:
@@ -444,18 +450,21 @@ def run_candidate(
             "reason": "not installed in Ollama",
             "questions": [],
         }
+    if candidate.heavy_local and (not allow_local_heavy or not heavy_local_unlock_active()):
+        return {
+            "candidate": candidate.__dict__,
+            "status": "skipped",
+            "reason": (
+                "heavy local model skipped; requires --allow-local-heavy and "
+                f"{HEAVY_LOCAL_UNLOCK_ENV}={HEAVY_LOCAL_UNLOCK_VALUE}"
+            ),
+            "questions": [],
+        }
     if candidate.backend == "ollama" and candidate.local_model and not allow_local_models:
         return {
             "candidate": candidate.__dict__,
             "status": "skipped",
             "reason": "local Ollama model skipped; pass --allow-local-models to run on this Mac",
-            "questions": [],
-        }
-    if candidate.heavy_local and not allow_local_heavy:
-        return {
-            "candidate": candidate.__dict__,
-            "status": "skipped",
-            "reason": "heavy local model skipped; pass --allow-local-heavy to run",
             "questions": [],
         }
     results = []
@@ -497,7 +506,14 @@ def main() -> int:
         action="store_true",
         help="Allow running local Ollama models on this Mac. By default, the comparison is cloud-first.",
     )
-    parser.add_argument("--allow-local-heavy", action="store_true", help="Allow running large local models such as gpt-oss:20b.")
+    parser.add_argument(
+        "--allow-local-heavy",
+        action="store_true",
+        help=(
+            "Allow running large local models such as gpt-oss:20b only when "
+            f"{HEAVY_LOCAL_UNLOCK_ENV}={HEAVY_LOCAL_UNLOCK_VALUE} is also set."
+        ),
+    )
     parser.add_argument("--cleanup-local-models", action="store_true", help="Stop installed local Ollama candidate models before and after the run. Off by default.")
     parser.add_argument("--inspect-local-ollama", action="store_true", help="Record local Ollama tags/ps state without running local models. Off by default.")
     parser.add_argument("--audio-probe", default="", help="Optional audio file to test with audio-capable Ollama candidates such as gemma4:e4b.")
@@ -522,7 +538,8 @@ def main() -> int:
         Candidate("ollama-gemma3-4b", "ollama", "gemma3:4b", local_model=True, expected_location="not installed unless Leo chooses to download"),
         Candidate("ollama-gpt-oss-20b", "ollama", "gpt-oss:20b", heavy_local=True, local_model=True, expected_location="local heavy"),
     ]
-    allow_local_models = bool(args.allow_local_models or args.allow_local_heavy)
+    allow_local_heavy = bool(args.allow_local_heavy and heavy_local_unlock_active())
+    allow_local_models = bool(args.allow_local_models or allow_local_heavy)
     should_cleanup_local_models = bool(args.cleanup_local_models and args.execute_network and not allow_local_models)
     should_inspect_local_ollama = bool(args.execute_network and (allow_local_models or should_cleanup_local_models or args.inspect_local_ollama))
     installed = ollama_tags() if should_inspect_local_ollama else set()
@@ -536,7 +553,7 @@ def main() -> int:
                 installed=installed,
                 timeout=args.timeout,
                 allow_local_models=allow_local_models,
-                allow_local_heavy=args.allow_local_heavy,
+                allow_local_heavy=allow_local_heavy,
                 audio_probe=audio_probe,
             )
             for candidate in candidates
@@ -556,7 +573,10 @@ def main() -> int:
         "local_model_cleanup_before": local_model_cleanup_before,
         "ollama_ps_before": ollama_ps_before,
         "allow_local_models": allow_local_models,
-        "allow_local_heavy": bool(args.allow_local_heavy),
+        "allow_local_heavy_requested": bool(args.allow_local_heavy),
+        "allow_local_heavy": allow_local_heavy,
+        "heavy_local_unlock_env": HEAVY_LOCAL_UNLOCK_ENV,
+        "heavy_local_unlock_active": heavy_local_unlock_active(),
         "cleanup_local_models": should_cleanup_local_models,
         "inspect_local_ollama": should_inspect_local_ollama,
         "questions": QUESTIONS,

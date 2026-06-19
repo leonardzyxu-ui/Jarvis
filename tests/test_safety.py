@@ -10891,6 +10891,7 @@ Pages occupied by compressor:             10.
         self.assertEqual(result["offline_fallback"]["mode"], "plan_only")
         self.assertFalse(result["offline_fallback"]["local_auto_run_allowed"])
         self.assertTrue(result["offline_fallback"]["requires_user_confirmation_before_local_run"])
+        self.assertTrue(result["offline_fallback"]["requires_separate_heavy_local_unlock"])
         self.assertIn("gpt-oss:20b", {item["model"] for item in result["offline_fallback"]["blocked_local_candidates"]})
         remote_mock.assert_called_once_with(probe=True)
 
@@ -23034,6 +23035,62 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
 
 class CompareMiddleModelsScriptTests(unittest.TestCase):
+    def test_heavy_local_candidate_requires_flag_and_env_unlock(self):
+        candidate = compare_middle_models.Candidate(
+            "ollama-gpt-oss-20b",
+            "ollama",
+            "gpt-oss:20b",
+            heavy_local=True,
+            local_model=True,
+            expected_location="local heavy",
+        )
+
+        with patch.dict(os.environ, {}, clear=True), \
+             patch.object(compare_middle_models, "call_ollama") as call_ollama:
+            result = compare_middle_models.run_candidate(
+                candidate,
+                installed={"gpt-oss:20b"},
+                timeout=1,
+                allow_local_models=True,
+                allow_local_heavy=True,
+                audio_probe=None,
+            )
+
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("JARVIS_ALLOW_HEAVY_LOCAL_MODELS", result["reason"])
+        call_ollama.assert_not_called()
+
+    def test_heavy_local_candidate_runs_only_with_explicit_env_unlock(self):
+        candidate = compare_middle_models.Candidate(
+            "ollama-gpt-oss-20b",
+            "ollama",
+            "gpt-oss:20b",
+            heavy_local=True,
+            local_model=True,
+            expected_location="local heavy",
+        )
+
+        with patch.dict(
+            os.environ,
+            {compare_middle_models.HEAVY_LOCAL_UNLOCK_ENV: compare_middle_models.HEAVY_LOCAL_UNLOCK_VALUE},
+            clear=True,
+        ), patch.object(
+            compare_middle_models,
+            "call_ollama",
+            return_value={"status": "completed", "elapsed_seconds": 0.1, "reply": "ok"},
+        ) as call_ollama:
+            result = compare_middle_models.run_candidate(
+                candidate,
+                installed={"gpt-oss:20b"},
+                timeout=1,
+                allow_local_models=True,
+                allow_local_heavy=True,
+                audio_probe=None,
+            )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(call_ollama.call_count, len(compare_middle_models.QUESTIONS))
+
     def test_local_ollama_candidate_skipped_without_opt_in(self):
         candidate = compare_middle_models.Candidate(
             "ollama-gemma4-e4b",

@@ -11084,12 +11084,13 @@ def _offline_model_fallback_policy(model_name: str, *, heavy: bool) -> dict[str,
         "recommended_local_candidate": recommended,
         "recommended_reason": reason,
         "requires_user_confirmation_before_local_run": True,
+        "requires_separate_heavy_local_unlock": True,
         "max_local_class": "light_or_medium_only",
         "blocked_local_candidates": blocked,
         "notes": [
             "Do not download, load, or benchmark local models from this plan.",
             "If internet is unavailable, ask before running even the recommended lightweight local candidate.",
-            "Never auto-run heavy local models on the 16 GB Mac.",
+            "Never auto-run heavy local models on the 16 GB Mac, even if a benchmark flag is accidentally passed.",
         ],
     }
 
