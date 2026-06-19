@@ -57,6 +57,7 @@
 - [x] Hardened speech-audit-only proof honesty: reports and markdown now include the same measurement contract as full voice-loop runs, including `physical_speaker_capture: false` and `physical_microphone_capture: false`; full `tests.test_safety` passed `952/952`.
 - [x] Refreshed live `0.1.475` fast-latency proof: `scripts/smoke_fast_latency.py --base-url http://127.0.0.1:8765` passed `3/3` at `runtime/model_benchmarks/localhost-fast-latency-20260620-033720.md`; first visible ranged from `0.005s` to `1.29s`.
 - [x] Added fail-closed `--require-physical-capture` guards to both `scripts/voice_loop_qa.py` and `scripts/pre_build_gate.py`; focused negative checks passed, the gate produces an explicit failed physical-capture requirement row, and full `tests.test_safety` passed `954/954`.
+- [x] Fixed a native Music bridge wrong-track hazard: when Music reports a different track is playing, Jarvis sends `/stop` before returning failure; model-facing music catalogs now say native Music bridge first and never hidden playback; full `tests.test_safety` passed `954/954`.
 - [x] Rebuilt the canonical `output/Jarvis.app` bundle at version `0.1.468`.
 - [x] Reran `scripts/verify_safe.py`; safe verification passed `105/105`.
 - [x] Refreshed report/workboard surfaces and reran `scripts/smoke_fast_latency.py`; fast latency passed `3/3`.

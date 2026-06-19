@@ -5188,8 +5188,10 @@ class PlannerTests(unittest.TestCase):
         ]
         prompt_contract = json.dumps(music_specs, ensure_ascii=False).lower()
 
-        self.assertIn("localos owns normal music playback", prompt_contract)
-        self.assertIn("must not start a separate hidden player", prompt_contract)
+        self.assertIn("localos/music owns normal playback", prompt_contract)
+        self.assertIn("must never start hidden playback", prompt_contract)
+        self.assertIn("native music app bridge when available", prompt_contract)
+        self.assertIn("never start hidden playback", prompt_contract)
         self.assertNotIn("tracked local fallback", prompt_contract)
         self.assertNotIn("chrome blocks the page audio", prompt_contract)
 
@@ -5701,8 +5703,9 @@ class PlannerTests(unittest.TestCase):
                     "fileName": "闻人听书 《虞兮叹》.mp3",
                 },
             },
+            {"ok": True, "message": "Stopped"},
         ])
-        with patch("jarvis.tools._music_app_bridge_request", side_effect=lambda *_args, **_kwargs: next(bridge_responses)), \
+        with patch("jarvis.tools._music_app_bridge_request", side_effect=lambda *_args, **_kwargs: next(bridge_responses)) as bridge_mock, \
              patch("jarvis.tools.time.sleep"):
             result = jarvis_tools._music_app_bridge_play(
                 query="Waving Through A Window",
@@ -5718,6 +5721,8 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["playback_confirmation"], "wrong_track_playing")
         self.assertIn("different track", result["reply"])
         self.assertNotIn("Playing Dear Evan Hansen", result["reply"])
+        self.assertEqual(result["music_app_bridge"]["wrong_track_stop"]["message"], "Stopped")
+        self.assertIn(("POST", "/stop"), [call.args[:2] for call in bridge_mock.call_args_list])
 
     def test_music_app_bridge_disabled_when_localos_paths_are_patched(self):
         with tempfile.TemporaryDirectory() as tmpdir:

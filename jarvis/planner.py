@@ -162,7 +162,7 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
     },
     {
         "tool": "localos.music_play",
-        "description": "Play a named song or a chosen Your Pick song through the Local OS Music Player. Use when the user asks to play, queue, start, or listen to music. LocalOS owns normal music playback; Jarvis must not start a separate hidden player.",
+        "description": "Play a named song or a chosen Your Pick song through the native Music app bridge when available, with legacy LocalOS/Chrome playback only when the Music bridge is explicitly unavailable. Use when the user asks to play, queue, start, or listen to music. LocalOS/Music owns normal playback; Jarvis must never start hidden playback.",
         "entities": ["query", "from_your_pick", "limit"],
         "entity_details": {
             "query": "Song title, artist, or phrase to search for. Leave empty when from_your_pick is true.",

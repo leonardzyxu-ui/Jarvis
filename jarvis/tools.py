@@ -3714,6 +3714,9 @@ def _music_app_bridge_play(
         )
     )
     if not playing or not current_track_matches_request:
+        wrong_track_stop: dict[str, Any] = {}
+        if playing and not current_track_matches_request:
+            wrong_track_stop = _music_app_bridge_request("POST", "/stop", timeout=2.0)
         return {
             "status": "music_app_not_playing",
             "played_by": "none",
@@ -3723,6 +3726,7 @@ def _music_app_bridge_play(
                 "play": play,
                 "playback": playback,
                 "resume": resume,
+                "wrong_track_stop": wrong_track_stop,
             },
             "reply": (
                 "Music started a different track than the one I requested, so I stopped instead of claiming success."
@@ -6258,7 +6262,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "calendar.today_schedule", "kind": "private_read", "description": "Read today's Calendar schedule without creating, changing, accepting, or deleting events."},
         {"id": "diagnostics.memory_usage", "kind": "read_only", "description": "Report Activity Monitor-style RAM and memory-pressure status without opening Activity Monitor."},
         {"id": "models.test_plan", "kind": "read_only_plan", "description": "Plan a safe AI model test, preferring the MacBook Air for heavy models before touching this 16 GB Mac."},
-        {"id": "localos.music_play", "kind": "safe_execute", "description": "Play a named or chosen song through the Local OS bridge only. If Chrome blocks audio, report that LocalOS needs one click instead of starting hidden playback."},
+        {"id": "localos.music_play", "kind": "safe_execute", "description": "Play a named or chosen song through the native Music app bridge when available. Legacy LocalOS/Chrome playback is only a fallback when the Music bridge is explicitly unavailable; never start hidden playback."},
         {"id": "localos.music_stop", "kind": "safe_execute", "description": "Stop LocalOS music commands and emergency-stop old Jarvis-owned audio leftovers without starting new playback."},
         {"id": "localos.music_recommendations", "kind": "read_only", "description": "Read the Local OS Music Player Your Pick recommendation snapshot after the music page publishes it to Jarvis."},
         {"id": "localos.music_choose_from_your_pick", "kind": "read_only_model_choice", "description": "Feed the Your Pick candidate list to Jarvis's fast model so it can choose one track naturally."},

@@ -50,6 +50,11 @@ Status legend:
      available when the native Music bridge app exists, even if no LocalOS
      snapshot has been written yet, so Jarvis does not hide the preferred music
      tool behind stale LocalOS state.
+   - 2026-06-20 proof update: if the native Music bridge reports that a
+     different track is playing than the requested one, Jarvis now sends the
+     Music bridge `/stop` command before returning the failure. The first-model
+     and middle-model music tool descriptions now both say native Music bridge
+     first and never hidden playback. Full `tests.test_safety` passed `954/954`.
 
 3. Partially fixed/risky: Jarvis speech/mute can become unsafe or annoying.
    - Leo reported Jarvis speaking when it should not, being impossible to mute,
