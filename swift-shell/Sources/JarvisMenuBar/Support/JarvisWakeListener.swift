@@ -158,6 +158,12 @@ final class JarvisWakeListener {
 
     #if canImport(Speech)
     nonisolated private static func requestPermissions() async -> Bool {
+        guard hasRequiredVoiceUsageDescriptions() else {
+            return false
+        }
+        if isRunningWakeSelfTestWithoutTCC() {
+            return true
+        }
         let micAllowed = await withCheckedContinuation { continuation in
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 continuation.resume(returning: granted)
@@ -172,6 +178,26 @@ final class JarvisWakeListener {
             }
         }
         return speechAllowed
+    }
+
+    nonisolated private static func hasRequiredVoiceUsageDescriptions(
+        bundle: Bundle = .main
+    ) -> Bool {
+        let microphoneUsage = bundle.object(forInfoDictionaryKey: "NSMicrophoneUsageDescription") as? String
+        let speechUsage = bundle.object(forInfoDictionaryKey: "NSSpeechRecognitionUsageDescription") as? String
+        return microphoneUsage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && speechUsage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    nonisolated private static func isRunningWakeSelfTestWithoutTCC() -> Bool {
+        let arguments = CommandLine.arguments
+        return arguments.contains("--wake-permission-self-test")
+            || arguments.contains("--wake-start-self-test")
+            || arguments.contains("--wake-soak-self-test")
+    }
+
+    static func testHasRequiredVoiceUsageDescriptions() -> Bool {
+        hasRequiredVoiceUsageDescriptions()
     }
 
     private func startRecognitionSession() {
@@ -513,8 +539,16 @@ final class JarvisWakeListener {
     static func testPermissionCallbackPath() async -> Bool {
         await requestPermissions()
     }
+
+    static func testVoiceUsageDescriptionPreflight() -> Bool {
+        testHasRequiredVoiceUsageDescriptions()
+    }
     #else
     static func testPermissionCallbackPath() async -> Bool {
+        false
+    }
+
+    static func testVoiceUsageDescriptionPreflight() -> Bool {
         false
     }
     #endif

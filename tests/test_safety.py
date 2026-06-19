@@ -11122,8 +11122,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.456}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-456}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.457}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-457}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('cleanup_numbered_app_bundles()', script)
         self.assertIn("find \"$OUTPUT_ROOT\" -maxdepth 1 -type d -name \"$APP_NAME-*.app\" -exec rm -rf {} +", script)
@@ -14587,6 +14587,21 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertIn("let authorized = await Self.requestPermissions()", listener_source)
         self.assertIn("nonisolated private static func requestPermissions() async -> Bool", listener_source)
+        self.assertIn("hasRequiredVoiceUsageDescriptions", listener_source)
+        self.assertIn("isRunningWakeSelfTestWithoutTCC", listener_source)
+        self.assertIn('--wake-permission-self-test', listener_source)
+        self.assertIn('--wake-start-self-test', listener_source)
+        self.assertIn('--wake-soak-self-test', listener_source)
+        self.assertIn('NSMicrophoneUsageDescription', listener_source)
+        self.assertIn('NSSpeechRecognitionUsageDescription', listener_source)
+        self.assertLess(
+            listener_source.index("guard hasRequiredVoiceUsageDescriptions() else"),
+            listener_source.index("AVCaptureDevice.requestAccess"),
+        )
+        self.assertLess(
+            listener_source.index("if isRunningWakeSelfTestWithoutTCC()"),
+            listener_source.index("AVCaptureDevice.requestAccess"),
+        )
         self.assertIn("SFSpeechRecognizer.requestAuthorization", listener_source)
         self.assertIn("installJarvisWakeAudioTap(on: input, request: request)", listener_source)
         self.assertIn("private final class JarvisWakeAudioTapSink: @unchecked Sendable", listener_source)
