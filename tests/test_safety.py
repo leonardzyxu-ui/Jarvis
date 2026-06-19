@@ -3584,6 +3584,10 @@ class VerifySafeScriptTests(unittest.TestCase):
                 self.assertIn(version, shipped)
                 self.assertIn(version, proof)
                 self.assertIn(version, workboard)
+        self.assertIn("0.1.473", shipped)
+        self.assertIn("RAM", shipped)
+        self.assertIn("Magic Keyboard", shipped)
+        self.assertIn("deterministic shortcuts", shipped)
         self.assertIn("0.1.472", shipped)
         self.assertIn("Shut Up menu-head", shipped)
         self.assertIn("invisible status item", shipped)
@@ -5173,6 +5177,59 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result.tool, "commerce.price_convert")
         self.assertTrue(result.executed)
         self.assertEqual(result.result["reply"], fake_result["reply"])
+        self.assertEqual(result.result["routing"]["source"], "model_tool_call")
+        price_mock.assert_called_once_with(
+            "Magic Keyboard",
+            target_currency="CNY",
+            source_country="US",
+        )
+
+    def test_magic_keyboard_price_conversion_uses_first_model_before_local_tool(self):
+        fake_result = {
+            "tool": "commerce.price_convert",
+            "status": "converted",
+            "executed": True,
+            "reply": "Magic Keyboard price checked.",
+        }
+        tool_request = {
+            "tool": "conversation.fast_local",
+            "status": "tool_requested",
+            "selected_tool": "commerce.price_convert",
+            "status_text": "Checking the price now.",
+            "entities": {"product_query": "Magic Keyboard", "target_currency": "CNY"},
+            "executed": True,
+        }
+        with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request) as model_mock, \
+             patch("jarvis.planner.commerce_price_convert", return_value=fake_result) as price_mock:
+            result = Planner().handle(
+                "Jarvis, could you search up the price of the Magic Keyboard and tell me its price converted to yuan?"
+            )
+
+        self.assertEqual(result.tool, "commerce.price_convert")
+        self.assertEqual(result.result["routing"]["source"], "model_tool_call")
+        model_mock.assert_called_once()
+        price_mock.assert_called_once_with(
+            "Magic Keyboard",
+            target_currency="CNY",
+            source_country="US",
+        )
+
+    def test_magic_keyboard_price_conversion_recovers_yuan_from_stt_you_on(self):
+        fake_result = {
+            "tool": "commerce.price_convert",
+            "status": "converted",
+            "executed": True,
+            "reply": "Magic Keyboard price checked in yuan.",
+        }
+        with patch("jarvis.planner.commerce_price_convert", return_value=fake_result) as price_mock:
+            result = Planner().handle_selected_tool(
+                "search up the price of the magic keyboard and tell me it s price converted to you on",
+                "commerce.price_convert",
+                {"product_query": "Magic Keyboard", "target_currency": "USD"},
+            )
+
+        self.assertEqual(result.tool, "commerce.price_convert")
+        self.assertEqual(result.result["routing"]["source"], "model_tool_call")
         price_mock.assert_called_once_with(
             "Magic Keyboard",
             target_currency="CNY",
@@ -10714,17 +10771,27 @@ class PlannerTests(unittest.TestCase):
             "executed": True,
             "reply": "I could not find the local Calendar cache quickly.",
         }
-        with patch("jarvis.planner.calendar_today_schedule", return_value=fake_result) as calendar_mock, \
+        tool_request = {
+            "tool": "conversation.fast_local",
+            "status": "tool_requested",
+            "selected_tool": "calendar.today_schedule",
+            "status_text": "Checking your calendar now.",
+            "entities": {},
+            "executed": True,
+        }
+        with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request) as model_mock, \
+             patch("jarvis.planner.calendar_today_schedule", return_value=fake_result) as calendar_mock, \
              patch("jarvis.planner.app_open") as app_open_mock, \
-             patch("jarvis.planner.run_fast_local_chat") as fast_chat_mock:
+             patch("jarvis.planner._local_today_iso", return_value="2026-06-20"):
             result = Planner().handle("Check my calendar for my schedule today.")
 
         self.assertEqual(result.tool, "calendar.today_schedule")
         self.assertTrue(result.executed)
         self.assertEqual(result.result["reply"], fake_result["reply"])
-        self.assertRegex(calendar_mock.call_args.args[0], r"^20\d{2}-\d{2}-\d{2}$")
+        self.assertEqual(result.result["routing"]["source"], "model_tool_call")
+        calendar_mock.assert_called_once_with("2026-06-20")
         app_open_mock.assert_not_called()
-        fast_chat_mock.assert_not_called()
+        model_mock.assert_called_once()
 
     def test_plain_open_calendar_still_opens_calendar_app(self):
         fake_result = {
@@ -10962,13 +11029,38 @@ Pages occupied by compressor:             10.
 
     def test_activity_monitor_ram_request_routes_to_memory_usage_before_device_profile(self):
         fake_result = {"tool": "diagnostics.memory_usage", "status": "checked", "executed": True, "reply": "Memory checked."}
-        with patch("jarvis.planner.memory_usage_status", return_value=fake_result) as memory_mock:
+        tool_request = {
+            "tool": "conversation.fast_local",
+            "status": "tool_requested",
+            "selected_tool": "diagnostics.memory_usage",
+            "status_text": "Checking memory usage now.",
+            "entities": {},
+            "executed": True,
+        }
+        with patch("jarvis.planner.run_fast_local_chat", return_value=tool_request) as model_mock, \
+             patch("jarvis.planner.memory_usage_status", return_value=fake_result) as memory_mock:
             result = Planner().handle("Check in Activity Monitor how much RAM my computer is using.")
             preview = Planner().preview("Check in Activity Monitor how much RAM my computer is using.")
 
         self.assertEqual(result.tool, "diagnostics.memory_usage")
         self.assertEqual(preview.tool, "diagnostics.memory_usage")
         self.assertEqual(result.result["reply"], "Memory checked.")
+        self.assertEqual(result.result["routing"]["source"], "model_tool_call")
+        model_mock.assert_called_once()
+        memory_mock.assert_called_once_with()
+
+    def test_activity_monitor_ram_can_use_local_fallback_when_router_disabled(self):
+        fake_result = {"tool": "diagnostics.memory_usage", "status": "checked", "executed": True, "reply": "Memory checked."}
+        with patch("jarvis.planner.run_fast_local_chat") as model_mock, \
+             patch("jarvis.planner.memory_usage_status", return_value=fake_result) as memory_mock:
+            result = Planner().handle(
+                "Check in Activity Monitor how much RAM my computer is using.",
+                use_model_router=False,
+            )
+
+        self.assertEqual(result.tool, "diagnostics.memory_usage")
+        self.assertEqual(result.result["routing"]["source"], "deterministic_shortcut")
+        model_mock.assert_not_called()
         memory_mock.assert_called_once_with()
 
     def test_browser_session_strategy_refuses_cookie_migration(self):
@@ -11845,8 +11937,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.472}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-472}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.473}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-473}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('ALLOW_NON_CANONICAL_JARVIS_BUNDLE="${ALLOW_NON_CANONICAL_JARVIS_BUNDLE:-0}"', script)
         self.assertIn("Refusing to build a non-canonical Jarvis app", script)

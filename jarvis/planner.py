@@ -813,15 +813,20 @@ class Planner:
         if bookmark_search_query is not None:
             return self._result(text, "browser.bookmarks_search", "Searched imported Chrome bookmarks.", assessment, chrome_bookmarks_search(bookmark_search_query), True)
         if _looks_like_price_conversion_request(text):
+            if use_model_router:
+                return self._first_model_result(text, assessment, history=history)
             return self._result(
                 text,
                 "commerce.price_convert",
                 "Checked public product price and currency conversion.",
                 assessment,
-                commerce_price_convert(
-                    _extract_price_product_query(text),
-                    target_currency=_extract_target_currency(text),
-                    source_country="US",
+                _with_route_source(
+                    commerce_price_convert(
+                        _extract_price_product_query(text),
+                        target_currency=_extract_target_currency(text),
+                        source_country="US",
+                    ),
+                    "deterministic_shortcut",
                 ),
                 True,
             )
@@ -845,15 +850,26 @@ class Planner:
         if _looks_like_fast_model_status(lower):
             return self._result(text, "diagnostics.fast_model", "Read local fast-model status.", assessment, fast_model_status(), True)
         if _looks_like_memory_usage_request(lower):
-            return self._result(text, "diagnostics.memory_usage", "Read local memory usage.", assessment, memory_usage_status(), True)
+            if use_model_router:
+                return self._first_model_result(text, assessment, history=history)
+            return self._result(
+                text,
+                "diagnostics.memory_usage",
+                "Read local memory usage.",
+                assessment,
+                _with_route_source(memory_usage_status(), "deterministic_shortcut"),
+                True,
+            )
         if _looks_like_calendar_schedule_request(lower):
+            if use_model_router:
+                return self._first_model_result(text, assessment, history=history)
             date_iso = _extract_calendar_schedule_date_iso(text)
             return self._result(
                 text,
                 "calendar.today_schedule",
                 "Read local Calendar schedule.",
                 assessment,
-                calendar_today_schedule(date_iso),
+                _with_route_source(calendar_today_schedule(date_iso), "deterministic_shortcut"),
                 True,
             )
         if _looks_like_device_status(lower):
@@ -952,15 +968,20 @@ class Planner:
         if bookmark_search_query is not None:
             return self._result(text, "browser.bookmarks_search", "Searched imported Chrome bookmarks.", assessment, chrome_bookmarks_search(bookmark_search_query), True)
         if _looks_like_price_conversion_request(text):
+            if use_model_router:
+                return self._first_model_result(text, assessment, history=history)
             return self._result(
                 text,
                 "commerce.price_convert",
                 "Checked public product price and currency conversion.",
                 assessment,
-                commerce_price_convert(
-                    _extract_price_product_query(text),
-                    target_currency=_extract_target_currency(text),
-                    source_country="US",
+                _with_route_source(
+                    commerce_price_convert(
+                        _extract_price_product_query(text),
+                        target_currency=_extract_target_currency(text),
+                        source_country="US",
+                    ),
+                    "deterministic_shortcut",
                 ),
                 True,
             )
@@ -1731,12 +1752,26 @@ class Planner:
         if selected_tool == "diagnostics.memory_usage":
             if not execute:
                 return self._preview_result(text, "diagnostics.memory_usage", assessment, True, plan={"intent": intent})
-            return self._result(text, "diagnostics.memory_usage", "Read local memory usage.", assessment, memory_usage_status(), True)
+            return self._result(
+                text,
+                "diagnostics.memory_usage",
+                "Read local memory usage.",
+                assessment,
+                _with_route_source(memory_usage_status(), "model_tool_call", intent),
+                True,
+            )
         if selected_tool == "calendar.today_schedule":
             date_iso = _clean_optional_entity(entities.get("date_iso") or entities.get("date")) or _local_today_iso()
             if not execute:
                 return self._preview_result(text, "calendar.today_schedule", assessment, True, plan={"intent": intent, "date_iso": date_iso})
-            return self._result(text, "calendar.today_schedule", "Read local Calendar schedule.", assessment, calendar_today_schedule(date_iso), True)
+            return self._result(
+                text,
+                "calendar.today_schedule",
+                "Read local Calendar schedule.",
+                assessment,
+                _with_route_source(calendar_today_schedule(date_iso), "model_tool_call", intent),
+                True,
+            )
         if selected_tool == "models.test_plan":
             model_name = (
                 _clean_optional_entity(entities.get("model_name") or entities.get("model"))
@@ -1917,7 +1952,11 @@ class Planner:
                 _clean_optional_entity(entities.get("product_query") or entities.get("product") or entities.get("query"))
                 or _extract_price_product_query(text)
             )
-            target_currency = _clean_optional_entity(entities.get("target_currency") or entities.get("currency")) or _extract_target_currency(text)
+            target_currency = (
+                _extract_target_currency_constraint(text)
+                or _clean_optional_entity(entities.get("target_currency") or entities.get("currency"))
+                or _extract_target_currency(text)
+            )
             source_country = _clean_optional_entity(entities.get("source_country") or entities.get("country")) or "US"
             if not execute:
                 return self._preview_result(
@@ -1937,10 +1976,14 @@ class Planner:
                 "commerce.price_convert",
                 "Checked public product price and currency conversion.",
                 assessment,
-                commerce_price_convert(
-                    product_query,
-                    target_currency=target_currency,
-                    source_country=source_country,
+                _with_route_source(
+                    commerce_price_convert(
+                        product_query,
+                        target_currency=target_currency,
+                        source_country=source_country,
+                    ),
+                    "model_tool_call",
+                    intent,
                 ),
                 True,
             )
@@ -3064,7 +3107,7 @@ def _extract_price_product_query(text: str) -> str:
         match = re.match(pattern, cleaned)
         if match:
             product = re.sub(
-                r"(?i)\b(?:converted?\s+to|in|to)\s+(?:yuan|rmb|cny|dollars?|usd).*$",
+                r"(?i)\b(?:converted?\s+to|in|to)\s+(?:yuan|you\s+on|yuen|rmb|cny|renminbi|dollars?|usd).*$",
                 "",
                 match.group(1),
             )
@@ -3078,17 +3121,24 @@ def _looks_like_price_conversion_request(text: str) -> bool:
     lower = str(text or "").lower()
     if not re.search(r"\b(?:price|cost|how much)\b", lower):
         return False
-    if not re.search(r"\b(?:yuan|rmb|cny|converted?|convert|conversion)\b", lower):
+    if not re.search(r"\b(?:yuan|you\s+on|yuen|rmb|cny|renminbi|converted?|convert|conversion)\b", lower):
         return False
     return bool(_extract_price_product_query(lower).strip())
 
 
-def _extract_target_currency(text: str) -> str:
+def _extract_target_currency_constraint(text: str) -> str | None:
     lower = str(text or "").lower()
-    if re.search(r"\b(?:yuan|rmb|cny|renminbi)\b", lower):
+    if re.search(r"\b(?:yuan|you\s+on|yuen|rmb|cny|renminbi)\b", lower):
         return "CNY"
     if re.search(r"\b(?:usd|dollars?|us dollars?)\b", lower):
         return "USD"
+    return None
+
+
+def _extract_target_currency(text: str) -> str:
+    explicit = _extract_target_currency_constraint(text)
+    if explicit:
+        return explicit
     return "CNY"
 
 

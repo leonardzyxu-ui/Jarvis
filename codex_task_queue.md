@@ -35,11 +35,13 @@
 - [x] Refresh the current release gate after the 0.1.471/report-surface/music-progress commits; latest pre-build gate passed `5/5`.
 - [x] Rebuild Jarvis `0.1.472` with a fail-closed colored menu-head guard: bundle creation requires `JarvisMenuHead.png`, and bundled status-helper self-test verifies the image loads.
 - [x] Refresh the release gate again after the `0.1.472` menu-head commit; latest pre-build gate passed `5/5`.
+- [x] Rebuild Jarvis `0.1.473` so live RAM, Calendar, and price conversion execution uses first-model tool selection with labeled deterministic fallback.
 - [ ] Pick the next risky bug from `JARVIS_BUG_BACKLOG.md`, implement a focused fix, add/update tests, and commit only after meaningful passing proof.
 
 ## Completed This Turn
 
 - [x] Re-read `/Users/leoxu/.codex/AGENTS.md` and acknowledged the updated overnight and task-queue rules.
+- [x] Jarvis `0.1.473` build `473` is live; full `tests.test_safety` passed `946/946`, `scripts/verify_safe.py` passed `105/105` at `runtime/verification/verify-safe-20260620-024010.json`, focused Magic Keyboard full-loop proof passed at `runtime/full_loop_regression/20260620-024641/summary.json`, and the official pre-build gate passed `5/5` at `runtime/pre_build_gate/20260620-024701/summary.json`.
 - [x] Rebuilt the canonical `output/Jarvis.app` bundle at version `0.1.468`.
 - [x] Reran `scripts/verify_safe.py`; safe verification passed `105/105`.
 - [x] Refreshed report/workboard surfaces and reran `scripts/smoke_fast_latency.py`; fast latency passed `3/3`.

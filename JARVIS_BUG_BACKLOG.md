@@ -113,6 +113,10 @@ Status legend:
    - 2026-06-19 proof update: executed direct music playback results now carry
      a visible `routing.source: user_approved_primitive_exception` audit block,
      while model-selected music playback is labeled `model_tool_call`.
+   - 2026-06-20 proof update: live RAM, Calendar, and public price-conversion
+     execution now asks the first model to select the tool before running it;
+     deterministic local shortcuts remain available only when model routing is
+     explicitly disabled and are labeled `routing.source: deterministic_shortcut`.
 
 ## Email And Summarization Bugs
 
