@@ -36,6 +36,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Fail closed unless --exercise-live-speech is also set, so a build cannot be reported as live-speech tested by accident.",
     )
+    parser.add_argument(
+        "--require-physical-capture",
+        action="store_true",
+        help="Fail closed because the current proof harness does not capture physical speaker/microphone audio.",
+    )
     parser.add_argument("--skip-python-tests", action="store_true")
     parser.add_argument("--skip-full-loop", action="store_true")
     parser.add_argument("--skip-cleanup", action="store_true")
@@ -53,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         exercise_live_speech=args.exercise_live_speech,
         require_live_speech=args.require_live_speech,
+        require_physical_capture=args.require_physical_capture,
         skip_python_tests=args.skip_python_tests,
         skip_full_loop=args.skip_full_loop,
         skip_cleanup=args.skip_cleanup,
@@ -81,6 +87,7 @@ def run_gate(
     timeout: float = 180.0,
     exercise_live_speech: bool = False,
     require_live_speech: bool = False,
+    require_physical_capture: bool = False,
     skip_python_tests: bool = False,
     skip_full_loop: bool = False,
     skip_cleanup: bool = False,
@@ -97,6 +104,8 @@ def run_gate(
         skip_cleanup=skip_cleanup,
     )
     results: list[dict[str, Any]] = []
+    if require_physical_capture:
+        results.append(physical_capture_requirement_failure(exercise_live_speech=exercise_live_speech))
     if require_live_speech and not exercise_live_speech:
         results.append(live_speech_requirement_failure())
     for step in steps:
@@ -112,6 +121,7 @@ def run_gate(
                 started=started,
                 exercise_live_speech=exercise_live_speech,
                 require_live_speech=require_live_speech,
+                require_physical_capture=require_physical_capture,
                 complete=False,
             ),
             run_dir,
@@ -131,6 +141,7 @@ def run_gate(
         started=started,
         exercise_live_speech=exercise_live_speech,
         require_live_speech=require_live_speech,
+        require_physical_capture=require_physical_capture,
         complete=True,
     )
     write_summary(summary, run_dir, output_dir)
@@ -239,6 +250,21 @@ def live_speech_requirement_failure() -> dict[str, Any]:
     }
 
 
+def physical_capture_requirement_failure(*, exercise_live_speech: bool) -> dict[str, Any]:
+    return {
+        "id": "physical_capture_requirement",
+        "label": "Physical speaker/microphone capture requirement",
+        "ok": False,
+        "returncode": "not-run",
+        "seconds": 0.0,
+        "timeout_seconds": 0.0,
+        "command": [],
+        "stdout_tail": "",
+        "stderr_tail": "Refused to pass: --require-physical-capture was set, but physical speaker/microphone capture is not implemented.",
+        "proof_contract": speech_proof_contract(exercise_live_speech=exercise_live_speech),
+    }
+
+
 def run_step(step: dict[str, Any], *, timeout: float, runner: CommandRunner) -> dict[str, Any]:
     started = time.monotonic()
     step_timeout = float(step.get("timeout_seconds") or timeout)
@@ -279,6 +305,7 @@ def make_summary(
     started: float,
     exercise_live_speech: bool,
     require_live_speech: bool,
+    require_physical_capture: bool,
     complete: bool,
 ) -> dict[str, Any]:
     passed = sum(1 for item in results if item.get("ok"))
@@ -300,6 +327,7 @@ def make_summary(
         "duration_seconds": round(time.monotonic() - started, 3),
         "speech_proof_contract": speech_proof_contract(exercise_live_speech=exercise_live_speech),
         "require_live_speech": bool(require_live_speech),
+        "require_physical_capture": bool(require_physical_capture),
         "results": results,
     }
 
@@ -327,6 +355,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
         f"- Run dir: {summary.get('run_dir')}",
         f"- Speech proof: {summary.get('speech_proof_contract', {}).get('speech_mode')}",
         f"- Live speech required: {summary.get('require_live_speech')}",
+        f"- Physical capture required: {summary.get('require_physical_capture')}",
     ]
     for result in summary.get("results", []):
         if not isinstance(result, dict):

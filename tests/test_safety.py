@@ -790,6 +790,32 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(any("full_loop_regression.py" in str(part) for command in calls for part in command))
         self.assertTrue(any("cleanup_chrome_test_tabs.py" in str(part) for command in calls for part in command))
 
+    def test_pre_build_gate_require_physical_capture_fails_closed(self):
+        calls = []
+
+        def fake_runner(command, timeout):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary = pre_build_gate.run_gate(
+                base_url="http://127.0.0.1:8765",
+                output_dir=Path(tmpdir),
+                require_physical_capture=True,
+                exercise_live_speech=True,
+                runner=fake_runner,
+            )
+
+        self.assertFalse(summary["ok"])
+        self.assertTrue(summary["require_physical_capture"])
+        self.assertEqual(summary["results"][0]["id"], "physical_capture_requirement")
+        self.assertIn("--require-physical-capture", summary["results"][0]["stderr_tail"])
+        proof = summary["results"][0]["proof_contract"]
+        self.assertFalse(proof["physical_speaker_capture"])
+        self.assertFalse(proof["physical_microphone_capture"])
+        self.assertFalse(any("full_loop_regression.py" in str(part) for command in calls for part in command))
+        self.assertTrue(any("cleanup_chrome_test_tabs.py" in str(part) for command in calls for part in command))
+
     def test_pre_build_gate_uses_step_specific_timeout_when_present(self):
         calls = []
 
@@ -3025,6 +3051,15 @@ class VerifySafeScriptTests(unittest.TestCase):
                 voice_loop_qa.main()
 
         self.assertEqual(raised.exception.code, 2)
+
+    def test_voice_loop_qa_require_physical_capture_fails_closed(self):
+        with patch("sys.argv", ["voice_loop_qa.py", "--require-physical-capture"]), \
+             patch("sys.stderr", io.StringIO()) as stderr:
+            with self.assertRaises(SystemExit) as raised:
+                voice_loop_qa.main()
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--require-physical-capture is not supported yet", stderr.getvalue())
 
     def test_voice_loop_qa_can_skip_master_report_refresh(self):
         report = {
@@ -15792,6 +15827,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("--no-permission-prompts", script_source)
         self.assertIn("--speech-audit-only", script_source)
         self.assertIn("--exercise-live-speech", script_source)
+        self.assertIn("--require-physical-capture", script_source)
+        self.assertIn("physical speaker or microphone", script_source)
+        self.assertIn("measurement_contract", script_source)
         self.assertIn("apple_speech_skipped_no_permission_prompts", script_source)
         self.assertIn("no_permission_prompts", script_source)
         self.assertIn("run_speech_audit", script_source)

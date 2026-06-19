@@ -104,6 +104,11 @@ Status legend:
    - 2026-06-20 proof update: speech-audit-only reports now include the same
      measurement contract as full voice-loop runs, so generated WAV/STT audits
      explicitly say they are not physical speaker or microphone capture.
+   - 2026-06-20 proof update: `scripts/voice_loop_qa.py` and
+     `scripts/pre_build_gate.py` now fail closed on
+     `--require-physical-capture`. This prevents any release gate from passing
+     while claiming physical speaker/microphone loopback proof before that
+     capture path exists. Full `tests.test_safety` passed `954/954`.
 
 5. Partially fixed/risky: Jarvis must use model/tool choice, not fake keyword
    hacks, except where Leo explicitly allows a primitive tool.

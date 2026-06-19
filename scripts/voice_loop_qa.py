@@ -235,6 +235,11 @@ def main() -> int:
         help="Let Jarvis actually speak during the probe, then verify that the live playback path was exercised. This still does not capture room audio.",
     )
     parser.add_argument(
+        "--require-physical-capture",
+        action="store_true",
+        help="Fail closed because this harness does not yet capture physical speaker or microphone loopback audio.",
+    )
+    parser.add_argument(
         "--allow-audio-actions",
         action="store_true",
         help="Allow live audio/app actions such as Music playback. The default suppresses them for quiet unattended probes.",
@@ -273,6 +278,8 @@ def main() -> int:
         parser.error("--no-permission-prompts can only be combined with --stt-provider local")
     if args.stt_provider in {"auto", "apple"} and not args.allow_apple_speech:
         parser.error("--stt-provider auto/apple requires --allow-apple-speech")
+    if args.require_physical_capture:
+        parser.error("--require-physical-capture is not supported yet; this harness verifies generated audio/STT, not physical speaker or microphone capture")
     try:
         base_url = normalize_base_url(args.base_url)
     except ValueError as error:
