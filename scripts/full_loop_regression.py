@@ -101,6 +101,23 @@ EMAIL_SHARPAY_CASE = {
     "latency_budget_seconds": 75.0,
 }
 
+FULL_LOOP_CASES: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("music", MUSIC_WAVING_CASE),
+    ("ram", RAM_ACTIVITY_CASE),
+    ("calendar", CALENDAR_TODAY_CASE),
+    ("magic", MAGIC_KEYBOARD_YUAN_CASE),
+    ("gemma", GEMMA_MODEL_PLAN_CASE),
+    ("codex", CODEX_DEFAULT_PLAN_CASE),
+    ("teams", TEAMS_ASSIGNMENT_CASE),
+    ("email", EMAIL_SHARPAY_CASE),
+)
+
+
+def select_full_loop_cases(case_selection: str) -> list[dict[str, Any]]:
+    if case_selection == "all":
+        return [case for _, case in FULL_LOOP_CASES]
+    return [case for key, case in FULL_LOOP_CASES if key == case_selection]
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -120,23 +137,7 @@ def main() -> int:
     base_url = normalize_base_url(args.base_url)
     run_dir = allocate_run_dir(Path(args.output_dir).resolve())
     suite_started = time.monotonic()
-    cases = []
-    if args.case in {"music", "all"}:
-        cases.append(MUSIC_WAVING_CASE)
-    if args.case in {"ram", "all"}:
-        cases.append(RAM_ACTIVITY_CASE)
-    if args.case in {"calendar", "all"}:
-        cases.append(CALENDAR_TODAY_CASE)
-    if args.case in {"magic", "all"}:
-        cases.append(MAGIC_KEYBOARD_YUAN_CASE)
-    if args.case in {"gemma", "all"}:
-        cases.append(GEMMA_MODEL_PLAN_CASE)
-    if args.case in {"codex", "all"}:
-        cases.append(CODEX_DEFAULT_PLAN_CASE)
-    if args.case in {"teams", "all"}:
-        cases.append(TEAMS_ASSIGNMENT_CASE)
-    if args.case in {"email", "all"}:
-        cases.append(EMAIL_SHARPAY_CASE)
+    cases = select_full_loop_cases(args.case)
     results = []
     for case in cases:
         if case["id"] == MUSIC_WAVING_CASE["id"]:
@@ -657,7 +658,9 @@ def run_magic_keyboard_case(
         allow_audio_actions=False,
     )
     write_json(run_dir / "voice-loop-report.json", voice_report)
-    commerce_proof = commerce_price_convert("Magic Keyboard", target_currency="CNY", source_country="US")
+    commerce_proof = commerce_proof_from_voice_report(voice_report)
+    if not commerce_proof:
+        commerce_proof = commerce_price_convert("Magic Keyboard", target_currency="CNY", source_country="US")
     write_json(run_dir / "commerce-proof.json", commerce_proof)
     action_proof = verify_magic_keyboard_yuan(commerce_proof)
     status = "passed"
@@ -683,6 +686,28 @@ def run_magic_keyboard_case(
         "commerce_proof": commerce_proof,
         "cleanup": {"required": False, "reason": "Public web price check does not open browser tabs."},
         "total_seconds": round(time.monotonic() - started, 3),
+    }
+
+
+def commerce_proof_from_voice_report(voice_report: dict[str, Any]) -> dict[str, Any]:
+    result = voice_report.get("result") if isinstance(voice_report.get("result"), dict) else {}
+    summary = result.get("command_response_result") if isinstance(result.get("command_response_result"), dict) else {}
+    if summary.get("tool") != "commerce.price_convert" and result.get("command_response_tool") != "commerce.price_convert":
+        return {}
+    required_dicts = ("source", "price", "exchange_rate", "converted")
+    if not all(isinstance(summary.get(key), dict) and summary.get(key) for key in required_dicts):
+        return {}
+    return {
+        "tool": "commerce.price_convert",
+        "status": summary.get("status"),
+        "source": summary.get("source"),
+        "price": summary.get("price"),
+        "exchange_rate": summary.get("exchange_rate"),
+        "converted": summary.get("converted"),
+        "opened_browser": bool(summary.get("opened_browser")),
+        "changed_browser_state": bool(summary.get("changed_browser_state")),
+        "reply": summary.get("reply"),
+        "proof_source": "voice_loop_command_response",
     }
 
 

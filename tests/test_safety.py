@@ -191,6 +191,27 @@ from scripts.morning_status import (
 
 
 class VerifySafeScriptTests(unittest.TestCase):
+    def test_full_loop_case_selection_covers_all_canonical_user_prompts_once(self):
+        selected = full_loop_regression.select_full_loop_cases("all")
+        selected_ids = [case["id"] for case in selected]
+
+        self.assertEqual(selected_ids, [
+            "music_play_waving_through_window",
+            "ram_activity_monitor",
+            "calendar_today_schedule",
+            "magic_keyboard_yuan",
+            "gemma_model_plan",
+            "codex_default_plan",
+            "teams_music_assignment_honesty",
+            "email_sharpay_month",
+        ])
+        self.assertEqual(len(selected_ids), len(set(selected_ids)))
+        self.assertEqual(
+            [case["id"] for case in full_loop_regression.select_full_loop_cases("codex")],
+            ["codex_default_plan"],
+        )
+        self.assertEqual(full_loop_regression.select_full_loop_cases("unknown"), [])
+
     def test_full_loop_music_proof_accepts_expected_song(self):
         proof = full_loop_regression.verify_waving_playback({
             "playing": True,
@@ -649,6 +670,10 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("--case", full_loop_command)
         self.assertIn("all", full_loop_command)
         self.assertNotIn("--exercise-live-speech", full_loop_command)
+        self.assertGreaterEqual(
+            steps[1]["timeout_seconds"],
+            sum(case["latency_budget_seconds"] for case in full_loop_regression.select_full_loop_cases("all")),
+        )
 
     def test_pre_build_gate_can_exercise_live_speech_explicitly(self):
         steps = pre_build_gate.build_steps(
@@ -661,6 +686,23 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertEqual([step["id"] for step in steps], ["full_loop_regression", "report_refresh"])
         self.assertIn("--exercise-live-speech", steps[0]["command"])
+
+    def test_pre_build_gate_uses_step_specific_timeout_when_present(self):
+        calls = []
+
+        def fake_runner(command, timeout):
+            calls.append((command, timeout))
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        result = pre_build_gate.run_step(
+            {"id": "x", "label": "X", "command": ["echo", "x"], "timeout_seconds": 42.0},
+            timeout=1.0,
+            runner=fake_runner,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["timeout_seconds"], 42.0)
+        self.assertEqual(calls[0][1], 42.0)
 
     def test_pre_build_gate_rejects_non_loopback_base_url(self):
         with self.assertRaises(ValueError):
@@ -782,6 +824,31 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertEqual(captured_payloads[0]["suppress_audio_actions"], False)
         self.assertEqual(events[-1]["data"]["tool"], "localos.music_play")
+
+    def test_voice_loop_stream_stops_reading_after_final_event(self):
+        class EndlessAfterFinalResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                yield b"event: final\n"
+                yield b'data: {"tool": "outlook.visible_summary", "result": {"reply": "Done."}}\n'
+                yield b"\n"
+                raise AssertionError("stream_command_events read past the final SSE event")
+
+        with patch("scripts.voice_loop_qa.urllib.request.urlopen", return_value=EndlessAfterFinalResponse()):
+            events = voice_loop_qa.stream_command_events(
+                "http://127.0.0.1:8765",
+                "summarize all the emails from Ms. Sharpay in the past month",
+                timeout=1,
+            )
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event"], "final")
+        self.assertEqual(events[0]["data"]["tool"], "outlook.visible_summary")
 
     def test_cleanup_chrome_test_tabs_targets_only_localos_music_pages(self):
         self.assertTrue(cleanup_chrome_test_tabs.is_cleanup_target(
@@ -1864,6 +1931,35 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertNotIn("messages", summary)
         self.assertNotIn("Private subject", str(summary))
         self.assertNotIn("Private body", str(summary))
+
+    def test_voice_loop_qa_summarizes_commerce_result_for_full_loop_proof(self):
+        command_response = {
+            "tool": "commerce.price_convert",
+            "reply": "Magic Keyboard is about 672 yuan.",
+            "result": {
+                "tool": "commerce.price_convert",
+                "status": "converted",
+                "source": {"source_type": "official_product_page", "brand": "Apple", "label": "Magic Keyboard"},
+                "price": {"currency": "USD", "amount": 99.0, "formatted_price": "$99.00"},
+                "exchange_rate": {"target": "CNY", "rate": 6.78},
+                "converted": {"currency": "CNY", "amount": 671.0, "formatted": "671 yuan"},
+                "opened_browser": False,
+                "changed_browser_state": False,
+                "reply": "Magic Keyboard is $99.00, which is about 671 yuan.",
+            },
+        }
+
+        summary = voice_loop_qa.command_response_result_summary(command_response)
+        proof = full_loop_regression.commerce_proof_from_voice_report({
+            "result": {
+                "command_response_tool": "commerce.price_convert",
+                "command_response_result": summary,
+            }
+        })
+
+        self.assertEqual(summary["tool"], "commerce.price_convert")
+        self.assertEqual(proof["proof_source"], "voice_loop_command_response")
+        self.assertTrue(full_loop_regression.verify_magic_keyboard_yuan(proof)["passed"])
 
     def test_voice_loop_qa_tracks_live_speech_runtime_when_exercised(self):
         events = [
@@ -5042,6 +5138,38 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["music_app_bridge"]["startup"]["status"], "live")
         self.assertIn("in Music", result["reply"])
 
+    def test_music_app_bridge_play_rejects_wrong_current_track(self):
+        bridge_responses = iter([
+            {"ok": True, "app": "Music"},
+            {"ok": True, "song": {"id": "song-waving", "title": "Dear Evan Hansen | 2017 Tony Awards"}},
+            {
+                "ok": True,
+                "playing": True,
+                "nowPlaying": {
+                    "id": "song-wrong",
+                    "title": "闻人听书 - 虞兮叹",
+                    "artist": "相伴音乐 POP SONG",
+                    "fileName": "闻人听书 《虞兮叹》.mp3",
+                },
+            },
+        ])
+        with patch("jarvis.tools._music_app_bridge_request", side_effect=lambda *_args, **_kwargs: next(bridge_responses)), \
+             patch("jarvis.tools.time.sleep"):
+            result = jarvis_tools._music_app_bridge_play(
+                query="Waving Through A Window",
+                user_request="play Waving Through A Window",
+                from_your_pick=False,
+                started_at=time.monotonic(),
+            )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["status"], "music_app_not_playing")
+        self.assertEqual(result["played_by"], "none")
+        self.assertEqual(result["playback_confirmation"], "wrong_track_playing")
+        self.assertIn("different track", result["reply"])
+        self.assertNotIn("Playing Dear Evan Hansen", result["reply"])
+
     def test_music_app_bridge_disabled_when_localos_paths_are_patched(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             snapshot_path = Path(tmpdir) / "localos_music_snapshot.json"
@@ -7885,6 +8013,7 @@ class PlannerTests(unittest.TestCase):
                 "Chrome File Edit View History Bookmarks Profiles Tab Window Help Mon Jun 15 3:19:10 AM",
                 "can you make me something x Justin Bieber - Beauty And A x Ask Gemini",
                 "Teams and Channels | General | Microsoft Teams",
+                "(289) Hamilton - Full Musical",
                 "Lesson 2: The Geography of Greece Group Assignment",
                 "Assignments 7 WORLD HISTORY 世界历史 7H 2025...",
                 "Instructions:",
@@ -7910,6 +8039,7 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("Group Assignment", digest)
         self.assertIn("Instructions", digest)
         self.assertIn("Word document", digest)
+        self.assertIn("Hamilton", digest)
         self.assertNotIn("Justin Bieber", digest)
         self.assertNotIn("Mon Jun", digest)
         self.assertNotIn("WORLD HISTORY", digest)
@@ -11148,8 +11278,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.462}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-462}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.464}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-464}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('cleanup_numbered_app_bundles()', script)
         self.assertIn("find \"$OUTPUT_ROOT\" -maxdepth 1 -type d -name \"$APP_NAME-*.app\" -exec rm -rf {} +", script)

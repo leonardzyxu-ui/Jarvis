@@ -1250,6 +1250,19 @@ def command_response_result_summary(command_response: dict[str, Any]) -> dict[st
                 "contact_display_name": contact_lookup.get("display_name"),
             }
         )
+    elif tool == "commerce.price_convert":
+        summary.update(
+            {
+                "tool": result.get("tool"),
+                "source": result.get("source") if isinstance(result.get("source"), dict) else {},
+                "price": result.get("price") if isinstance(result.get("price"), dict) else {},
+                "exchange_rate": result.get("exchange_rate") if isinstance(result.get("exchange_rate"), dict) else {},
+                "converted": result.get("converted") if isinstance(result.get("converted"), dict) else {},
+                "opened_browser": bool(result.get("opened_browser")),
+                "changed_browser_state": bool(result.get("changed_browser_state")),
+                "reply": result.get("reply"),
+            }
+        )
     return summary
 
 
@@ -1725,11 +1738,12 @@ def stream_command_events(
     data_lines: list[str] = []
     started = time.monotonic()
 
-    def flush_event() -> None:
+    def flush_event() -> str | None:
         nonlocal event_name, data_lines
         if not data_lines:
             event_name = "message"
-            return
+            return None
+        current_event_name = event_name
         raw_data = "\n".join(data_lines)
         try:
             data: Any = json.loads(raw_data)
@@ -1744,13 +1758,16 @@ def stream_command_events(
         )
         event_name = "message"
         data_lines = []
+        return current_event_name
 
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             for raw_line in response:
                 line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
                 if not line:
-                    flush_event()
+                    flushed_event = flush_event()
+                    if flushed_event == "final":
+                        break
                     continue
                 if line.startswith("event:"):
                     event_name = line[6:].strip() or "message"

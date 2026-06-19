@@ -19,6 +19,7 @@ from scripts.render_overnight_status import normalize_base_url  # noqa: E402
 
 REPORT_DIR = PROJECT_ROOT / "runtime" / "pre_build_gate"
 DEFAULT_BASE_URL = "http://127.0.0.1:8765"
+FULL_LOOP_GATE_TIMEOUT_SECONDS = 360.0
 
 
 CommandRunner = Callable[[list[str], float], subprocess.CompletedProcess[str]]
@@ -156,6 +157,7 @@ def build_steps(
                 "id": "full_loop_regression",
                 "label": "Full-loop spoken-command regression",
                 "command": full_loop_command,
+                "timeout_seconds": FULL_LOOP_GATE_TIMEOUT_SECONDS,
             }
         )
     if not skip_cleanup:
@@ -182,14 +184,16 @@ def cleanup_chrome_step() -> dict[str, Any]:
 
 def run_step(step: dict[str, Any], *, timeout: float, runner: CommandRunner) -> dict[str, Any]:
     started = time.monotonic()
+    step_timeout = float(step.get("timeout_seconds") or timeout)
     try:
-        completed = runner(list(step["command"]), timeout)
+        completed = runner(list(step["command"]), step_timeout)
         return {
             "id": step["id"],
             "label": step["label"],
             "ok": completed.returncode == 0,
             "returncode": completed.returncode,
             "seconds": round(time.monotonic() - started, 3),
+            "timeout_seconds": step_timeout,
             "command": list(step["command"]),
             "stdout_tail": tail_text(completed.stdout),
             "stderr_tail": tail_text(completed.stderr),
@@ -201,9 +205,10 @@ def run_step(step: dict[str, Any], *, timeout: float, runner: CommandRunner) -> 
             "ok": False,
             "returncode": "timeout",
             "seconds": round(time.monotonic() - started, 3),
+            "timeout_seconds": step_timeout,
             "command": list(step["command"]),
             "stdout_tail": tail_text(error.stdout or ""),
-            "stderr_tail": tail_text(error.stderr or f"Timed out after {timeout}s"),
+            "stderr_tail": tail_text(error.stderr or f"Timed out after {step_timeout}s"),
         }
 
 

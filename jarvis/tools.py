@@ -3444,6 +3444,28 @@ def _music_app_bridge_song_phrase(song: dict[str, Any]) -> str:
     return title
 
 
+def _music_app_bridge_same_song(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_id = _localos_clean_text(left.get("id"), 120)
+    right_id = _localos_clean_text(right.get("id"), 120)
+    if left_id and right_id:
+        return left_id == right_id
+    left_identity = _normalize_music_match_text(
+        " ".join(
+            _localos_clean_text(left.get(key), 260)
+            for key in ("title", "artist", "fileName", "file_name", "relativePath", "relative_path", "path")
+            if _localos_clean_text(left.get(key), 260)
+        )
+    )
+    right_identity = _normalize_music_match_text(
+        " ".join(
+            _localos_clean_text(right.get(key), 260)
+            for key in ("title", "artist", "fileName", "file_name", "relativePath", "relative_path", "path")
+            if _localos_clean_text(right.get(key), 260)
+        )
+    )
+    return bool(left_identity and right_identity and left_identity == right_identity)
+
+
 def _music_app_bridge_play(
     *,
     query: str | None,
@@ -3492,16 +3514,33 @@ def _music_app_bridge_play(
         }
     time.sleep(0.9)
     playback = _music_app_bridge_request("GET", "/playback-state", timeout=2.0)
-    song = playback.get("nowPlaying") if isinstance(playback.get("nowPlaying"), dict) else play.get("song")
+    requested_song = play.get("song") if isinstance(play.get("song"), dict) else {}
+    playback_song = playback.get("nowPlaying") if isinstance(playback.get("nowPlaying"), dict) else {}
+    song = playback_song if playback_song else requested_song
     playing = playback.get("ok") is True and playback.get("playing") is True and isinstance(song, dict)
-    if not playing:
+    current_track_matches_request = bool(
+        playing
+        and (
+            from_your_pick
+            or not requested_song
+            or _music_app_bridge_same_song(requested_song, song)
+        )
+    )
+    if not playing or not current_track_matches_request:
         return {
             "status": "music_app_not_playing",
+            "played_by": "none",
+            "playback_confirmation": "wrong_track_playing" if playing else "music_app_not_playing",
             "music_app_bridge": {
                 "health": health,
                 "play": play,
                 "playback": playback,
             },
+            "reply": (
+                "Music started a different track than the one I requested, so I stopped instead of claiming success."
+                if playing and not current_track_matches_request
+                else "I tried Music, but it did not confirm playback."
+            ),
         }
     phrase = _music_app_bridge_song_phrase(song)
     return {
@@ -13779,11 +13818,12 @@ def visible_screen_text_summary(
     digest = "; ".join(digest_items)
     digest_sentence = digest.rstrip(" .")
     if assignment_items and requested_subject and not subject_match:
+        mismatch_item = _assignment_subject_mismatch_item(requested_subject, assignment_items) or assignment_items[0]
         reply = (
             f"I read the visible Teams screen, but it does not look like the {requested_subject} assignment. "
             f"I can see assignment-related text: {digest_sentence}."
         )
-        spoken_summary = f"I can see {assignment_items[0]}, but it does not look like the {requested_subject} assignment."
+        spoken_summary = f"I can see {mismatch_item}, but it does not look like the {requested_subject} assignment."
         return {
             **base,
             "status": "assignment_subject_mismatch",
@@ -13900,11 +13940,21 @@ def _assignment_items_match_requested_subject(subject: str, assignment_items: li
         return True
     combined = " ".join(str(item or "") for item in assignment_items).casefold()
     if subject == "Music":
+        if re.search(r"\b(?:geography|greece|greek|history|mathematics|math|science|english|chinese)\b", combined):
+            return False
         return any(
             re.search(rf"\b{re.escape(alias)}\b", combined)
             for alias in ("music", "musical", "song", "songs", "instrument", "instruments", "choir", "band")
         )
     return subject.casefold() in combined
+
+
+def _assignment_subject_mismatch_item(subject: str, assignment_items: list[str]) -> str:
+    if subject == "Music":
+        for item in assignment_items:
+            if re.search(r"\b(?:geography|greece|greek|history|mathematics|math|science|english|chinese)\b", str(item).casefold()):
+                return str(item)
+    return ""
 
 
 def _visible_assignment_digest_items(text: str, *, max_items: int = 6, max_chars: int = 190) -> list[str]:
