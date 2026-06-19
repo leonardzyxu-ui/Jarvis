@@ -336,15 +336,29 @@ Status legend:
    - Need clear permission language: Full Disk Access vs Accessibility vs
      Notifications.
 
-2. Open/unknown: "Check my calendar for my schedule today" needs repeated
-   end-to-end spoken proof on the live app.
+2. Fixed/proved: "Check my calendar for my schedule today" has live spoken
+   proof.
+   - 2026-06-19 proof update: official gate
+     `runtime/pre_build_gate/20260619-171659/summary.json` passed the
+     `calendar_today_schedule` full-loop case in 13.223s. The action proof used
+     the local Calendar SQLite cache, found 1 event, and reported
+     `changed_calendar=false`.
 
-3. Open/unknown: "Check Activity Monitor how much RAM my computer is using."
-   - Should use reliable system diagnostics and speak a concise result.
+3. Fixed/proved: "Check Activity Monitor how much RAM my computer is using."
+   uses reliable system diagnostics and speaks a concise result.
+   - 2026-06-19 proof update: official gate
+     `runtime/pre_build_gate/20260619-171659/summary.json` passed the
+     `ram_activity_monitor` full-loop case in 10.985s with normal memory
+     pressure and no app-opening requirement.
 
-4. Open/unknown: "Test the Gemma 3 4B model for me."
+4. Fixed/proved: "Test the Gemma 3 4B model for me."
    - Jarvis should understand this may be heavy and prefer offloading to the
      MacBook Air via SSH/Tailscale before using Leo's 16 GB machine.
+   - 2026-06-19 proof update: official gate
+     `runtime/pre_build_gate/20260619-171659/summary.json` passed the
+     `gemma_model_plan` full-loop case in 27.462s. The action proof preserved
+     `Gemma 3 4B`, did not run a model locally, changed no system state, and
+     selected `ask_before_local` because the MacBook Air was unreachable.
 
 5. Partially fixed/risky: Accessibility permission is required for computer
    control, but Jarvis must explain exactly why and what it enables.
