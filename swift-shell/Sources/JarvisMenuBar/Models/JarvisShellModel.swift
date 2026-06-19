@@ -2857,7 +2857,9 @@ final class JarvisShellModel: ObservableObject {
         state: String,
         tool: String
     ) -> [String: Any] {
-        [
+        let sanitizedFinalSpeech = speechExportDiagnostics(finalSpeech)
+        let speechLeakFindings = internalSpeechLeakFindings(in: speechTextPreview(from: finalSpeech))
+        return [
             "schema": "jarvis.turn_trace.v1",
             "command_preview": redactChatExportText(String(command.prefix(240))),
             "total_elapsed_seconds": max(0, Date().timeIntervalSince(startedAt)),
@@ -2866,8 +2868,10 @@ final class JarvisShellModel: ObservableObject {
             "visible_status_lines": visibleStatusLines.map(redactChatExportText),
             "final_visible_text": redactChatExportText(finalVisibleText),
             "final_answer_visible": !finalVisibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            "final_speech": finalSpeech,
-            "speech_alignment": speechAlignmentDiagnostics(finalVisibleText: finalVisibleText, finalSpeech: finalSpeech),
+            "final_speech": sanitizedFinalSpeech,
+            "speech_alignment": speechAlignmentDiagnostics(finalVisibleText: finalVisibleText, finalSpeech: sanitizedFinalSpeech),
+            "speech_output_safe_for_user": speechLeakFindings.isEmpty,
+            "speech_leak_findings": speechLeakFindings,
             "route_source": jsonOrNull(routeSource),
             "model_backend": jsonOrNull(modelBackend),
             "model_name": jsonOrNull(modelName),
@@ -2941,6 +2945,26 @@ final class JarvisShellModel: ObservableObject {
             ?? payload["text"] as? String
             ?? payload["text_preview"] as? String
             ?? ""
+    }
+
+    private static func speechExportDiagnostics(_ finalSpeech: Any) -> Any {
+        redactedJSONValue(finalSpeech)
+    }
+
+    static func testTurnTraceSpeechExportDiagnostics(finalSpeech: [String: Any]) -> [String: Any] {
+        turnTrace(
+            command: "test",
+            startedAt: Date(timeIntervalSince1970: 0),
+            events: [],
+            visibleStatusLines: [],
+            finalVisibleText: "Checking your email now.",
+            finalSpeech: finalSpeech,
+            routeSource: "test",
+            modelBackend: "test",
+            modelName: "test",
+            state: "Done",
+            tool: "test.tool"
+        )
     }
 
     private static func speechStatus(from finalSpeech: Any) -> String {
@@ -3199,11 +3223,53 @@ final class JarvisShellModel: ObservableObject {
             pattern: #"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"#,
             replacement: "[SESSION_ID_HIDDEN]"
         )
+        redacted = regexReplace(
+            redacted,
+            pattern: #"https?://[^\s<>)"']+"#,
+            replacement: "[URL_HIDDEN]"
+        )
+        redacted = regexReplace(
+            redacted,
+            pattern: #"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"#,
+            replacement: "[EMAIL_HIDDEN]"
+        )
+        redacted = regexReplace(
+            redacted,
+            pattern: #"\\[A-Za-z_][A-Za-z0-9_.]*\([^)]*\)"#,
+            replacement: "[INTERNAL_TOOL_CALL_HIDDEN]"
+        )
+        redacted = regexReplace(
+            redacted,
+            pattern: #""(selected_tool|internal_tool_id)"\s*:\s*"[^"]*""#,
+            replacement: #""$1":"[INTERNAL_TOOL_ID_HIDDEN]""#
+        )
         let trimmed = redacted.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.range(of: #"^\d{4,12}$"#, options: .regularExpression) != nil || textLooksLikeCodeContext(trimmed) {
             redacted = regexReplace(redacted, pattern: #"\b\d{4,12}\b"#, replacement: "[CODE_HIDDEN]")
         }
         return redacted
+    }
+
+    private static func internalSpeechLeakFindings(in text: String) -> [[String: String]] {
+        let lower = text.lowercased()
+        var findings: [[String: String]] = []
+        if text.range(of: #"\\[A-Za-z_][A-Za-z0-9_.]*\("#, options: .regularExpression) != nil {
+            findings.append(["id": "hidden_tool_call", "detail": "Speech text contains a backslash-style internal tool call."])
+        }
+        let jsonToolKeys = ["\"selected_tool\"", "\"internal_tool_id\"", "\"tool\""]
+        if jsonToolKeys.contains(where: { lower.contains($0) }) {
+            findings.append(["id": "json_tool_key", "detail": "Speech text contains JSON-style internal tool metadata."])
+        }
+        let statusFragments = [
+            "audit verification",
+            "worker already online",
+            "app perms",
+            "codex activity",
+        ]
+        if statusFragments.contains(where: { lower.contains($0) }) {
+            findings.append(["id": "internal_status_blob", "detail": "Speech text appears to include Jarvis diagnostic status text."])
+        }
+        return findings
     }
 
     private static func textLooksLikeCodeContext(_ text: String) -> Bool {

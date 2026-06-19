@@ -185,6 +185,28 @@ enum JarvisMenuBarSelfTest {
         guard fullSpokenAlignment["preview_matches_visible_prefix"] as? Bool == true else {
             throw SelfTestError.failed("Full spoken text should override a short debug preview for speech alignment.")
         }
+        let leakySpeechExport = JarvisShellModel.testTurnTraceSpeechExportDiagnostics(
+            finalSpeech: [
+                "status": "spoken",
+                "spoken_text": #"Yes sir. \Email(1, 1, 1, false) {"selected_tool":"outlook.visible_summary"} https://example.com/private"#,
+            ]
+        )
+        guard leakySpeechExport["speech_output_safe_for_user"] as? Bool == false,
+              let findings = leakySpeechExport["speech_leak_findings"] as? [[String: String]],
+              findings.contains(where: { $0["id"] == "hidden_tool_call" }) else {
+            throw SelfTestError.failed("Copied chat JSON should flag internal tool-call speech leaks.")
+        }
+        if let finalSpeech = leakySpeechExport["final_speech"] as? [String: Any],
+           let spokenText = finalSpeech["spoken_text"] as? String {
+            guard !spokenText.contains("\\Email("),
+                  !spokenText.contains("https://example.com/private"),
+                  spokenText.contains("[INTERNAL_TOOL_CALL_HIDDEN]"),
+                  spokenText.contains("[URL_HIDDEN]") else {
+                throw SelfTestError.failed("Copied chat JSON should redact internal spoken debug strings.")
+            }
+        } else {
+            throw SelfTestError.failed("Copied chat JSON speech diagnostics should remain inspectable.")
+        }
         guard !JarvisShellModel.testShouldStopSpeechForBargeIn(
             transcript: "Hello",
             spokenText: "Hello, sir. What can I help with today?"
