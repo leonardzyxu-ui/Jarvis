@@ -10829,6 +10829,7 @@ def model_test_plan(model_name: str | None = None, *, prompt: str | None = None)
     if extracted_model and _model_name_handles_match(clean_model, extracted_model):
         clean_model = extracted_model
     heavy = _model_is_heavy_for_this_mac(clean_model)
+    offline_fallback = _offline_model_fallback_policy(clean_model, heavy=heavy)
     remote = remote_worker_status(probe=True)
     remote_available = remote.get("status") == "available"
     if not clean_model:
@@ -10858,6 +10859,7 @@ def model_test_plan(model_name: str | None = None, *, prompt: str | None = None)
         "heavy_for_this_mac": heavy,
         "this_mac_ram_gb": 16,
         "preferred_lane": lane,
+        "offline_fallback": offline_fallback,
         "remote_worker": {
             "status": remote.get("status"),
             "target": remote.get("target"),
@@ -10870,11 +10872,15 @@ def model_test_plan(model_name: str | None = None, *, prompt: str | None = None)
                 else None
             ),
         },
-        "local_guardrail": "Prefer the MacBook Air for model tests. If the remote helper is unavailable, ask before loading any named model on Leo's 16 GB Mac.",
+        "local_guardrail": (
+            "Prefer cloud or the MacBook Air for model tests. If offline and the remote helper is unavailable, "
+            "only consider lightweight local fallback candidates and ask before loading any named model on Leo's 16 GB Mac."
+        ),
         "next_steps": [
             "Check whether the model exists on the MacBook Air.",
             "Run a short remote prompt benchmark there if available.",
             "Report latency, correctness, and resource risk back to Jarvis.",
+            "If offline, prefer the safe lightweight local fallback candidate and ask before any local run.",
             "Ask Leo before falling back to this Mac for a heavy model.",
         ],
         "reply": reply,
@@ -10886,6 +10892,46 @@ def _clean_model_name(value: Any) -> str:
     text = re.sub(r"(?i)\b(?:test|try|run|model|for me|please|jarvis)\b", " ", text)
     text = re.sub(r"\s+", " ", text).strip(" .,:;\"'-")[:120]
     return _canonical_model_name_casing(text)
+
+
+def _offline_model_fallback_policy(model_name: str, *, heavy: bool) -> dict[str, Any]:
+    """Return a plan-only offline fallback policy that does not inspect or load local models."""
+    requested = _clean_model_name(model_name)
+    lower = requested.casefold()
+    recommended = "gemma3n:e4b"
+    reason = "balanced local fallback candidate with lower memory pressure than large OSS or DeepSeek-class models"
+    if "qwen" in lower:
+        recommended = "qwen3:0.6b"
+        reason = "fastest tiny local fallback, useful for simple conversation but not the smarter middle lane"
+    elif "gemma" in lower and ("e4b" in lower or "3n" in lower):
+        recommended = "gemma3n:e4b"
+        reason = "requested model already matches the lightweight audio-capable fallback lane"
+    blocked = []
+    if heavy:
+        blocked.append({
+            "model": requested or "requested model",
+            "reason": "too heavy to auto-run on Leo's 16 GB Mac",
+        })
+    blocked.extend([
+        {"model": "gpt-oss:20b", "reason": "local heavy model; Leo already saw memory pressure and swap risk"},
+        {"model": "deepseek-r1:14b", "reason": "too RAM/GPU heavy and slow for this Mac"},
+    ])
+    return {
+        "mode": "plan_only",
+        "cloud_first": True,
+        "remote_first": True,
+        "local_auto_run_allowed": False,
+        "recommended_local_candidate": recommended,
+        "recommended_reason": reason,
+        "requires_user_confirmation_before_local_run": True,
+        "max_local_class": "light_or_medium_only",
+        "blocked_local_candidates": blocked,
+        "notes": [
+            "Do not download, load, or benchmark local models from this plan.",
+            "If internet is unavailable, ask before running even the recommended lightweight local candidate.",
+            "Never auto-run heavy local models on the 16 GB Mac.",
+        ],
+    }
 
 
 def _model_name_handles_match(left: str, right: str) -> bool:

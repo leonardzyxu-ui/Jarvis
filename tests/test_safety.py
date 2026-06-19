@@ -10769,6 +10769,10 @@ Pages occupied by compressor:             10.
         self.assertEqual(result["preferred_lane"], "remote_macbook_air")
         self.assertTrue(result["heavy_for_this_mac"])
         self.assertFalse(result["ran_model"])
+        self.assertEqual(result["offline_fallback"]["mode"], "plan_only")
+        self.assertFalse(result["offline_fallback"]["local_auto_run_allowed"])
+        self.assertTrue(result["offline_fallback"]["requires_user_confirmation_before_local_run"])
+        self.assertIn("gpt-oss:20b", {item["model"] for item in result["offline_fallback"]["blocked_local_candidates"]})
         remote_mock.assert_called_once_with(probe=True)
 
     def test_model_test_plan_asks_before_local_when_remote_unavailable(self):
@@ -10788,11 +10792,30 @@ Pages occupied by compressor:             10.
         self.assertFalse(result["ran_model"])
         self.assertIn("MacBook Air", result["reply"])
         self.assertIn("ask before running", result["reply"])
+        self.assertEqual(result["offline_fallback"]["recommended_local_candidate"], "gemma3n:e4b")
+        self.assertTrue(result["offline_fallback"]["cloud_first"])
+        self.assertTrue(result["offline_fallback"]["remote_first"])
+        self.assertFalse(result["offline_fallback"]["local_auto_run_allowed"])
         self.assertEqual(repaired["model"], "Gemma 3 4B")
         self.assertIn("Gemma 3 4B", repaired["reply"])
         self.assertNotIn("Gemma 3.4B", repaired["reply"])
         self.assertEqual(canonical["model"], "Gemma 3 4B")
         self.assertEqual(hyphenated["model"], "Gemma 3 4B")
+
+    def test_model_test_plan_qwen_offline_fallback_is_tiny_not_middle_lane(self):
+        remote = {
+            "status": "unavailable",
+            "target": "hongyi@100.72.212.85",
+            "duration_human": "5.0s",
+        }
+        with patch("jarvis.tools.remote_worker_status", return_value=remote):
+            result = model_test_plan("Qwen 3 0.6B")
+
+        self.assertEqual(result["preferred_lane"], "ask_before_local")
+        self.assertEqual(result["offline_fallback"]["recommended_local_candidate"], "qwen3:0.6b")
+        self.assertIn("fastest tiny local fallback", result["offline_fallback"]["recommended_reason"])
+        self.assertFalse(result["offline_fallback"]["local_auto_run_allowed"])
+        self.assertIn("Do not download, load, or benchmark local models", result["offline_fallback"]["notes"][0])
 
     def test_model_test_plan_names_stopped_tailscale_before_local_fallback(self):
         remote = {

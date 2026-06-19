@@ -149,6 +149,12 @@ Status legend:
 6. Open/unknown: offline fallback model needs selection/proof.
    - Desired: not too stupid, not too slow, not RAM/GPU heavy. Gemma 3n/e4b or
      similar was investigated but not settled as a finished product lane.
+   - 2026-06-19 proof update: `models.test_plan` now returns a plan-only
+     offline fallback policy that stays cloud/remote-first, recommends
+     `gemma3n:e4b` as the default lightweight local candidate, allows Qwen 0.6B
+     only as a tiny simple fallback, blocks heavy local candidates such as
+     `gpt-oss:20b`/DeepSeek-class models, and requires user confirmation before
+     any local run.
 
 7. Open/unknown: GPT OSS 120B low-thinking plus browser/tool access is still a
    future capability, not a proved product.
