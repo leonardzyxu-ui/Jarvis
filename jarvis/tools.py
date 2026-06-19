@@ -9632,11 +9632,23 @@ def permissions_status(bundle_path: Path | None = None) -> dict[str, Any]:
         },
         {
             "id": "accessibility",
-            "purpose": "Future app clicking, typing, and UI automation.",
+            "purpose": "Controlled clicking, typing, and app navigation for future computer-control workflows; not required for chat, email summaries, calendar reads, or normal status checks.",
             "declared_in_bundle": False,
             "helper_available": bool(_find_executable("osascript")),
             "current_grant": "unknown_not_prompted",
             "prompted_now": False,
+            "optional_until_feature_enabled": True,
+            "enables": ["clicking", "typing", "app_navigation"],
+            "does_not_block": ["chat", "email_summaries", "calendar_reads", "status_checks"],
+        },
+        {
+            "id": "notifications",
+            "purpose": "Optional timers, background alerts, and user-visible reminders; not required for normal Jarvis chat or tool execution.",
+            "declared_in_bundle": False,
+            "current_grant": "not_requested_by_backend",
+            "prompted_now": False,
+            "optional_until_feature_enabled": True,
+            "does_not_block": ["chat", "email_summaries", "calendar_reads", "status_checks"],
         },
         {
             "id": "app_launch",
@@ -9678,6 +9690,7 @@ def permissions_status(bundle_path: Path | None = None) -> dict[str, Any]:
         "next_steps": [
             "Only after Leo allows foreground QA, launch Jarvis and verify macOS permission prompts behave normally.",
             "Do not request microphone, speech-recognition, screen-recording, or accessibility permission until the feature that needs it is ready.",
+            "Treat Notifications as optional unless timers or background alerts need macOS notifications.",
             "Keep normal Jarvis responses readable even when audio or microphone permissions are unavailable.",
         ],
         "reply": reply,

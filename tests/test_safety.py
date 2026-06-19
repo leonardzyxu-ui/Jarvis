@@ -12768,6 +12768,13 @@ Pages occupied by compressor:             10.
         self.assertEqual(surfaces["microphone"]["current_grant"], "unknown_not_prompted")
         self.assertTrue(surfaces["screen_recording"]["helper_available"])
         self.assertTrue(surfaces["accessibility"]["helper_available"])
+        self.assertTrue(surfaces["accessibility"]["optional_until_feature_enabled"])
+        self.assertIn("clicking", surfaces["accessibility"]["enables"])
+        self.assertIn("email_summaries", surfaces["accessibility"]["does_not_block"])
+        self.assertEqual(surfaces["notifications"]["current_grant"], "not_requested_by_backend")
+        self.assertTrue(surfaces["notifications"]["optional_until_feature_enabled"])
+        self.assertIn("background alerts", surfaces["notifications"]["purpose"])
+        self.assertIn("Treat Notifications as optional", " ".join(result["next_steps"]))
 
     def test_overnight_work_status_reports_paths_without_foreground_activity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -15447,6 +15454,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Calendar summaries need Full Disk Access for Jarvis.app", service_source)
         self.assertIn('id: "chrome-automation"', service_source)
         self.assertIn('label: "Chrome Automation"', service_source)
+        self.assertIn("Only needed for controlled clicking, typing, and app navigation", service_source)
+        self.assertIn("chat, email summaries, calendar, and normal status checks do not need it", service_source)
         self.assertIn("import JarvisMacNative", service_source)
         self.assertIn("JarvisNativeBrowserPermission.chromeAutomationStatus()", service_source)
         self.assertIn("static func chromeAutomationReadiness()", service_source)

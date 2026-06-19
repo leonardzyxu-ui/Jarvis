@@ -469,6 +469,10 @@ Status legend:
 
 5. Partially fixed/risky: Accessibility permission is required for computer
    control, but Jarvis must explain exactly why and what it enables.
+   - 2026-06-19 proof update: native and backend permission surfaces now explain
+     that Accessibility is only for controlled clicking, typing, and app
+     navigation; normal chat, email summaries, calendar reads, and status checks
+     do not need it. Focused permissions tests and SwiftPM build passed.
 
 6. Fixed/proved: Notifications permission has not been requested by the app but
    is mentioned in readiness. It should be optional unless timers/background

@@ -195,7 +195,7 @@ enum JarvisPermissionService {
             id: "accessibility",
             label: "Accessibility",
             state: ready ? "Ready" : "Not granted",
-            detail: ready ? "Desktop control can be enabled later." : "Computer-control tools need Accessibility permission.",
+            detail: ready ? "Jarvis can use controlled clicking, typing, and app navigation when those tools are enabled." : "Only needed for controlled clicking, typing, and app navigation; chat, email summaries, calendar, and normal status checks do not need it.",
             isReady: ready
         )
     }
