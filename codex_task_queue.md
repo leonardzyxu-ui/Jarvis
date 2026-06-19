@@ -10,6 +10,7 @@
 - [x] Add an explicit pre-build speech proof contract so quiet speech-payload audits cannot be mistaken for live spoken playback tests.
 - [x] Run the live Music full-loop case and tighten hidden `afplay` detection so proof reports ignore Piper worker arguments but still fail real hidden playback.
 - [x] Run the all-target-prompt full-loop suite and record the `8/8` pass.
+- [x] Run the updated pre-build gate wrapper and record the `3/3` pass with explicit `suppressed_for_probe` speech contract.
 - [ ] Pick the next risky bug from `JARVIS_BUG_BACKLOG.md`, implement a focused fix, add/update tests, and commit only after meaningful passing proof.
 
 ## Completed This Turn
@@ -25,3 +26,4 @@
 - [x] Focused pre-build gate tests passed for `suppressed_for_probe`, `live_playback_exercised`, and `--require-live-speech` fail-closed behavior.
 - [x] Live Music full-loop case passed again in `11.942s` with the expected Dear Evan Hansen track, verified stopped, and both `afplay_processes_after` and `new_afplay_processes_after` empty.
 - [x] Full target prompt regression passed `8/8` in `130.873s` with zero warnings and all latency budgets passing.
+- [x] Pre-build gate wrapper passed `3/3` in `128.093s`, including full-loop regression, Chrome cleanup, and report refresh.

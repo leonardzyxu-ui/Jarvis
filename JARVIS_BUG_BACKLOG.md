@@ -76,6 +76,11 @@ Status legend:
      passing. Covered Music playback, RAM/Activity Monitor, Calendar, Magic
      Keyboard yuan conversion, Gemma model plan, Codex Default routing, Teams
      assignment honesty, and Ms. Sharpay email summary.
+   - 2026-06-19 proof update: `scripts/pre_build_gate.py --skip-python-tests`
+     passed `3/3` in 128.093s, including full-loop regression, Chrome cleanup,
+     and report refresh. The summary explicitly records
+     `speech_mode: suppressed_for_probe` and no physical speaker/microphone
+     capture.
 
 5. Partially fixed/risky: Jarvis must use model/tool choice, not fake keyword
    hacks, except where Leo explicitly allows a primitive tool.
