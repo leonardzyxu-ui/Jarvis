@@ -202,9 +202,18 @@ Status legend:
     - Decision: do not add a slow punctuation layer; tell Llama/GPT OSS that
       incoming text may be dictation without punctuation.
 
-14. Open/unknown: detect when Leo starts speaking and stop current Jarvis speech.
+14. Partially fixed/proved: detect when Leo starts speaking and stop current
+    Jarvis speech.
     - Not permanent Shut Up; just interrupt current reading because an answer is
       expected.
+    - 2026-06-19 proof update: wake-listener transcript snapshots feed
+      `handleSpeechBargeInIfNeeded`, which stops active speech through
+      `client.stopSpeaking()` when the transcript looks like Leo intentionally
+      interrupting. Self-tests cover the positive interruption case and false
+      positives from tiny fragments, Jarvis speech echo, and captured wake
+      command echo.
+    - Remaining risk: this depends on Hey Jarvis/wake listening being active and
+      macOS speech recognition hearing the interruption.
 
 15. Open/unknown: Gemma/Qwen/audio-native model direct speech understanding was
     investigated but not converted into a final Jarvis STT path.

@@ -13318,6 +13318,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("browserStatusPinned = false", model_source)
         self.assertIn("if let url, !browserStatusPinned {", model_source)
         self.assertIn("guard let self, !self.browserStatusPinned else {", model_source)
+
         self.assertIn('browserStatusText = "Chrome blocked by sign-in gate"', model_source)
         self.assertIn('browserStatusText = "Chrome needs Automation permission"', model_source)
         self.assertIn('browserStatusText = "Read current Chrome page"', model_source)
@@ -13359,6 +13360,38 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("if browser.isLoading", view_source)
         self.assertIn("ProgressView()", view_source)
         self.assertIn('Text("Loading")', view_source)
+
+    def test_swift_wake_transcripts_drive_speech_barge_in_stop(self):
+        model_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Models"
+            / "JarvisShellModel.swift"
+        ).read_text(encoding="utf-8")
+        self_test_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisMenuBarSelfTest.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("handleSpeechBargeInIfNeeded(transcript: snapshot.transcript)", model_source)
+        self.assertIn("latestSpeechLikelyActiveUntil", model_source)
+        self.assertIn("shouldIgnoreBargeInDuringGrace", model_source)
+        self.assertIn("shouldStopSpeechForBargeIn", model_source)
+        self.assertIn('"speech_barge_in"', model_source)
+        self.assertIn("Stopped current Jarvis speech because Leo started speaking.", model_source)
+        self.assertIn("client.stopSpeaking()", model_source)
+        self.assertIn("clearSpeechPlaybackWindow()", model_source)
+        self.assertIn('transcript: "wait stop for a second"', self_test_source)
+        self.assertIn('spokenText: "Here is the summary of your email."', self_test_source)
+        self.assertIn("A tiny listener fragment must not stop Jarvis speech.", self_test_source)
+        self.assertIn("Recognized Jarvis echo must not stop Jarvis speech.", self_test_source)
+        self.assertIn("Captured wake command echo must not stop Jarvis speech.", self_test_source)
 
     def test_swift_smoke_tests_cover_current_loop_regressions(self):
         model_source = (
