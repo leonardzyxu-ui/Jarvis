@@ -186,6 +186,7 @@ from scripts.morning_status import (
     pre_build_gate_teams_blocker,
     pre_build_gate_summary,
     print_report_surfaces,
+    print_latest_pre_build_gate,
     print_latest_context_smoke,
     print_physical_capture_contract,
     print_latest_wake_threshold,
@@ -24254,7 +24255,62 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(summary["status"], "passed")
         self.assertEqual(summary["passed"], 4)
         self.assertEqual(summary["total"], 4)
+        self.assertEqual(summary["fatal_failures"], 0)
+        self.assertEqual(summary["warnings"], 0)
+        self.assertEqual(summary["detail"], "")
         self.assertIn("stop_speaking_probe", summary["step_ids"])
+
+    def test_morning_status_pre_build_gate_summary_reports_fatal_and_warning_counts(self):
+        summary = pre_build_gate_summary(
+            {
+                "ok": False,
+                "status": "failed",
+                "passed": 0,
+                "failed": 1,
+                "warnings": 1,
+                "total": 2,
+                "results": [
+                    {"id": "full_loop_regression", "ok": False, "fatal": True},
+                    {"id": "cleanup_chrome_test_tabs", "ok": False, "fatal": False},
+                ],
+            }
+        )
+
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["fatal_failures"], 1)
+        self.assertEqual(summary["warnings"], 1)
+        self.assertEqual(summary["detail"], "(fatal 1, warnings 1) ")
+
+    def test_morning_status_prints_pre_build_gate_warning_counts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            gate_dir = root / "runtime" / "pre_build_gate"
+            gate_dir.mkdir(parents=True)
+            latest = gate_dir / "latest.json"
+            latest.write_text(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "status": "failed",
+                        "passed": 0,
+                        "failed": 1,
+                        "warnings": 1,
+                        "total": 2,
+                        "report_path": str(gate_dir / "summary.json"),
+                        "results": [
+                            {"id": "full_loop_regression", "ok": False, "fatal": True},
+                            {"id": "cleanup_chrome_test_tabs", "ok": False, "fatal": False},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("scripts.morning_status.PROJECT_ROOT", root), patch("builtins.print") as print_mock:
+                print_latest_pre_build_gate()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn("Latest pre-build gate: failed 0/2 (fatal 1, warnings 1)", printed)
+        self.assertIn("steps full_loop_regression, cleanup_chrome_test_tabs", printed)
 
     def test_morning_status_pre_build_gate_teams_blocker_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:

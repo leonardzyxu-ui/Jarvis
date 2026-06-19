@@ -246,7 +246,7 @@ def print_latest_pre_build_gate() -> None:
     step_suffix = f", steps {', '.join(summary['step_ids'])}" if summary["step_ids"] else ""
     print(
         f"Latest pre-build gate: {summary['status']} {summary['passed']}/{summary['total']} "
-        f"({report_display}, age {age}{step_suffix})"
+        f"{summary['detail']}({report_display}, age {age}{step_suffix})"
     )
     teams_blocker = pre_build_gate_teams_blocker(data)
     if teams_blocker:
@@ -269,13 +269,27 @@ def pre_build_gate_summary(data: dict[str, Any]) -> dict[str, Any]:
             passed += 1
     total = int(data.get("total") or len(results))
     reported_passed = int(data.get("passed") or passed)
+    fatal_failures = int(data.get("failed") or 0)
+    warnings = int(data.get("warnings") or 0)
+    if not fatal_failures and not warnings:
+        fatal_failures = sum(1 for item in results if isinstance(item, dict) and not item.get("ok") and item.get("fatal", True))
+        warnings = sum(1 for item in results if isinstance(item, dict) and not item.get("ok") and not item.get("fatal", True))
     status = "passed" if data.get("ok") else "needs attention"
     if data.get("status"):
         status = str(data.get("status"))
+    detail_parts = []
+    if fatal_failures:
+        detail_parts.append(f"fatal {fatal_failures}")
+    if warnings:
+        detail_parts.append(f"warnings {warnings}")
+    detail = f"({', '.join(detail_parts)}) " if detail_parts else ""
     return {
         "status": status,
         "passed": reported_passed,
         "total": total,
+        "fatal_failures": fatal_failures,
+        "warnings": warnings,
+        "detail": detail,
         "step_ids": step_ids,
     }
 
