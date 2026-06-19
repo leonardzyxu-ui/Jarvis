@@ -37,6 +37,11 @@ Status legend:
      app bridge as the proven playback owner and fails if cleanup does not verify
      playback stopped. Broader product risk remains for ad-hoc music commands and
      legacy LocalOS/Chrome fallback paths.
+   - 2026-06-19 proof update: `localos.music_play` now exposes
+     `preferred_playback_owner`, `native_music_bridge_enabled`, and
+     `legacy_localos_fallback_allowed`; when the native bridge is active and does
+     not confirm playback, the result is `played_by=none` and explicitly refuses
+     legacy LocalOS/Chrome/hidden-player fallback.
 
 3. Partially fixed/risky: Jarvis speech/mute can become unsafe or annoying.
    - Leo reported Jarvis speaking when it should not, being impossible to mute,

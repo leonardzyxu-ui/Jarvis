@@ -5075,6 +5075,9 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["status"], "queued")
         self.assertFalse(result["jarvis_played_audio"])
         self.assertEqual(result["played_by"], "localos")
+        self.assertEqual(result["preferred_playback_owner"], "localos")
+        self.assertFalse(result["native_music_bridge_enabled"])
+        self.assertTrue(result["legacy_localos_fallback_allowed"])
         self.assertEqual(pending["status"], "available")
         self.assertEqual(pending["command"]["action"], "play_track")
         self.assertEqual(pending["command"]["track"]["id"], "track-2")
@@ -5126,6 +5129,9 @@ class PlannerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "not_queued")
         self.assertEqual(result["played_by"], "none")
+        self.assertEqual(result["preferred_playback_owner"], "music_app")
+        self.assertTrue(result["native_music_bridge_enabled"])
+        self.assertFalse(result["legacy_localos_fallback_allowed"])
         self.assertEqual(result["control_lane"], "music_app_bridge")
         self.assertEqual(result["playback_confirmation"], "music_app_not_playing")
         self.assertIn("did not confirm playback", result["reply"])
@@ -5284,6 +5290,9 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["status"], "stopped")
         self.assertTrue(result["music_app_stop"]["ok"])
         self.assertTrue(result["interrupted_previous"])
+        self.assertTrue(result["emergency_music_brake"])
+        self.assertIn("native_music_app_bridge", result["stop_surfaces"])
+        self.assertIn("tracked_jarvis_afplay", result["stop_surfaces"])
         bridge_mock.assert_called_once_with("POST", "/stop", timeout=2.0)
 
     def test_localos_music_search_merges_file_fallback_when_snapshot_library_is_empty(self):

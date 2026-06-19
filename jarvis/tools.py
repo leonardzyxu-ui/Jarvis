@@ -696,11 +696,11 @@ def tool_registry() -> dict[str, Any]:
             },
             {
                 "id": "localos.music_play",
-                "label": "Play Local OS Music",
+                "label": "Play Music",
                 "mode": "safe_execute",
                 "risk": "local_audio_playback",
                 "available": LOCALOS_MUSIC_SNAPSHOT_PATH.exists(),
-                "description": "Queues a selected track in the Local OS Music Player. Music playback stays in LocalOS; Jarvis does not start a separate hidden player.",
+                "description": "Plays a selected track through the native Music app bridge when available. Legacy LocalOS/Chrome control is only a fallback when the Music bridge is explicitly unavailable; Jarvis does not start hidden players.",
             },
             {
                 "id": "localos.music_stop",
@@ -3940,6 +3940,13 @@ def localos_music_stop() -> dict[str, Any]:
         "tool": "localos.music_stop",
         "status": status,
         "executed": True,
+        "emergency_music_brake": True,
+        "stop_surfaces": [
+            "native_music_app_bridge",
+            "tracked_jarvis_afplay",
+            "browser_media_elements",
+            "localos_polling_bridge",
+        ],
         "started_audio": False,
         "played_audio": False,
         "recorded_audio": False,
@@ -3974,6 +3981,7 @@ def localos_music_play(
     """Queue a Local OS Music Player command. LocalOS performs the audio playback."""
     started_at = time.monotonic()
     parsed_limit = _bounded_localos_music_limit(limit)
+    native_bridge_enabled = _music_app_bridge_enabled_for_live_path()
     base = {
         "tool": "localos.music_play",
         "executed": True,
@@ -3982,6 +3990,9 @@ def localos_music_play(
         "control_path": str(LOCALOS_MUSIC_CONTROL_PATH),
         "localos_root": str(LOCALOS_ROOT),
         "played_by": "localos",
+        "preferred_playback_owner": "music_app" if native_bridge_enabled else "localos",
+        "native_music_bridge_enabled": native_bridge_enabled,
+        "legacy_localos_fallback_allowed": not native_bridge_enabled,
         "jarvis_played_audio": False,
         "read_private_audio_or_artwork": False,
     }
