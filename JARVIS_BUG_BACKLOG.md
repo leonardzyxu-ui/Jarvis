@@ -289,6 +289,10 @@ Status legend:
      status rows, and debug-only replies fail quiet as `empty_after_sanitization`.
      Voice-loop QA now flags those internal status phrases if they appear in
      spoken transcripts.
+   - 2026-06-20 proof update: unknown Chinese text in a spoken reply is stripped
+     without swallowing the following English sentence, so macOS `say` receives
+     ASCII speech and should not stop early after Chinese characters. Full
+     `tests.test_safety` passed `957/957` after the regression was added.
 
 6. Fixed/proved at least once: "Shut Up" did not actually mute, and later
    "Keep Blabbering" did not restore speech.
@@ -515,6 +519,13 @@ Status legend:
      `runtime/full_loop_regression/20260620-012250/summary.json`; the Music app
      bridge confirmed playback, cleanup verified stopped playback, and no new
      hidden `afplay` process survived.
+   - 2026-06-20 proof update: the Music full-loop case now snapshots app-level
+     media surfaces before and after cleanup without reading page text or
+     pausing audio. It fails if a new surface such as Google Chrome, Music, or
+     QuickTime remains after cleanup. Live proof passed at
+     `runtime/full_loop_regression/20260620-042907/summary.json` with
+     `new_media_surfaces_after: []`, `new_afplay_processes_after: []`, and
+     verified stopped.
    - 2026-06-19 proof update: after tightening hidden `afplay` detection, a
      second live Music proof at
      `runtime/full_loop_regression/20260619-222618/summary.json` passed in
