@@ -70,6 +70,7 @@
 - [x] Refreshed the official gate again after the cleanup CLI patch; pre-build gate passed `5/5` at `runtime/pre_build_gate/20260620-043937/summary.json`.
 - [x] Refreshed live fast-latency proof: `scripts/smoke_fast_latency.py --base-url http://127.0.0.1:8765` passed `3/3` at `runtime/model_benchmarks/localhost-fast-latency-20260620-044503.md`, with max first-visible `0.771s`.
 - [x] Made `scripts/morning_status.py` explicitly report that physical speaker/microphone loopback proof is not implemented and strict physical capture fails closed; full `tests.test_safety` passed `961/961`.
+- [x] Refreshed the official gate after the physical-audio status line; pre-build gate passed `5/5` at `runtime/pre_build_gate/20260620-045053/summary.json`.
 - [x] Rebuilt the canonical `output/Jarvis.app` bundle at version `0.1.468`.
 - [x] Reran `scripts/verify_safe.py`; safe verification passed `105/105`.
 - [x] Refreshed report/workboard surfaces and reran `scripts/smoke_fast_latency.py`; fast latency passed `3/3`.
