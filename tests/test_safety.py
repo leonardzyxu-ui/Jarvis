@@ -9623,6 +9623,12 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result.result["called_codex"])
         self.assertFalse(result.result["sent_prompt_to_codex"])
         self.assertTrue(result.result["session_ids_hidden"])
+        self.assertEqual(result.result["prepared_prompt_text"], "test")
+        self.assertEqual(result.result["prepared_prompt_source"], "extracted_prompt_to_send")
+        self.assertTrue(result.result["prepared_prompt_has_jarvis_generated_marker"])
+        self.assertIn("This is a Jarvis-generated prompt.", result.result["jarvis_generated_prompt_preview"])
+        self.assertIn("Original request from Leo to Jarvis:", result.result["jarvis_generated_prompt_preview"])
+        self.assertTrue(result.result["jarvis_generated_prompt_preview"].rstrip().endswith("test"))
         self.assertIn("need confirmation", result.result["reply"])
 
     def test_codex_default_chat_send_preview_chooses_chat_without_generic_wall(self):
@@ -9637,6 +9643,8 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(plan["requires_typed_confirmation"])
         self.assertFalse(plan["called_codex"])
         self.assertFalse(plan["sent_prompt_to_codex"])
+        self.assertEqual(plan["prepared_prompt_text"], "test")
+        self.assertTrue(plan["prepared_prompt_has_jarvis_generated_marker"])
 
     def test_explicit_codex_preview_bypasses_model_router(self):
         bad_intent = {"status": "completed", "selected_tool": "outlook.visible_summary", "confidence": 0.91, "entities": {}}
@@ -10404,9 +10412,11 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(result.confirmation["required"])
         self.assertEqual(result.result["selected_chat_name"], "Default")
         self.assertFalse(result.result["sent_prompt_to_codex"])
+        self.assertEqual(result.result["prepared_prompt_text"], "test")
         self.assertEqual(preview.tool, "codex.chat_plan")
         self.assertEqual(preview.result["plan"]["selected_chat_name"], "Default")
         self.assertFalse(preview.result["plan"]["sent_prompt_to_codex"])
+        self.assertEqual(preview.result["plan"]["prepared_prompt_text"], "test")
 
     def test_codex_send_prompt_accepts_common_stt_mishearings_without_sending(self):
         for heard_name in ("Cortex", "Kodak"):
@@ -10420,9 +10430,11 @@ class PlannerTests(unittest.TestCase):
                 self.assertTrue(result.confirmation["required"])
                 self.assertEqual(result.result["selected_chat_name"], "Default")
                 self.assertFalse(result.result["sent_prompt_to_codex"])
+                self.assertEqual(result.result["prepared_prompt_text"], "test")
                 self.assertEqual(preview.tool, "codex.chat_plan")
                 self.assertEqual(preview.result["plan"]["selected_chat_name"], "Default")
                 self.assertFalse(preview.result["plan"]["sent_prompt_to_codex"])
+                self.assertEqual(preview.result["plan"]["prepared_prompt_text"], "test")
 
     def test_contact_tools_route_and_parse_fallback_entities(self):
         with patch("jarvis.planner.contact_data_lookup", return_value={"tool": "contacts.lookup", "status": "found", "executed": True, "reply": "Known."}) as lookup_mock:
@@ -21321,6 +21333,39 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertFalse(result["fallback_to_default"])
         self.assertTrue(result["would_resume_configured_session"])
         self.assertIn("matched the request", result["selection_reason"])
+        self.assertNotIn(music_session, serialized)
+        self.assertNotIn(default_session, serialized)
+
+    def test_codex_chat_plan_extracts_prompt_and_explicit_in_chat_phrase(self):
+        default_session = "019eaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        music_session = "019effff-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            registry = Path(temp_dir) / "codex_chats.json"
+            registry.write_text(
+                json.dumps(
+                    {
+                        "schema": "jarvis.codex_chats.v1",
+                        "default_chat": "Default",
+                        "chats": [
+                            {"name": "Default", "session_id": default_session, "purpose": "General work."},
+                            {"name": "Music", "session_id": music_session, "purpose": "Music assignments."},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.CODEX_CHAT_REGISTRY_PATH", registry):
+                result = codex_chat_plan("Open Codex and send a prompt called 'test' in the Music chat.")
+
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertEqual(result["selected_chat_name"], "Music")
+        self.assertEqual(result["prepared_prompt_text"], "test")
+        self.assertEqual(result["prepared_prompt_source"], "extracted_prompt_to_send")
+        self.assertTrue(result["prepared_prompt_has_jarvis_generated_marker"])
+        self.assertIn("This is a Jarvis-generated prompt.", result["jarvis_generated_prompt_preview"])
+        self.assertIn("Original request from Leo to Jarvis:", result["jarvis_generated_prompt_preview"])
+        self.assertTrue(result["jarvis_generated_prompt_preview"].rstrip().endswith("test"))
+        self.assertFalse(result["sent_prompt_to_codex"])
         self.assertNotIn(music_session, serialized)
         self.assertNotIn(default_session, serialized)
 

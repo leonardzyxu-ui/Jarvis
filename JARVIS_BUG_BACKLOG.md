@@ -233,10 +233,15 @@ Status legend:
     - Leo decided not to say "Yes Sir" after wake because he will start speaking
       right after "Hey Jarvis".
 
-13. Open/unknown: STT punctuation is poor.
+13. Partially fixed/proved: STT punctuation is poor.
     - All tested STT options heard words but missed punctuation.
     - Decision: do not add a slow punctuation layer; tell Llama/GPT OSS that
       incoming text may be dictation without punctuation.
+    - 2026-06-19 proof update: the real fast-chat system prompt and middle
+      planner prompt both tell the model that Leo's latest message may be raw
+      speech dictation with missing punctuation/capitalization/homophones and
+      to infer intended wording without adding meaning. `diagnostics.model_context`
+      exposes this policy, and tests assert it for the actual model messages.
 
 14. Partially fixed/proved: detect when Leo starts speaking and stop current
     Jarvis speech.
@@ -458,8 +463,14 @@ Status legend:
 4. Partially fixed/risky: Codex CLI was slow; proxy hypotheses via ClashX were
    tested/should be kept in mind.
 
-5. Open/unknown: "Open Codex and send a prompt called test in the Default chat"
-   remains a hard target prompt, especially because STT may hear Codex as Kodak.
+5. Partially fixed/proved: "Open Codex and send a prompt called test in the
+   Default chat" remains a hard target prompt, especially because STT may hear
+   Codex as Kodak.
+   - 2026-06-19 proof update: the route plans `codex.chat_plan` with typed
+     confirmation required, extracts the prepared prompt text `test`, selects
+     the requested chat including `in the Music chat` style phrasing, includes a
+     Jarvis-generated prompt preview with the marker and original request tail,
+     hides session IDs, and still does not send or start Codex without approval.
 
 ## Git, Repo, Build, And Release Bugs
 

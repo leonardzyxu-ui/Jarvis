@@ -17831,12 +17831,16 @@ def codex_chat_plan(prompt: str | None = None) -> dict[str, Any]:
             "session_id_configured": bool(chat.get("session_id")),
         }
     if safe_chat:
+        prepared_prompt = _extract_codex_prompt_to_send(goal) or goal
+        jarvis_generated_prompt = _codex_jarvis_generated_prompt(prepared_prompt, selection)
         reply = (
             f"Codex chat plan: I would use the {safe_chat['name']} Codex chat"
             f"{' as the default fallback' if fallback_to_default else ''}. "
-            "I did not start Codex, and session IDs are hidden."
+            "I prepared a Jarvis-generated prompt preview, but did not start Codex, and session IDs are hidden."
         )
     else:
+        prepared_prompt = _extract_codex_prompt_to_send(goal) or goal
+        jarvis_generated_prompt = ""
         reply = "Codex chat plan: no named Codex chat is configured, so Jarvis would start a normal Codex job."
     return {
         "tool": "codex.chat_plan",
@@ -17856,6 +17860,11 @@ def codex_chat_plan(prompt: str | None = None) -> dict[str, Any]:
         "selection_reason": _codex_activity_tail(selection.get("reason"), 500),
         "default_chat": default_chat,
         "fallback_to_default": fallback_to_default,
+        "prepared_prompt_text": _codex_activity_tail(prepared_prompt, 500),
+        "prepared_prompt_source": "extracted_prompt_to_send" if prepared_prompt != goal else "original_user_request",
+        "jarvis_generated_prompt_marker": "This is a Jarvis-generated prompt.",
+        "jarvis_generated_prompt_preview": _codex_prompt_preview(jarvis_generated_prompt, 1200),
+        "prepared_prompt_has_jarvis_generated_marker": bool(jarvis_generated_prompt.startswith("This is a Jarvis-generated prompt.")),
         "would_resume_configured_session": bool(chat and chat.get("session_id")),
         "would_start_new_session": not bool(chat and chat.get("session_id")),
         "reply": reply,
@@ -17996,12 +18005,41 @@ def _extract_requested_codex_chat_name(prompt: str) -> str | None:
     patterns = [
         r"(?i)\b(?:codex\s+)?chat\s+(?:named|called)\s+['\"]?([A-Za-z0-9 _.-]{1,80})['\"]?",
         r"(?i)\b(?:use|send\s+to|route\s+to)\s+['\"]?([A-Za-z0-9 _.-]{1,80})['\"]?\s+(?:codex\s+)?chat\b",
+        r"(?i)\bin\s+(?:the\s+)?['\"]?([A-Za-z0-9 _.-]{1,80})['\"]?\s+(?:codex\s+)?chat\b",
     ]
     for pattern in patterns:
         match = re.search(pattern, prompt)
         if match:
             return match.group(1).strip(" .,:;\"'")
     return None
+
+
+def _extract_codex_prompt_to_send(prompt: str) -> str | None:
+    text = re.sub(r"\s+", " ", str(prompt or "")).strip()
+    patterns = [
+        r"(?is)\bprompt\s+(?:called|named)\s+['\"]([^'\"]{1,500})['\"]",
+        r"(?is)\bprompt\s+(?:called|named)\s+(.+?)(?:\s+\bin\s+(?:the\s+)?[A-Za-z0-9 _.-]{1,80}\s+(?:codex\s+)?chat\b|$)",
+        r"(?is)\b(?:prompt|message)\s+(?:saying|that says|with text)\s+['\"]([^'\"]{1,500})['\"]",
+        r"(?is)\b(?:prompt|message)\s+(?:saying|that says|with text)\s+(.+?)(?:\s+\bin\s+(?:the\s+)?[A-Za-z0-9 _.-]{1,80}\s+(?:codex\s+)?chat\b|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        candidate = re.sub(r"\s+", " ", match.group(1)).strip(" .,:;\"'")
+        if candidate:
+            return candidate[:500]
+    return None
+
+
+def _codex_prompt_preview(prompt: str, max_chars: int = 1200) -> str:
+    text = str(prompt or "").strip()
+    if len(text) <= max_chars:
+        return text
+    marker = "\n...[truncated]...\n"
+    tail_chars = min(360, max_chars // 3)
+    head_chars = max(0, max_chars - len(marker) - tail_chars)
+    return text[:head_chars].rstrip() + marker + text[-tail_chars:].lstrip()
 
 
 def _score_codex_chat(prompt: str, chat: dict[str, Any]) -> int:
