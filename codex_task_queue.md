@@ -66,6 +66,7 @@
 - [x] Added a regression guard for Leo's Chinese-character TTS bug: unknown Chinese is removed without swallowing the English words after it; full `tests.test_safety` passed `957/957`.
 - [x] Strengthened the live Music full-loop proof with no-side-effect media surface snapshots; latest live Music case passed at `runtime/full_loop_regression/20260620-042907/summary.json` with no new media surfaces and no new `afplay`, and full `tests.test_safety` passed `959/959`.
 - [x] Refreshed official proof after the media-surface patch: pre-build gate passed `5/5` at `runtime/pre_build_gate/20260620-043121/summary.json`, and safe verification passed `105/105` at `runtime/verification/verify-safe-20260620-043541.json`.
+- [x] Added an explicit `--dry-run` alias to `scripts/cleanup_chrome_test_tabs.py`; live dry-run JSON found `0` cleanup targets, and full `tests.test_safety` passed `960/960`.
 - [x] Rebuilt the canonical `output/Jarvis.app` bundle at version `0.1.468`.
 - [x] Reran `scripts/verify_safe.py`; safe verification passed `105/105`.
 - [x] Refreshed report/workboard surfaces and reran `scripts/smoke_fast_latency.py`; fast latency passed `3/3`.

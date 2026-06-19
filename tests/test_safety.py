@@ -1153,6 +1153,21 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(result["closed_count"], 1)
         self.assertIn("close t", run_mock.call_args.args[0][2])
 
+    def test_cleanup_chrome_test_tabs_cli_accepts_explicit_dry_run(self):
+        with patch("scripts.cleanup_chrome_test_tabs.cleanup_chrome_test_tabs", return_value={
+            "ok": True,
+            "executed": False,
+            "closed_count": 0,
+            "target_count": 2,
+            "targets": [],
+        }) as cleanup_mock, \
+             patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            exit_code = cleanup_chrome_test_tabs.main(["--dry-run"])
+
+        self.assertEqual(exit_code, 0)
+        cleanup_mock.assert_called_once_with(execute=False)
+        self.assertIn("Would close 2 Jarvis/Codex Chrome test tab(s).", stdout.getvalue())
+
     def test_codex_cli_proxy_benchmark_defaults_to_dry_run(self):
         self.assertEqual(
             [variant.id for variant in codex_cli_proxy_benchmark.VARIANTS],

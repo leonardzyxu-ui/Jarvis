@@ -96,6 +96,7 @@ def cleanup_chrome_test_tabs(*, execute: bool) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", help="Actually close matching Chrome tabs.")
+    parser.add_argument("--dry-run", action="store_false", dest="execute", help="Preview matching tabs without closing them. This is the default.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     args = parser.parse_args(argv)
 
