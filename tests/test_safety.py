@@ -2352,6 +2352,9 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(report["result"]["status"], "passed")
         self.assertEqual(report["result"]["command_response_tool"], "teams.assignment")
         self.assertEqual(report["result"]["final_visible_tool"], "screen.visible_text")
+        self.assertFalse(report["result"]["measurement_contract"]["physical_speaker_capture"])
+        self.assertFalse(report["result"]["measurement_contract"]["physical_microphone_capture"])
+        self.assertIn("not room acoustics", report["result"]["measurement_contract"]["notes"])
         self.assertEqual(report["result"]["visible_screen_follow_up"]["status"], "completed")
         self.assertIn("assignment-related text", report["result"]["visible_reply_preview"])
 
@@ -3051,6 +3054,11 @@ class VerifySafeScriptTests(unittest.TestCase):
                 },
                 "result": {
                     "status": "passed",
+                    "measurement_contract": {
+                        "physical_speaker_capture": False,
+                        "physical_microphone_capture": False,
+                        "notes": "This verifies the sound files Jarvis would hear/say, not room acoustics or Mac speaker loopback.",
+                    },
                     "command_response_tool": "voice.loop_simulation",
                     "speech_audit": {"payload_count": 2, "leak_count": 0},
                 },
@@ -3059,6 +3067,9 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertIn("- Mode: speech audit", notes)
         self.assertIn("- Speech mode: suppressed_for_probe", notes)
+        self.assertIn("- Physical speaker capture: False", notes)
+        self.assertIn("- Physical microphone capture: False", notes)
+        self.assertIn("not room acoustics or Mac speaker loopback", notes)
         self.assertIn("- Tool: voice.loop_simulation", notes)
         self.assertIn("- Spoken payloads: 2", notes)
         self.assertIn("- Speech leaks: 0", notes)

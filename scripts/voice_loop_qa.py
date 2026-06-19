@@ -353,6 +353,12 @@ def main() -> int:
                 "Live playback requested: "
                 f"{speech_runtime.get('playback_requested')} | Active observed: {speech_runtime.get('active_observed')}"
             )
+        contract = result.get("measurement_contract") if isinstance(result.get("measurement_contract"), dict) else {}
+        if contract:
+            print(
+                "Physical capture: "
+                f"speaker={contract.get('physical_speaker_capture')} | microphone={contract.get('physical_microphone_capture')}"
+            )
         print(f"Visible reply: {result.get('visible_reply_preview')!r}")
         if transcripts:
             print(f"Speech transcript: {transcripts[-1]!r}")
@@ -400,6 +406,15 @@ def render_markdown(report: dict[str, Any]) -> str:
             [
                 f"- Live playback requested: {bool(speech_runtime.get('playback_requested'))}",
                 f"- Active speech observed: {bool(speech_runtime.get('active_observed'))}",
+            ]
+        )
+    contract = result.get("measurement_contract") if isinstance(result.get("measurement_contract"), dict) else {}
+    if contract:
+        lines.extend(
+            [
+                f"- Physical speaker capture: {bool(contract.get('physical_speaker_capture'))}",
+                f"- Physical microphone capture: {bool(contract.get('physical_microphone_capture'))}",
+                f"- Proof note: {str(contract.get('notes') or '')}",
             ]
         )
     if input_data.get("speech_audit_only"):
@@ -942,6 +957,7 @@ def run_speech_audit(
             "status": status,
             "warnings": warnings,
             "total_seconds": round(time.monotonic() - started, 3),
+            "measurement_contract": measurement_contract(exercise_live_speech=exercise_live_speech),
             "command_response_tool": command_response.get("tool") if command_response else "",
             "final_visible_tool": effective_response.get("tool") if isinstance(effective_response, dict) else "",
             "command_response_result": response_result,
@@ -960,6 +976,7 @@ def run_speech_audit(
             "status": "failed",
             "error": f"{type(error).__name__}: {error}",
             "total_seconds": round(time.monotonic() - started, 3),
+            "measurement_contract": measurement_contract(exercise_live_speech=exercise_live_speech),
         }
         return report
 
