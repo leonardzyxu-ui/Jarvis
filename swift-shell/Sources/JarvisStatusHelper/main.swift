@@ -60,6 +60,10 @@ struct JarvisStatusHelperApp {
             fputs("Jarvis status helper self-test failed: audio unmute title changed.\n", stderr)
             Foundation.exit(1)
         }
+        guard JarvisStatusHelperDelegate.statusItemFallbackTitle.isEmpty else {
+            fputs("Jarvis status helper self-test failed: status item must not fall back to a text icon.\n", stderr)
+            Foundation.exit(1)
+        }
         guard !JarvisStatusHelperDelegate.shouldOpenStatusMenu(eventType: .leftMouseUp, modifierFlags: []) else {
             fputs("Jarvis status helper self-test failed: left-click should open the Jarvis window.\n", stderr)
             Foundation.exit(1)
@@ -138,9 +142,9 @@ final class JarvisStatusHelperDelegate: NSObject, NSApplicationDelegate, NSMenuD
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let image = Self.statusItemImage()
-        item.button?.title = image == nil ? "J" : ""
+        item.button?.title = Self.statusItemFallbackTitle
         item.button?.image = image
-        item.button?.imagePosition = image == nil ? .noImage : .imageOnly
+        item.button?.imagePosition = .imageOnly
         item.button?.imageScaling = .scaleProportionallyDown
         item.button?.toolTip = "Jarvis"
         item.button?.setAccessibilityLabel("Jarvis")
@@ -324,6 +328,10 @@ final class JarvisStatusHelperDelegate: NSObject, NSApplicationDelegate, NSMenuD
 
     fileprivate static var audioUnmuteMenuTitle: String {
         "Unmute Audio"
+    }
+
+    fileprivate static var statusItemFallbackTitle: String {
+        ""
     }
 
     fileprivate static func parseArguments(_ arguments: [String]) -> (appBundlePath: String?, baseURL: URL?, parentPID: pid_t?) {

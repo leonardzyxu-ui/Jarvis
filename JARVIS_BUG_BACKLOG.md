@@ -195,6 +195,10 @@ Status legend:
    - It should be the colored Jarvis head, not text, not a test "T", not
      duplicated, not displaced, and not a floating overlay that cannot be
      Command-dragged.
+   - 2026-06-19 proof update: status-helper and disabled main-app status item
+     no longer fall back to text glyphs when the icon image is missing; the
+     helper self-test now fails if a text fallback returns, focused Python
+     source checks pass, and `jarvis-status-helper --self-test` builds/runs.
 
 10. Partially fixed/risky: Hey Jarvis crashed or flickered.
     - Leo reported crashes after Start Hey Jarvis.

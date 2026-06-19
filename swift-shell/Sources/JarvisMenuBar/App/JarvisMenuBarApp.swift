@@ -409,9 +409,9 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: Self.statusItemLength)
         let image = Self.statusItemImage()
-        item.button?.title = image == nil ? Self.statusItemFallbackTitle : Self.statusItemTitle
+        item.button?.title = Self.statusItemTitle
         item.button?.image = image
-        item.button?.imagePosition = image == nil ? .noImage : .imageOnly
+        item.button?.imagePosition = .imageOnly
         item.button?.toolTip = "Jarvis"
         item.button?.setAccessibilityLabel("Jarvis")
         item.button?.target = self
@@ -478,7 +478,7 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     static var statusItemFallbackTitle: String {
-        "J"
+        ""
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
