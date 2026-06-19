@@ -245,6 +245,11 @@ def main() -> int:
         help="Allow live audio/app actions such as Music playback. The default suppresses them for quiet unattended probes.",
     )
     parser.add_argument(
+        "--exercise-visible-navigation",
+        action="store_true",
+        help="Allow an explicit visible-screen navigation attempt. Also requires JARVIS_ALLOW_LIVE_UI_NAVIGATION=1 before any click is sent.",
+    )
+    parser.add_argument(
         "--expect-tool",
         action="append",
         default=[],
@@ -304,6 +309,7 @@ def main() -> int:
             expect_routed_contains=args.expect_routed_contains,
             exercise_live_speech=args.exercise_live_speech,
             allow_audio_actions=args.allow_audio_actions,
+            exercise_visible_navigation=args.exercise_visible_navigation,
         )
     else:
         report = run_voice_loop(
@@ -319,6 +325,7 @@ def main() -> int:
             expect_routed_contains=args.expect_routed_contains,
             exercise_live_speech=args.exercise_live_speech,
             allow_audio_actions=args.allow_audio_actions,
+            exercise_visible_navigation=args.exercise_visible_navigation,
         )
 
     report_path = run_dir / "report.json"
@@ -489,6 +496,7 @@ def run_voice_loop(
     expect_routed_contains: list[str] | None = None,
     exercise_live_speech: bool = False,
     allow_audio_actions: bool = False,
+    exercise_visible_navigation: bool = False,
 ) -> dict[str, Any]:
     base_url = normalize_base_url(base_url)
     started = time.monotonic()
@@ -511,6 +519,7 @@ def run_voice_loop(
             "no_permission_prompts": no_permission_prompts,
             "exercise_live_speech": exercise_live_speech,
             "allow_audio_actions": allow_audio_actions,
+            "exercise_visible_navigation": exercise_visible_navigation,
             "expect_tools": expect_tools or [],
             "expect_visible_contains": expect_visible_contains or [],
             "expect_visible_not_contains": expect_visible_not_contains or [],
@@ -587,6 +596,7 @@ def run_voice_loop(
             base_url=base_url,
             run_dir=run_dir,
             timeout=timeout,
+            exercise_visible_navigation=exercise_visible_navigation,
         )
         if visible_screen_follow_up.get("attempted"):
             stage_timings.append(stage_timing("native_visible_screen_followup", stage_started))
@@ -874,6 +884,7 @@ def run_speech_audit(
     expect_routed_contains: list[str] | None = None,
     exercise_live_speech: bool = False,
     allow_audio_actions: bool = False,
+    exercise_visible_navigation: bool = False,
 ) -> dict[str, Any]:
     base_url = normalize_base_url(base_url)
     started = time.monotonic()
@@ -889,6 +900,7 @@ def run_speech_audit(
             "speech_audit_only": True,
             "exercise_live_speech": exercise_live_speech,
             "allow_audio_actions": allow_audio_actions,
+            "exercise_visible_navigation": exercise_visible_navigation,
             "expect_tools": expect_tools or [],
             "expect_visible_contains": expect_visible_contains or [],
             "expect_visible_not_contains": expect_visible_not_contains or [],
@@ -910,6 +922,7 @@ def run_speech_audit(
             base_url=base_url,
             run_dir=run_dir,
             timeout=timeout,
+            exercise_visible_navigation=exercise_visible_navigation,
         )
         effective_response = (
             visible_screen_follow_up.get("response")
@@ -1862,6 +1875,7 @@ def run_native_visible_screen_follow_up(
     base_url: str,
     run_dir: Path,
     timeout: float,
+    exercise_visible_navigation: bool = False,
 ) -> dict[str, Any]:
     target = visible_screen_follow_up_target(command_text, command_response)
     if not target:
@@ -1968,6 +1982,39 @@ def run_native_visible_screen_follow_up(
                 "duration_seconds": round(time.monotonic() - started, 3),
             }
         latest_failure = attempt_result
+
+    navigation_result: dict[str, Any] = {}
+    if exercise_visible_navigation and isinstance(latest_failure, dict):
+        targets = latest_failure.get("visible_navigation_targets")
+        if isinstance(targets, dict):
+            plan = targets.get("assignments_plan")
+            if isinstance(plan, dict) and plan.get("planned"):
+                navigation_result = execute_visible_navigation_plan(
+                    plan,
+                    target_app_name=target["target_app_name"],
+                    timeout=timeout,
+                )
+                latest_failure["visible_navigation_execution"] = navigation_result
+                if navigation_result.get("executed"):
+                    time.sleep(VISIBLE_SCREEN_FOLLOW_UP_RETRY_DELAY_SECONDS)
+                    after_navigation = run_native_visible_screen_follow_up_attempt(
+                        command_text=command_text,
+                        base_url=base_url,
+                        follow_up_dir=follow_up_dir,
+                        timeout=timeout,
+                        target_app_name=target["target_app_name"],
+                        target_bundle_identifier=target["target_bundle_identifier"],
+                        attempt=max_attempts + 1,
+                    )
+                    after_navigation["visible_navigation_execution"] = navigation_result
+                    if after_navigation.get("status") == "completed":
+                        return {
+                            **result,
+                            **after_navigation,
+                            "attempts": max_attempts + 1,
+                            "duration_seconds": round(time.monotonic() - started, 3),
+                        }
+                    latest_failure = after_navigation
 
     return {
         **result,
@@ -2237,6 +2284,56 @@ def visible_navigation_plan(
         "target_text": str(target.get("text") or ""),
         "point": {"x": round(x, 2), "y": round(y, 2)},
         "target": target,
+    }
+
+
+def execute_visible_navigation_plan(
+    plan: dict[str, Any],
+    *,
+    target_app_name: str,
+    timeout: float,
+) -> dict[str, Any]:
+    """Execute a previously generated visible navigation plan only under a double opt-in."""
+    if os.environ.get("JARVIS_ALLOW_LIVE_UI_NAVIGATION") != "1":
+        return {
+            "attempted": False,
+            "executed": False,
+            "status": "live_navigation_not_unlocked",
+            "requires": ["--exercise-visible-navigation", "JARVIS_ALLOW_LIVE_UI_NAVIGATION=1"],
+        }
+    if not isinstance(plan, dict) or not plan.get("planned"):
+        return {"attempted": False, "executed": False, "status": "plan_not_ready"}
+    if plan.get("will_click") is not False:
+        return {"attempted": False, "executed": False, "status": "plan_not_fail_closed"}
+    point = plan.get("point") if isinstance(plan.get("point"), dict) else {}
+    try:
+        x = float(point.get("x"))
+        y = float(point.get("y"))
+    except (TypeError, ValueError):
+        return {"attempted": False, "executed": False, "status": "point_missing"}
+    applescript = f'''
+tell application "{escape_applescript_string(target_app_name)}" to activate
+delay 0.2
+tell application "System Events"
+  click at {{{round(x, 2)}, {round(y, 2)}}}
+end tell
+'''
+    completed = subprocess.run(
+        ["/usr/bin/osascript", "-e", applescript],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=max(3.0, min(timeout, 10.0)),
+        check=False,
+    )
+    return {
+        "attempted": True,
+        "executed": completed.returncode == 0,
+        "status": "clicked" if completed.returncode == 0 else "click_failed",
+        "target_app_name": target_app_name,
+        "point": {"x": round(x, 2), "y": round(y, 2)},
+        "returncode": completed.returncode,
+        "stderr_tail": completed.stderr.strip()[-500:],
     }
 
 

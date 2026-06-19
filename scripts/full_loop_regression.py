@@ -132,6 +132,11 @@ def main() -> int:
     )
     parser.add_argument("--timeout", type=float, default=75.0)
     parser.add_argument("--exercise-live-speech", action="store_true")
+    parser.add_argument(
+        "--exercise-visible-navigation",
+        action="store_true",
+        help="Allow explicit UI navigation inside supported full-loop cases. Live clicks still require JARVIS_ALLOW_LIVE_UI_NAVIGATION=1.",
+    )
     parser.add_argument("--no-report-refresh", action="store_true")
     args = parser.parse_args()
 
@@ -150,6 +155,7 @@ def main() -> int:
                     run_dir=run_dir / case["id"],
                     timeout=args.timeout,
                     exercise_live_speech=args.exercise_live_speech,
+                    exercise_visible_navigation=args.exercise_visible_navigation,
                 )
             )
         elif case["id"] == RAM_ACTIVITY_CASE["id"]:
@@ -210,6 +216,7 @@ def main() -> int:
                     run_dir=run_dir / case["id"],
                     timeout=args.timeout,
                     exercise_live_speech=args.exercise_live_speech,
+                    exercise_visible_navigation=args.exercise_visible_navigation,
                 )
             )
         elif case["id"] == EMAIL_SHARPAY_CASE["id"]:
@@ -1130,6 +1137,7 @@ def run_teams_assignment_case(
     run_dir: Path,
     timeout: float,
     exercise_live_speech: bool,
+    exercise_visible_navigation: bool = False,
 ) -> dict[str, Any]:
     started = time.monotonic()
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -1149,6 +1157,7 @@ def run_teams_assignment_case(
             expect_routed_contains=list(case["expect_routed_contains"]),
             exercise_live_speech=exercise_live_speech,
             allow_audio_actions=False,
+            exercise_visible_navigation=exercise_visible_navigation,
         )
         write_json(run_dir / "voice-loop-report.json", voice_report)
         action_proof = verify_teams_assignment_honesty(voice_report)

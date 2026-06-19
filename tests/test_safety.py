@@ -2711,6 +2711,86 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(plan["will_click"])
         self.assertEqual(plan["reason"], "no_label_match")
 
+    def test_voice_loop_qa_execute_visible_navigation_requires_unlock(self):
+        plan = {
+            "planned": True,
+            "will_click": False,
+            "point": {"x": 68.0, "y": 577.0},
+        }
+        with patch.dict(os.environ, {"JARVIS_ALLOW_LIVE_UI_NAVIGATION": ""}, clear=False), \
+             patch("scripts.voice_loop_qa.subprocess.run") as run_mock:
+            result = voice_loop_qa.execute_visible_navigation_plan(
+                plan,
+                target_app_name="Google Chrome",
+                timeout=5.0,
+            )
+
+        self.assertFalse(result["attempted"])
+        self.assertFalse(result["executed"])
+        self.assertEqual(result["status"], "live_navigation_not_unlocked")
+        run_mock.assert_not_called()
+
+    def test_voice_loop_qa_execute_visible_navigation_uses_system_events_when_unlocked(self):
+        plan = {
+            "planned": True,
+            "will_click": False,
+            "point": {"x": 68.0, "y": 577.0},
+        }
+        completed = subprocess.CompletedProcess(["osascript"], 0, stdout="", stderr="")
+        with patch.dict(os.environ, {"JARVIS_ALLOW_LIVE_UI_NAVIGATION": "1"}, clear=False), \
+             patch("scripts.voice_loop_qa.subprocess.run", return_value=completed) as run_mock:
+            result = voice_loop_qa.execute_visible_navigation_plan(
+                plan,
+                target_app_name="Google Chrome",
+                timeout=5.0,
+            )
+
+        self.assertTrue(result["attempted"])
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["status"], "clicked")
+        script = run_mock.call_args.args[0][-1]
+        self.assertIn('tell application "Google Chrome" to activate', script)
+        self.assertIn("click at {68.0, 577.0}", script)
+
+    def test_voice_loop_qa_visible_screen_followup_live_navigation_stays_locked_by_default(self):
+        command_response = {"tool": "teams.assignment", "result": {}}
+        blocked_browser = {"status": "browser_permission_blocked", "tool": "browser.read_page"}
+        mismatch_attempt = {
+            "used": False,
+            "status": "assignment_subject_mismatch",
+            "tool": "screen.visible_text",
+            "visible_navigation_targets": {
+                "assignments_plan": {
+                    "planned": True,
+                    "will_click": False,
+                    "point": {"x": 68.0, "y": 577.0},
+                }
+            },
+        }
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch("scripts.voice_loop_qa.VISIBLE_SCREEN_PROBE", Path("/tmp/fake-probe")), \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("scripts.voice_loop_qa.run_browser_page_follow_up", return_value=blocked_browser), \
+             patch("scripts.voice_loop_qa.run_native_visible_screen_follow_up_attempt", return_value=mismatch_attempt), \
+             patch("scripts.voice_loop_qa.execute_visible_navigation_plan", return_value={
+                 "attempted": False,
+                 "executed": False,
+                 "status": "live_navigation_not_unlocked",
+             }) as execute_mock:
+            result = voice_loop_qa.run_native_visible_screen_follow_up(
+                command_text="Look in Teams for my newest Music assignment.",
+                command_response=command_response,
+                base_url="http://127.0.0.1:8765",
+                run_dir=Path(temp_dir),
+                timeout=5.0,
+                exercise_visible_navigation=True,
+            )
+
+        execute_mock.assert_called_once()
+        self.assertEqual(result["status"], "assignment_subject_mismatch")
+        self.assertEqual(result["visible_navigation_execution"]["status"], "live_navigation_not_unlocked")
+        self.assertEqual(result["attempts"], 1)
+
     def test_voice_loop_qa_browser_page_usefulness_rejects_generic_screen_tool_for_teams_assignment(self):
         response = {
             "tool": "screen.visible_text",
