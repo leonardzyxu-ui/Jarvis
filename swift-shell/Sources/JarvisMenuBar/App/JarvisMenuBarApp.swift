@@ -315,6 +315,7 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        terminateStaleJarvisProcesses()
         configureMainMenu()
         if Self.menuBarItemEnabled {
             configureStatusItem()
@@ -697,6 +698,67 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             statusHelperProcess = nil
         }
+    }
+
+    private func terminateStaleJarvisProcesses() {
+        let snapshot = Self.processSnapshot()
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let pids = Self.staleJarvisProcessIDs(
+            from: snapshot,
+            currentPID: currentPID,
+            currentBundlePath: Bundle.main.bundlePath
+        )
+        for pid in pids {
+            Darwin.kill(pid, SIGTERM)
+        }
+    }
+
+    private static func processSnapshot() -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-axo", "pid=,ppid=,command="]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return ""
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    static func staleJarvisProcessIDs(
+        from psOutput: String,
+        currentPID: pid_t,
+        currentBundlePath: String
+    ) -> [pid_t] {
+        let currentBundleMarker = "\(currentBundlePath)/Contents/MacOS/"
+        return psOutput
+            .split(separator: "\n")
+            .compactMap { rawLine -> pid_t? in
+                let line = rawLine.trimmingCharacters(in: .whitespaces)
+                let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+                guard fields.count == 3,
+                      let pid = pid_t(String(fields[0])),
+                      let parentPID = pid_t(String(fields[1])),
+                      pid != currentPID else {
+                    return nil
+                }
+                let command = String(fields[2])
+                if command.contains(currentBundleMarker) {
+                    return nil
+                }
+                if command.contains(".app/Contents/MacOS/jarvis-menu-bar") {
+                    return pid
+                }
+                if command.contains(".app/Contents/MacOS/jarvis-status-helper"), parentPID != currentPID {
+                    return pid
+                }
+                return nil
+            }
     }
 
     private func stopStatusHelper() {

@@ -252,6 +252,12 @@ Status legend:
    - 2026-06-19 proof update: native status-speech and streaming-command paths
      now reassert the status-helper before possible audio starts, so the menu
      bar emergency controls are restarted before Jarvis can blabber.
+   - 2026-06-19 proof update: the main app now terminates stale duplicate
+     Jarvis app/status-helper processes at launch, so older `Jarvis LocalOS
+     Only`/alternate-bundle helpers cannot leave a second colored head or
+     emergency menu alive beside the canonical app. The Swift self-test covers
+     keeping the current canonical process while targeting only stale duplicate
+     Jarvis app/helper processes.
 
 10. Partially fixed/risky: Hey Jarvis crashed or flickered.
     - Leo reported crashes after Start Hey Jarvis.

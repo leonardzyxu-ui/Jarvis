@@ -244,6 +244,21 @@ enum JarvisMenuBarSelfTest {
         guard JarvisAppDelegate.statusItemLength == NSStatusItem.squareLength else {
             throw SelfTestError.failed("Menu-bar status item should reserve only icon-sized space.")
         }
+        let psOutput = """
+          100 1 /Applications/Jarvis.app/Contents/MacOS/jarvis-menu-bar
+          101 100 /Applications/Jarvis.app/Contents/MacOS/jarvis-status-helper --app-bundle-path /Applications/Jarvis.app
+          200 1 /Applications/Jarvis-LocalOS-Only.app/Contents/MacOS/jarvis-menu-bar
+          201 200 /Applications/Jarvis-LocalOS-Only.app/Contents/MacOS/jarvis-status-helper --app-bundle-path /Applications/Jarvis-LocalOS-Only.app
+          300 1 /Applications/Codex.app/Contents/MacOS/Codex
+        """
+        let stalePIDs = JarvisAppDelegate.staleJarvisProcessIDs(
+            from: psOutput,
+            currentPID: 100,
+            currentBundlePath: "/Applications/Jarvis.app"
+        )
+        guard stalePIDs == [200, 201] else {
+            throw SelfTestError.failed("Jarvis launch should terminate stale duplicate Jarvis app/helper processes only.")
+        }
         guard JarvisAppDelegate.speechMuteMenuTitle(muted: false) == "Shut Up" else {
             throw SelfTestError.failed("Unmuted menu title should be Shut Up.")
         }
