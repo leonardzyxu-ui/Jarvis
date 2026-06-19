@@ -183,6 +183,8 @@ from scripts.morning_status import (
     latency_smoke_summary,
     normalize_base_url,
     pre_build_gate_summary,
+    print_latest_context_smoke,
+    print_latest_wake_threshold,
     print_process_status,
     requirement_audit_summary,
     time_since,
@@ -23235,6 +23237,23 @@ class RuntimeSurfaceTests(unittest.TestCase):
         failed = context_smoke_summary({"result": {"status": "passed", "used_history": False}})
         self.assertFalse(failed["ok"])
 
+    def test_morning_status_prints_latest_context_smoke(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_dir = root / "runtime" / "conversation_context"
+            report_dir.mkdir(parents=True)
+            (report_dir / "latest.json").write_text(
+                json.dumps({"result": {"status": "passed", "used_history": True, "total_seconds": 0.283}}),
+                encoding="utf-8",
+            )
+            with patch("scripts.morning_status.PROJECT_ROOT", root), patch("builtins.print") as print_mock:
+                print_latest_context_smoke()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn("Latest context smoke: passed", printed)
+        self.assertIn("used history", printed)
+        self.assertIn("runtime/conversation_context/latest.json", printed)
+
     def test_morning_status_wake_threshold_summary(self):
         summary = wake_threshold_summary(
             {
@@ -23256,6 +23275,33 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         failed = wake_threshold_summary({"summary": {"status": "passed", "passed": 9, "total": 10}})
         self.assertFalse(failed["ok"])
+
+    def test_morning_status_prints_latest_wake_threshold(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_dir = root / "runtime" / "wake_threshold"
+            report_dir.mkdir(parents=True)
+            (report_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "status": "passed",
+                            "passed": 10,
+                            "total": 10,
+                            "closest_reject_label": "below-threshold charvis",
+                            "closest_reject_score": 0.857143,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("scripts.morning_status.PROJECT_ROOT", root), patch("builtins.print") as print_mock:
+                print_latest_wake_threshold()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn("Latest wake threshold: passed 10/10", printed)
+        self.assertIn("closest reject below-threshold charvis 0.857", printed)
+        self.assertIn("runtime/wake_threshold/latest.json", printed)
 
     def test_morning_status_requirement_audit_summary(self):
         summary = requirement_audit_summary(

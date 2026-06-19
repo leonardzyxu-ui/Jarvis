@@ -60,3 +60,5 @@
 - [x] Full `tests.test_safety` passed `937/937`, pre-build gate passed `4/4` with report `runtime/pre_build_gate/20260620-003454/summary.json`, and `scripts/verify_safe.py` passed `105/105` with report `runtime/verification/verify-safe-20260620-003852.json`.
 - [x] `scripts/morning_status.py` now surfaces the latest pre-build gate result and step ids, so status checks show the strengthened release gate without digging through runtime files.
 - [x] Full `tests.test_safety` passed `938/938` for the morning-status gate summary.
+- [x] `scripts/morning_status.py` now surfaces latest conversation-context and wake-threshold smoke proof, making context memory and wake-word boundary evidence visible in one quick status command.
+- [x] Full `tests.test_safety` passed `940/940` for the context/wake status summary.

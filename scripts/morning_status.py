@@ -104,6 +104,8 @@ def main() -> int:
     print_worker_status(base_url)
     print_latest_verification()
     print_latest_pre_build_gate()
+    print_latest_context_smoke()
+    print_latest_wake_threshold()
     print_requirement_audit()
     print_latest_latency_smoke()
     print_current_bundle()
@@ -270,6 +272,52 @@ def pre_build_gate_summary(data: dict[str, Any]) -> dict[str, Any]:
         "total": total,
         "step_ids": step_ids,
     }
+
+
+def print_latest_context_smoke() -> None:
+    latest = PROJECT_ROOT / "runtime" / "conversation_context" / "latest.json"
+    if not latest.exists():
+        print("Latest context smoke: none")
+        return
+
+    try:
+        data = json.loads(latest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"Latest context smoke: {latest.relative_to(PROJECT_ROOT)} unreadable ({error})")
+        return
+
+    summary = context_smoke_summary(data)
+    state = "passed" if summary["ok"] else "needs attention"
+    used = "used history" if summary["used_history"] else "did not use history"
+    age = format_uptime(time_since(latest.stat().st_mtime))
+    print(
+        f"Latest context smoke: {state} ({used}, total {summary['total_seconds']:.3f}s, "
+        f"{latest.relative_to(PROJECT_ROOT)}, age {age})"
+    )
+
+
+def print_latest_wake_threshold() -> None:
+    latest = PROJECT_ROOT / "runtime" / "wake_threshold" / "latest.json"
+    if not latest.exists():
+        print("Latest wake threshold: none")
+        return
+
+    try:
+        data = json.loads(latest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"Latest wake threshold: {latest.relative_to(PROJECT_ROOT)} unreadable ({error})")
+        return
+
+    summary = wake_threshold_summary(data)
+    state = "passed" if summary["ok"] else "needs attention"
+    reject = ""
+    if summary["closest_reject_label"]:
+        reject = f", closest reject {summary['closest_reject_label']} {summary['closest_reject_score']:.3f}"
+    age = format_uptime(time_since(latest.stat().st_mtime))
+    print(
+        f"Latest wake threshold: {state} {summary['passed']}/{summary['total']}"
+        f"{reject} ({latest.relative_to(PROJECT_ROOT)}, age {age})"
+    )
 
 
 def print_requirement_audit() -> None:
