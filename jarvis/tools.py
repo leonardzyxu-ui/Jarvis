@@ -13083,10 +13083,15 @@ end tell
         stderr = str(completed.get("stderr") or "")
         lower_stderr = stderr.lower()
         status = "automation_error"
-        if "not allowed" in lower_stderr or "not authorized" in lower_stderr or "not permitted" in lower_stderr:
-            status = "automation_not_allowed"
-        elif include_page_text and ("javascript" in lower_stderr or "apple events" in lower_stderr):
+        if include_page_text and (
+            "javascript" in lower_stderr
+            or "execute javascript" in lower_stderr
+            or " in thetab" in lower_stderr
+            or "(() =>" in lower_stderr
+        ):
             status = "chrome_javascript_unavailable"
+        elif "not allowed" in lower_stderr or "not authorized" in lower_stderr or "not permitted" in lower_stderr:
+            status = "automation_not_allowed"
         fallback_tab: dict[str, Any] = {}
         if include_page_text and status in {"chrome_javascript_unavailable", "automation_error"}:
             fallback_tab = _chrome_active_tab_metadata(include_page_text=False)
@@ -13537,14 +13542,14 @@ def _browser_error_details(status: str, *, include_page_text: bool) -> dict[str,
         return {
             **base,
             "permission_issue": "chrome_page_javascript",
-            "requires_user_action": False,
+            "requires_user_action": True,
             "next_steps": [
                 "Keep the logged-in site open in Chrome.",
-                "Try reading the current tab metadata first, then ask Jarvis to read the visible page text again.",
+                "In Chrome, enable View > Developer > Allow JavaScript from Apple Events.",
                 "If macOS shows an Automation prompt, allow Jarvis to control Google Chrome.",
             ],
             "spoken_summary": (
-                "I can see the Chrome tab, but Chrome would not give me the visible page text. "
+                "I can see the Chrome tab, but Chrome would not give me page text. "
                 "I will keep using signed-in Chrome rather than copying your login."
             ),
         }

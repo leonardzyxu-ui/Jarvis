@@ -139,15 +139,18 @@ public enum JarvisNativeBrowserReader {
         let lowerMessage = message.lowercased()
 
         var status = "automation_error"
-        if number == -1743 || number == -1723
+        if includePageText
+            && (lowerMessage.contains("javascript")
+                || lowerMessage.contains("execute javascript")
+                || lowerMessage.contains(" in thetab")
+                || lowerMessage.contains("(() =>")) {
+            status = "chrome_javascript_unavailable"
+        } else if number == -1743 || number == -1723
             || lowerMessage.contains("not allowed")
             || lowerMessage.contains("not authorized")
             || lowerMessage.contains("not permitted")
             || lowerMessage.contains("access not allowed") {
             status = "automation_not_allowed"
-        } else if includePageText
-            && (lowerMessage.contains("javascript") || lowerMessage.contains("apple events")) {
-            status = "chrome_javascript_unavailable"
         }
 
         if includePageText && status == "chrome_javascript_unavailable" {

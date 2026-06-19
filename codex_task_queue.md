@@ -86,6 +86,7 @@
 - [x] Refreshed canonical safe verification after the gated navigation harness: `scripts/verify_safe.py` passed `105/105` at `runtime/verification/verify-safe-20260620-055529.json`.
 - [x] Made `scripts/morning_status.py` explain the Teams blocker behind the red gate: live status now prints `Teams assignment is wrong_subject; Chrome page-read is blocked; Assignments no-click navigation plan is ready at (68.13, 577.17).`; full `tests.test_safety` passed `974/974`.
 - [x] Refreshed canonical safe verification after the morning-status blocker summary: `scripts/verify_safe.py` passed `105/105` at `runtime/verification/verify-safe-20260620-060123.json`.
+- [x] Reclassified Chrome `execute javascript` denial separately from generic Automation denial: source and bundled `jarvis-browser-page-probe` now report the real Teams failure as `teams_page_text_unavailable`; Swift build passed, bundled probe proof passed, and full `tests.test_safety` passed `975/975`.
 - [x] Rebuilt the canonical `output/Jarvis.app` bundle at version `0.1.468`.
 - [x] Reran `scripts/verify_safe.py`; safe verification passed `105/105`.
 - [x] Refreshed report/workboard surfaces and reran `scripts/smoke_fast_latency.py`; fast latency passed `3/3`.

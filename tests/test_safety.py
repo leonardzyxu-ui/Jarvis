@@ -8624,6 +8624,32 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(result["chrome_automation"]["status"], "ready")
         osascript_mock.assert_not_called()
 
+    def test_browser_read_page_classifies_execute_javascript_block_separately(self):
+        with patch("jarvis.tools._find_executable", return_value="/usr/bin/osascript"), \
+             patch("jarvis.tools._native_chrome_page_probe", return_value={"status": "probe_unavailable"}), \
+             patch("jarvis.tools._native_chrome_automation_probe", return_value={
+                 "status": "preflight_ready",
+                 "state_label": "Preflight Ready",
+                 "detail": "Jarvis can ask Chrome for Automation.",
+                 "is_ready": True,
+                 "requires_user_action": False,
+             }), \
+             patch("jarvis.tools._run_osascript", return_value={
+                 "ok": False,
+                 "stdout": "",
+                 "stderr": 'Can’t get "(() => {...})()" in theTab. Access not allowed.',
+                 "returncode": -1723,
+             }):
+            result = browser_read_page(max_chars=1000)
+
+        self.assertEqual(result["tool"], "browser.read_page")
+        self.assertEqual(result["status"], "chrome_javascript_unavailable")
+        self.assertEqual(result["permission_issue"], "chrome_page_javascript")
+        self.assertTrue(result["requires_user_action"])
+        self.assertIn("Allow JavaScript from Apple Events", " ".join(result["next_steps"]))
+        self.assertFalse(result["copied_chrome_cookies"])
+        self.assertFalse(result["copied_chrome_passwords"])
+
     def test_browser_read_page_uses_native_browser_probe_for_checked_page(self):
         fake_scan = {"status": "ok", "findings": []}
         with patch("jarvis.tools._find_executable", return_value="/usr/bin/osascript"), \
@@ -8953,6 +8979,10 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("NSAppleScript", native_browser_reader_source)
         self.assertIn('application "Google Chrome"', native_browser_reader_source)
         self.assertIn("execute javascript", native_browser_reader_source)
+        self.assertLess(
+            native_browser_reader_source.index('status = "chrome_javascript_unavailable"'),
+            native_browser_reader_source.index('status = "automation_not_allowed"'),
+        )
 
     def test_visible_screen_probe_preserves_ocr_line_geometry(self):
         native_source = (
