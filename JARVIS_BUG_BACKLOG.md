@@ -263,6 +263,9 @@ Status legend:
 12. Partially fixed/risky: wake acknowledgement should usually be quiet.
     - Leo decided not to say "Yes Sir" after wake because he will start speaking
       right after "Hey Jarvis".
+    - 2026-06-19 proof update: text-only voice-loop tool descriptions and wake
+      debug next steps now say visual acknowledgement / wake acknowledgement
+      echo instead of implying Jarvis normally speaks its own greeting.
 
 13. Partially fixed/proved: STT punctuation is poor.
     - All tested STT options heard words but missed punctuation.

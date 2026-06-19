@@ -1055,7 +1055,7 @@ def tool_registry() -> dict[str, Any]:
                 "mode": "execute",
                 "risk": "read_only_text_only",
                 "available": True,
-                "description": "Simulates Hey Jarvis wake, greeting, command capture, and safe command preview from typed text without microphone, speech, app, or screen activity.",
+                "description": "Simulates Hey Jarvis wake, visual acknowledgement, command capture, and safe command preview from typed text without microphone, speech, app, or screen activity.",
             },
             {
                 "id": "safety.injection_scan",
@@ -6225,7 +6225,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "voice.stt_candidates", "kind": "read_only", "description": "List speech-recognition candidates and installed local engine evidence."},
         {"id": "voice.stt_score", "kind": "read_only", "description": "Score a pasted STT transcript against a reference sentence without recording audio."},
         {"id": "voice.stt_recommendation", "kind": "read_only", "description": "Rank pasted STT audition export rows and recommend the strongest candidate without recording audio."},
-        {"id": "voice.loop_simulation", "kind": "read_only_text_only", "description": "Simulate wake, greeting, command capture, and command preview without microphone or audio."},
+        {"id": "voice.loop_simulation", "kind": "read_only_text_only", "description": "Simulate wake, visual acknowledgement, command capture, and command preview without microphone or audio."},
         {"id": "voice.wake_audition", "kind": "local_test_surface", "description": "Open/report the local Hey Jarvis wake audition page and score provided transcripts without sending audio away."},
         {"id": "voice.wake_debug", "kind": "read_only_text_only", "description": "Analyze pasted Copy Chat JSON wake events and detector scores without recording audio."},
         {"id": "ui.overlay", "kind": "read_only_plan", "description": "Plan the future visible Jarvis overlay/popup UI without opening windows or changing UI."},
@@ -7918,11 +7918,13 @@ def wake_debug_from_export(export_payload: Any) -> dict[str, Any]:
 
     next_step = "Try one normal Hey Jarvis command in the wake lab and paste Copy Chat JSON if it misfires."
     if echoes:
-        next_step = "The listener heard Jarvis's own greeting; keep speaker volume lower or test with headphones/quiet room."
+        next_step = "The listener heard a wake acknowledgement echo; Jarvis should normally keep wake acknowledgement visual, so test speaker volume, headphones, or the wake lab if this repeats."
     if repeated:
         next_step = "Repeated wake-only phrases were ignored correctly; say the command after the first acknowledgement."
     if captured_commands:
         next_step = f"Last captured command was '{captured_commands[-1]}'; test whether the final answer appears and speaks."
+        if echoes:
+            next_step += " It also heard a wake acknowledgement echo; Jarvis should normally keep wake acknowledgement visual."
     if margins and min(margins) < 0:
         next_step = "At least one wake transcript scored below threshold; record a few wake-lab samples so we can tune the threshold."
 
