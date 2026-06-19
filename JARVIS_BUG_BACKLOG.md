@@ -301,8 +301,17 @@ Status legend:
 2. Partially fixed/risky: Jarvis/Chrome control can be blocked by macOS
    Automation or Chrome "Allow JavaScript from Apple Events".
 
-3. Open/unknown: if Jarvis opens a browser, Leo wants to see and interact with it
-   in the Jarvis app window.
+3. Fixed/proved: if Jarvis opens a browser, Leo can see and interact with it in
+   the Jarvis app window for ordinary WebKit-safe pages.
+   - The Swift app includes `JarvisBrowserPanelView` with a `WKWebView`, address
+     field, back/forward/reload controls, a Go action, status text, loading
+     indicator, Hide Browser, and an Open Chrome / Open Signed-In Chrome button.
+   - Authenticated pages still use signed-in Chrome for the real login session;
+     the Jarvis panel remains the visible control/status surface and does not
+     copy Chrome cookies or sessions.
+   - Regression tests cover `browser.status`, ordinary URL WebKit lane,
+     authenticated Chrome handoff, and the Swift browser-panel/Chrome-handoff
+     source contract.
 
 4. Fixed/proved: Chrome bookmarks import exists for Jarvis browser/task routing.
    - Jarvis has local tools `browser.bookmarks_import`,
