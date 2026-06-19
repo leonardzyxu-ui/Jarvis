@@ -64,6 +64,10 @@ Status legend:
      shortcuts pretending to be intelligence.
    - Exception granted later: a primitive `play ...` music lookup tool is allowed
      for direct song playback.
+   - 2026-06-19 proof update: first-model prompt now explicitly rejects
+     keyword-only routing and requires intent/history/tool-description based
+     selection; direct named music playback previews label themselves as the
+     user-approved `direct_music_play` primitive exception.
 
 ## Email And Summarization Bugs
 

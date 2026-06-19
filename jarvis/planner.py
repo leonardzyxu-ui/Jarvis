@@ -1348,6 +1348,7 @@ class Planner:
                     "from_your_pick": selected_tool == "localos.music_play",
                     "limit": None,
                     "deterministic_preview": True,
+                    "user_approved_primitive_exception": "direct_music_play",
                 },
             )
         music_query = _extract_music_search_query(text)
@@ -1363,6 +1364,7 @@ class Planner:
                     "from_your_pick": False,
                     "limit": None,
                     "deterministic_preview": True,
+                    **({"user_approved_primitive_exception": "direct_music_play"} if selected_tool == "localos.music_play" else {}),
                 },
             )
         quick_result = quick_local_control(text, execute=False)

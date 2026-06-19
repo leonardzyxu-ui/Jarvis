@@ -4987,6 +4987,15 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("public product price", prompt)
         self.assertEqual(_stream_status_text({"tool": "commerce.price_convert"}), "Checking the price now.")
 
+    def test_fast_chat_prompt_rejects_keyword_theater(self):
+        prompt = jarvis_tools._fast_chat_system_prompt(NATURAL_LANGUAGE_TOOL_SPECS)
+
+        self.assertIn("Do not keyword-spot", prompt)
+        self.assertIn("actual intent", prompt)
+        self.assertIn("history", prompt)
+        self.assertIn("otherwise answer", prompt)
+        self.assertIn("tools.more", prompt)
+
     def test_magic_keyboard_price_conversion_preview_routes_without_fast_chat(self):
         preview = Planner().preview(
             "Jarvis, could you search up the price of the Magic Keyboard and tell me its price converted to yuan?"
@@ -4996,6 +5005,17 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(preview.result["plan"]["product_query"], "Magic Keyboard")
         self.assertEqual(preview.result["plan"]["target_currency"], "CNY")
         self.assertTrue(preview.result["plan"]["deterministic_preview"])
+
+    def test_named_music_play_shortcut_is_labeled_as_user_approved_exception(self):
+        preview = Planner().preview("play Waving Through a Window")
+
+        self.assertEqual(preview.tool, "localos.music_play")
+        self.assertEqual(preview.result["plan"]["query"], "Waving Through a Window")
+        self.assertTrue(preview.result["plan"]["deterministic_preview"])
+        self.assertEqual(
+            preview.result["plan"]["user_approved_primitive_exception"],
+            "direct_music_play",
+        )
 
     def test_streaming_named_music_play_uses_tool_without_fast_chat(self):
         fake_result = {

@@ -16792,6 +16792,7 @@ def _fast_chat_system_prompt(tool_specs: list[dict[str, Any]] | None = None) -> 
             "The preferred hidden call is \\tool({\"tool\":\"tool.id\",\"entities\":{}}). "
             "Jarvis will remove the hidden call before display and speech, so the visible words must make sense by themselves. "
             "Do not use internal implementation labels in visible text. Do not explain that you are choosing tools. "
+            "Do not keyword-spot; choose from actual intent, constraints, history, and tool descriptions; otherwise answer/tools.more. "
             "For email, useful selections are latest, unread_first, index:N, and range:A-B; index:2 means the second newest inbox email. "
             "Examples:\n"
             "Checking your email now. \\tool({\"tool\":\"outlook.visible_summary\",\"entities\":{\"selection\":\"unread_first\"}})\n"
