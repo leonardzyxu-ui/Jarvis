@@ -3917,6 +3917,17 @@ def localos_music_play(
     )
     if isinstance(music_app_attempt, dict) and music_app_attempt.get("status") == "playing":
         return music_app_attempt
+    if isinstance(music_app_attempt, dict):
+        return {
+            **base,
+            "status": "not_queued",
+            "available": False,
+            "control_lane": "music_app_bridge",
+            "playback_confirmation": "music_app_not_playing",
+            "music_app_attempt": music_app_attempt,
+            "reply": "I tried Music, but it did not confirm playback. I did not start another hidden music player.",
+            **_duration_fields(started_at),
+        }
     selected: dict[str, Any] | None = None
     source_result: dict[str, Any]
     if from_your_pick:
