@@ -323,11 +323,14 @@ Status legend:
      Focused source-contract tests and the Swift menu-bar self-test cover this
      restart-churn guard. Remaining risk: live macOS Speech behavior still
      needs longer real microphone soak testing.
-   - 2026-06-20 proof update: `JarvisWakeListener.start()` is now idempotent.
+    - 2026-06-20 proof update: `JarvisWakeListener.start()` is now idempotent.
      If Start Hey Jarvis is triggered while the listener is already running, it
      publishes the existing state and returns instead of creating a second
      permission/session cycle. Swift build, self-test, full Python safety suite,
      rebuilt live app launch, and canonical safe verification passed.
+   - 2026-06-20 proof update: the Swift self-test now probes the Stop path
+     directly. It schedules a delayed wake restart, calls Stop Hey Jarvis, waits
+     past the restart delay, and verifies the listener remains Off.
 
 11. Partially fixed/proved: Hey Jarvis should always listen after Start Hey
     Jarvis until Leo stops it.
@@ -338,6 +341,9 @@ Status legend:
       gates restart tasks on `self.shouldKeepRunning` so Stop Hey Jarvis remains
       the explicit off switch. Regression coverage checks restart storms,
       silent endings, post-command restart delay, and source-level restart paths.
+    - 2026-06-20 proof update: `JarvisWakeListener.testStopCancelsPendingRestart`
+      now verifies a pending delayed restart cannot revive the listener after
+      Stop Hey Jarvis.
     - Remaining risk: live macOS Speech/AVAudioEngine availability can still
       interrupt listening if permissions or the speech service fail.
 

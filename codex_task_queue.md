@@ -37,6 +37,8 @@
 - [x] Refresh the release gate again after the `0.1.472` menu-head commit; latest pre-build gate passed `5/5`.
 - [x] Rebuild Jarvis `0.1.473` so live RAM, Calendar, and price conversion execution uses first-model tool selection with labeled deterministic fallback.
 - [x] Harden the full-loop regression reports so RAM, Calendar, and Magic Keyboard cases fail if live Jarvis does not expose `routing.source: model_tool_call`.
+- [x] Add a Hey Jarvis self-test probe proving Stop cancels a pending delayed restart and leaves the listener Off.
+- [x] Add a model-route guardrail so clear RAM/Activity Monitor requests execute the safe memory tool if the first model punts to chat.
 - [ ] Pick the next risky bug from `JARVIS_BUG_BACKLOG.md`, implement a focused fix, add/update tests, and commit only after meaningful passing proof.
 
 ## Completed This Turn
@@ -45,6 +47,8 @@
 - [x] Jarvis `0.1.473` build `473` is live; full `tests.test_safety` passed `946/946`, `scripts/verify_safe.py` passed `105/105` at `runtime/verification/verify-safe-20260620-024010.json`, focused Magic Keyboard full-loop proof passed at `runtime/full_loop_regression/20260620-024641/summary.json`, and the official pre-build gate passed `5/5` at `runtime/pre_build_gate/20260620-024701/summary.json`.
 - [x] Route-source full-loop proof added: RAM `runtime/full_loop_regression/20260620-025405/summary.json`, Calendar `runtime/full_loop_regression/20260620-025414/summary.json`, and Magic Keyboard `runtime/full_loop_regression/20260620-025420/summary.json` all passed with `route_source: model_tool_call`; full `tests.test_safety` passed `949/949`.
 - [x] Official post-route-source pre-build gate passed `5/5` at `runtime/pre_build_gate/20260620-025646/summary.json`.
+- [x] Hey Jarvis stop/restart proof added: `JarvisWakeListener.testStopCancelsPendingRestart()` schedules a delayed restart, calls Stop, waits past the delay, and asserts the listener remains Off. Focused Swift tests passed, `swift build --package-path swift-shell --product jarvis-menu-bar` passed, and `swift run --package-path swift-shell jarvis-menu-bar --self-test` passed.
+- [x] Model route guardrail added: if the first model completes as `conversation.fast_local` for an unmistakable RAM/Activity Monitor request, Jarvis falls back to `diagnostics.memory_usage` and records `model_route_fallback`. Full `tests.test_safety` passed `950/950`.
 - [x] Rebuilt the canonical `output/Jarvis.app` bundle at version `0.1.468`.
 - [x] Reran `scripts/verify_safe.py`; safe verification passed `105/105`.
 - [x] Refreshed report/workboard surfaces and reran `scripts/smoke_fast_latency.py`; fast latency passed `3/3`.

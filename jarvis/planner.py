@@ -1127,6 +1127,19 @@ class Planner:
             )
             if routed is not None:
                 return routed
+        if result.get("status") == "completed" and str(result.get("tool") or "conversation.fast_local") == "conversation.fast_local":
+            safe_tool = self._safe_read_only_tool_for_punted_model_route(text)
+            if safe_tool is not None:
+                routed = self.handle_selected_tool(text, safe_tool, {}, history=history)
+                if routed is not None:
+                    routed.result["model_route_fallback"] = {
+                        "used": True,
+                        "reason": "model_answered_instead_of_safe_tool",
+                        "primary_status": result.get("status"),
+                        "primary_tool": result.get("tool"),
+                        "primary_backend": result.get("backend"),
+                    }
+                    return routed
         if result.get("status") != "completed" and _looks_like_email_inspection_request(text.lower()):
             routed = self.handle_selected_tool(text, "outlook.visible_summary", {}, history=history)
             if routed is not None:
@@ -1146,6 +1159,17 @@ class Planner:
         if result.get("duration_human"):
             summary = f"{summary} Fast model time: {result['duration_human']}."
         return self._result(text, tool, summary, assessment, result, bool(result.get("executed", True)))
+
+    @staticmethod
+    def _safe_read_only_tool_for_punted_model_route(text: str) -> str | None:
+        lower = text.lower()
+        if _looks_like_memory_usage_request(lower):
+            return "diagnostics.memory_usage"
+        if _looks_like_calendar_schedule_request(lower):
+            return "calendar.today_schedule"
+        if _looks_like_price_conversion_request(text):
+            return "commerce.price_convert"
+        return None
 
     def preview(
         self,

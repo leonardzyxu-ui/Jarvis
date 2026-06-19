@@ -24,7 +24,7 @@ enum JarvisMenuBarSelfTest {
         guard health.ok else {
             throw SelfTestError.failed("Worker health endpoint did not report ok.")
         }
-        try runCommandRoutingSelfTest()
+        try await runCommandRoutingSelfTest()
 
         var modeSelfTest = false
         if let mode = try? await withRetry("mode", operation: {
@@ -117,7 +117,7 @@ enum JarvisMenuBarSelfTest {
     }
 
     @MainActor
-    static func runCommandRoutingSelfTest() throws {
+    static func runCommandRoutingSelfTest() async throws {
         guard !JarvisShellModel.shouldUseNativeOutlookRead("check my email and summarize the newest email in my inbox") else {
             throw SelfTestError.failed("Generic email requests should go to the worker planner before native OCR.")
         }
@@ -356,6 +356,13 @@ enum JarvisMenuBarSelfTest {
         }
         guard JarvisWakeListener.testSilentEndDecision(sessionAgeSeconds: 1, heardTranscript: false, awaitingCommand: true) else {
             throw SelfTestError.failed("Wake listener should restart immediate silent endings while waiting for a command.")
+        }
+        let stopRestartProbe = JarvisWakeListener()
+        let stoppedSnapshot = await stopRestartProbe.testStopCancelsPendingRestart()
+        guard stoppedSnapshot.running == false,
+              stoppedSnapshot.phase == "Off",
+              stoppedSnapshot.status == "Wake listener off" else {
+            throw SelfTestError.failed("Stop Hey Jarvis should cancel pending delayed restarts and leave the listener off.")
         }
         guard !JarvisShellModel.shouldUseNativeVoiceStatus("tts status") else {
             throw SelfTestError.failed("TTS status should route to backend diagnostics.tts, not the native voice snapshot.")

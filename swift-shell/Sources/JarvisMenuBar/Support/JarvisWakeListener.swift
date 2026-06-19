@@ -538,6 +538,16 @@ final class JarvisWakeListener {
         )
     }
 
+    func testStopCancelsPendingRestart() async -> JarvisWakeListenerSnapshot {
+        shouldKeepRunning = true
+        phase = .waitingForWake
+        status = "Test listener running"
+        scheduleRestart(after: 0.08, countsTowardStability: false)
+        stop()
+        try? await Task.sleep(nanoseconds: 180_000_000)
+        return snapshot
+    }
+
     #if canImport(Speech)
     static func testPermissionCallbackPath() async -> Bool {
         await requestPermissions()

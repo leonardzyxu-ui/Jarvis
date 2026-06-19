@@ -11108,6 +11108,26 @@ Pages occupied by compressor:             10.
         model_mock.assert_not_called()
         memory_mock.assert_called_once_with()
 
+    def test_model_chat_punt_on_clear_memory_request_falls_back_to_safe_tool(self):
+        fake_chat = {
+            "tool": "conversation.fast_local",
+            "status": "completed",
+            "executed": True,
+            "reply": "I can explain Activity Monitor.",
+        }
+        fake_result = {"tool": "diagnostics.memory_usage", "status": "checked", "executed": True, "reply": "Memory checked."}
+        with patch("jarvis.planner.run_fast_local_chat", return_value=fake_chat) as model_mock, \
+             patch("jarvis.planner.memory_usage_status", return_value=fake_result) as memory_mock:
+            result = Planner().handle("Check in Activity Monitor how much RAM my computer is using.")
+
+        self.assertEqual(result.tool, "diagnostics.memory_usage")
+        self.assertEqual(result.result["reply"], "Memory checked.")
+        self.assertEqual(result.result["routing"]["source"], "model_tool_call")
+        self.assertTrue(result.result["model_route_fallback"]["used"])
+        self.assertEqual(result.result["model_route_fallback"]["reason"], "model_answered_instead_of_safe_tool")
+        model_mock.assert_called_once()
+        memory_mock.assert_called_once_with()
+
     def test_browser_session_strategy_refuses_cookie_migration(self):
         result = browser_session_strategy("use Teams without logging in again")
 
@@ -15820,9 +15840,12 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertNotIn("Wake listener paused after repeated microphone restarts", listener_source)
         self.assertNotIn("Hey Jarvis paused because speech recognition reset before hearing you", model_source)
         self.assertIn("testSilentEndDecision", listener_source)
+        self.assertIn("testStopCancelsPendingRestart", listener_source)
         self.assertIn("testRestartStormDecision", listener_source)
         self.assertIn("testActivationRestartLimit", listener_source)
         self.assertIn("shouldKeepRunning", listener_source)
+        self.assertIn("scheduleRestart(after: 0.08, countsTowardStability: false)", listener_source)
+        self.assertIn("stop()\n        try? await Task.sleep", listener_source)
         self.assertIn("guard !shouldKeepRunning else {\n            publish()\n            return\n        }", listener_source)
         self.assertIn("if shouldKeepRunning {\n            phase = .waitingForWake\n            scheduleRestart(after: Self.postCommandRestartDelaySeconds, countsTowardStability: false)\n        }", listener_source)
         self.assertIn("guard let self, self.shouldKeepRunning else", listener_source)
@@ -15833,6 +15856,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("testSilentEndDecision(sessionAgeSeconds: 1, heardTranscript: false)", self_test_source)
         self.assertIn("testSilentEndDecision(sessionAgeSeconds: 12, heardTranscript: false)", self_test_source)
         self.assertIn("awaitingCommand: true", self_test_source)
+        self.assertIn("testStopCancelsPendingRestart", self_test_source)
+        self.assertIn("Stop Hey Jarvis should cancel pending delayed restarts", self_test_source)
         self.assertIn('"hey jervis please check email"', self_test_source)
         self.assertIn('"okay jervis please check status"', self_test_source)
         self.assertIn("bestFuzzyWakeMatch", listener_source)
