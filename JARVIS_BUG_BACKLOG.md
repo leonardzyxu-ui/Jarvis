@@ -16,12 +16,17 @@ Status legend:
 
 ## Highest Priority Bug Classes
 
-1. Open/unknown: Jarvis can still claim or imply a task succeeded when the real
-   external app did not do it.
+1. Partially fixed/proved: Jarvis should not leave stale "Still working" rows
+   after a task has completed.
    - Examples: music "playing" while LocalOS did not actually start audio;
      Outlook opened but UI still said Still working; Teams opened but Jarvis had
      not inspected the assignment.
-   - Required future proof: app-side state confirmation, not just a tool return.
+   - 2026-06-19 proof update: Swift progress nudges are tied to an active turn
+     ID, removed before final answer display and in the defer cleanup path, and
+     excluded from future model history. Regression tests cover the stale row
+     lifecycle.
+   - Remaining task-honesty subcases still need app-side state confirmation and
+     stay tracked in their own music/Teams/tool sections below.
 
 2. Partially fixed/risky: Jarvis music playback ownership has been confused.
    - Leo wants LocalOS to own all normal music playback.

@@ -15073,6 +15073,31 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("self.activeTurnID == turnID", model_source)
         self.assertIn("self.activeProgressNudgeIDs.insert(message.id)", model_source)
 
+    def test_swift_progress_nudges_stop_before_final_answer_display(self):
+        model_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Models"
+            / "JarvisShellModel.swift"
+        ).read_text(encoding="utf-8")
+
+        final_branch_start = model_source.index("let finalDetail = chatDetail(for: response)")
+        final_stop = model_source.index("stopProgressNudges()", final_branch_start)
+        final_answer = model_source.index(
+            'recordTurnPhase("Answering", detail: "Final visible answer displayed.")',
+            final_branch_start,
+        )
+        final_append = model_source.index("messages.append(ChatMessage(role: .jarvis, text: finalText", final_branch_start)
+        self.assertLess(final_stop, final_answer)
+        self.assertLess(final_stop, final_append)
+
+        defer_start = model_source.index("defer {")
+        defer_stop = model_source.index("stopProgressNudges()", defer_start)
+        busy_clear = model_source.index("isBusy = false", defer_start)
+        self.assertLess(defer_stop, busy_clear)
+
     def test_swift_progress_nudges_use_natural_wording(self):
         model_source = (
             PROJECT_ROOT
