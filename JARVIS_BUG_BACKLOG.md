@@ -645,6 +645,10 @@ Status legend:
      ref `origin/codex/jarvis-overnight-20260608` is older than local HEAD, and
      `git fetch --dry-run origin codex/jarvis-overnight-20260608` reported no
      incoming updates. No push was attempted.
+   - 2026-06-20 proof update: CLI state now reports
+     `codex/jarvis-overnight-20260608...origin/codex/jarvis-overnight-20260608
+     [ahead 147]`; the branch has an upstream and no behind count. No push was
+     attempted because pushing exports code to GitHub.
 
 3. Fixed/proved at least once: dirty/untracked files are now visible to Jarvis
    before release or GitHub troubleshooting.
