@@ -56,3 +56,5 @@
 - [x] Full `tests.test_safety` passed `934/934`, and `scripts/verify_safe.py` passed `105/105` with report `runtime/verification/verify-safe-20260620-001717.json`.
 - [x] Stop-speaking route honesty now uses the real `stop_speaking()` reply; live rebuilt Jarvis returned `I was not speaking.` for an idle `stop talking` command without starting speech.
 - [x] Full `tests.test_safety` passed `935/935`, and `scripts/verify_safe.py` passed `105/105` with report `runtime/verification/verify-safe-20260620-002805.json`.
+- [x] Added a live quiet stop-speaking probe to the pre-build gate so future builds prove `stop talking` does not queue speech or hide a false summary.
+- [x] Full `tests.test_safety` passed `937/937`, pre-build gate passed `4/4` with report `runtime/pre_build_gate/20260620-003454/summary.json`, and `scripts/verify_safe.py` passed `105/105` with report `runtime/verification/verify-safe-20260620-003852.json`.

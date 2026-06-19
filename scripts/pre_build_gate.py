@@ -176,6 +176,18 @@ def build_steps(
                 "proof_contract": speech_proof_contract(exercise_live_speech=exercise_live_speech),
             }
         )
+    steps.append(
+        {
+            "id": "stop_speaking_probe",
+            "label": "Quiet stop-speaking probe",
+            "command": [sys.executable, "scripts/probe_stop_speaking.py", "--base-url", base_url],
+            "proof_contract": {
+                "speech_mode": "suppressed_for_stop_speaking",
+                "starts_audio": False,
+                "requires_live_worker": True,
+            },
+        }
+    )
     if not skip_cleanup:
         steps.append(cleanup_chrome_step())
     steps.append(

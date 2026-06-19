@@ -157,6 +157,7 @@ from scripts import (
     generate_tts_audition,
     full_loop_regression,
     pre_build_gate,
+    probe_stop_speaking,
     probe_gemma3n_audio,
     render_overnight_status,
     repair_local_stt_model,
@@ -684,6 +685,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             [
                 "python_safety_suite",
                 "full_loop_regression",
+                "stop_speaking_probe",
                 "cleanup_chrome_test_tabs",
                 "report_refresh",
             ],
@@ -697,6 +699,9 @@ class VerifySafeScriptTests(unittest.TestCase):
             steps[1]["timeout_seconds"],
             sum(case["latency_budget_seconds"] for case in full_loop_regression.select_full_loop_cases("all")),
         )
+        self.assertIn("scripts/probe_stop_speaking.py", steps[2]["command"])
+        self.assertEqual(steps[2]["proof_contract"]["speech_mode"], "suppressed_for_stop_speaking")
+        self.assertFalse(steps[2]["proof_contract"]["starts_audio"])
 
     def test_pre_build_gate_can_exercise_live_speech_explicitly(self):
         steps = pre_build_gate.build_steps(
@@ -707,7 +712,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             skip_cleanup=True,
         )
 
-        self.assertEqual([step["id"] for step in steps], ["full_loop_regression", "report_refresh"])
+        self.assertEqual([step["id"] for step in steps], ["full_loop_regression", "stop_speaking_probe", "report_refresh"])
         self.assertIn("--exercise-live-speech", steps[0]["command"])
         self.assertEqual(steps[0]["proof_contract"]["speech_mode"], "live_playback_exercised")
 
@@ -722,6 +727,7 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertEqual(steps[0]["proof_contract"]["speech_mode"], "suppressed_for_probe")
         self.assertFalse(steps[0]["proof_contract"]["live_playback_exercised"])
+        self.assertEqual(steps[1]["proof_contract"]["speech_mode"], "suppressed_for_stop_speaking")
 
     def test_pre_build_gate_require_live_speech_fails_closed_without_exercise_flag(self):
         calls = []
@@ -773,6 +779,50 @@ class VerifySafeScriptTests(unittest.TestCase):
                 skip_full_loop=True,
                 skip_cleanup=True,
             )
+
+    def test_probe_stop_speaking_passes_only_when_summary_matches_tool_reply(self):
+        fake_response = {
+            "tool": "voice.stop_speaking",
+            "executed": True,
+            "summary": "I was not speaking.",
+            "speech": None,
+            "result": {
+                "status": "idle",
+                "reply": "I was not speaking.",
+                "started_audio": False,
+                "played_audio": False,
+            },
+        }
+
+        with patch("scripts.probe_stop_speaking.post_json", return_value=fake_response):
+            result = probe_stop_speaking.probe_stop_speaking("http://127.0.0.1:8765")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["summary"], "I was not speaking.")
+        self.assertEqual(result["result_status"], "idle")
+        self.assertEqual(result["speech"], None)
+
+    def test_probe_stop_speaking_fails_if_it_starts_audio_or_lies(self):
+        fake_response = {
+            "tool": "voice.stop_speaking",
+            "executed": True,
+            "summary": "Stopped Jarvis speech playback.",
+            "speech": {"status": "queued"},
+            "result": {
+                "status": "idle",
+                "reply": "I was not speaking.",
+                "started_audio": True,
+                "played_audio": False,
+            },
+        }
+
+        with patch("scripts.probe_stop_speaking.post_json", return_value=fake_response):
+            result = probe_stop_speaking.probe_stop_speaking("http://127.0.0.1:8765")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("stop-speaking command unexpectedly returned a speech payload", result["failures"])
+        self.assertIn("stop-speaking command reported starting or playing audio", result["failures"])
+        self.assertIn("visible summary does not match the stop-speaking tool reply", result["failures"])
 
     def test_pre_build_gate_writes_latest_and_runs_cleanup_after_failure(self):
         commands = []

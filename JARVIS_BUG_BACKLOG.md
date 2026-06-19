@@ -66,6 +66,11 @@ Status legend:
      `I was not speaking.` instead of falsely claiming playback was stopped.
      Regression coverage was added, and live rebuilt Jarvis returned the idle
      summary without starting any speech process.
+   - 2026-06-20 proof update: the pre-build gate now includes a live quiet
+     `stop_speaking_probe`. It posts `stop talking` with speech suppressed,
+     requires the `voice.stop_speaking` tool, requires the visible summary to
+     match the tool reply, and fails if any speech payload or audio-start flag
+     appears.
 
 4. Open/unknown: full speech-in/action-out/speech-back loop is not yet proved
    across Leo's real target prompts.
