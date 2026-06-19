@@ -4204,6 +4204,17 @@ class VerifySafeScriptTests(unittest.TestCase):
                 }
             if path == "/api/command":
                 self.assertTrue(payload.get("suppress_speech"))
+                if payload.get("command") == "speech status":
+                    return {
+                        "tool": "voice.speech_mute",
+                        "result": {"muted": True, "reply": "Jarvis speech is muted."},
+                        "speech": {
+                            "status": "suppressed_by_request",
+                            "spoken": False,
+                            "reason": "final",
+                            "text_preview": "Jarvis speech is muted.",
+                        },
+                    }
                 return {
                     "tool": "system.status",
                     "result": {"reply": reply},
@@ -4224,7 +4235,8 @@ class VerifySafeScriptTests(unittest.TestCase):
              patch("scripts.verify_safe.get_json", side_effect=lambda *_args, **_kwargs: next(get_statuses)):
             detail = verify_safe.check_endpoint_speech_mute("http://127.0.0.1:8765")
 
-        self.assertEqual(detail, "speech mute state toggled and verifier status stayed silent")
+        self.assertEqual(detail, "speech mute state and speech-status command stayed silent")
+        self.assertIn(("/api/command", {"command": "speech status", "suppress_speech": True}), posts)
         self.assertIn(("/api/command", {"command": "status", "suppress_speech": True}), posts)
         self.assertNotIn("/api/speech/status", [path for path, _payload in posts])
         self.assertEqual(posts[-1], ("/api/speech/mute", {"muted": False}))
@@ -4243,6 +4255,17 @@ class VerifySafeScriptTests(unittest.TestCase):
                     "status": "muted" if payload["muted"] else "unmuted",
                 }
             if path == "/api/command":
+                if payload.get("command") == "speech status":
+                    return {
+                        "tool": "voice.speech_mute",
+                        "result": {"muted": True, "reply": "Jarvis speech is muted."},
+                        "speech": {
+                            "status": "suppressed_by_request",
+                            "spoken": False,
+                            "reason": "final",
+                            "text_preview": "Jarvis speech is muted.",
+                        },
+                    }
                 return {
                     "tool": "system.status",
                     "result": {"reply": "Opened Microsoft Outlook."},
@@ -4278,6 +4301,17 @@ class VerifySafeScriptTests(unittest.TestCase):
                 }
             if path == "/api/command":
                 self.assertTrue(payload.get("suppress_speech"))
+                if payload.get("command") == "speech status":
+                    return {
+                        "tool": "voice.speech_mute",
+                        "result": {"muted": True, "reply": "Jarvis speech is muted."},
+                        "speech": {
+                            "status": "suppressed_by_request",
+                            "spoken": False,
+                            "reason": "final",
+                            "text_preview": "Jarvis speech is muted.",
+                        },
+                    }
                 return {
                     "tool": "system.status",
                     "result": {"reply": "Jarvis status."},
@@ -4294,7 +4328,8 @@ class VerifySafeScriptTests(unittest.TestCase):
              patch("scripts.verify_safe.get_json", return_value={"muted": True}):
             detail = verify_safe.check_endpoint_speech_mute("http://127.0.0.1:8765")
 
-        self.assertEqual(detail, "speech mute state toggled and verifier status stayed silent")
+        self.assertEqual(detail, "speech mute state and speech-status command stayed silent")
+        self.assertIn(("/api/command", {"command": "speech status", "suppress_speech": True}), posts)
         self.assertNotIn("/api/speech/status", [path for path, _payload in posts])
         self.assertEqual(posts[-1], ("/api/speech/mute", {"muted": True}))
 

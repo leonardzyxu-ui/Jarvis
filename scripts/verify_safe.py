@@ -1544,6 +1544,16 @@ def check_endpoint_speech_mute(base_url: str) -> str:
         require(muted.get("muted") is True, f"mute state was {muted.get('muted')}")
         status = get_json("/api/speech/mute", base_url=base_url)
         require(status.get("muted") is True, f"status muted was {status.get('muted')}")
+        speech_status = post_json("/api/command", {"command": "speech status", "suppress_speech": True}, base_url=base_url)
+        speech_status_result = speech_status.get("result") or {}
+        speech_status_speech = speech_status.get("speech") or {}
+        require(speech_status.get("tool") == "voice.speech_mute", f"speech status tool was {speech_status.get('tool')}")
+        require(speech_status_result.get("muted") is True, f"speech status muted was {speech_status_result.get('muted')}")
+        require(
+            speech_status_speech.get("status") == "suppressed_by_request",
+            f"speech status command speech was {speech_status_speech}",
+        )
+        require(speech_status_speech.get("spoken") is False, f"speech status command spoke: {speech_status_speech}")
         final = post_json("/api/command", {"command": "status", "suppress_speech": True}, base_url=base_url)
         final_speech = final.get("speech") or {}
         final_reply = (final.get("result") or {}).get("reply")
@@ -1557,7 +1567,7 @@ def check_endpoint_speech_mute(base_url: str) -> str:
         )
     finally:
         post_json("/api/speech/mute", {"muted": original_muted}, base_url=base_url)
-    return "speech mute state toggled and verifier status stayed silent"
+    return "speech mute state and speech-status command stayed silent"
 
 
 def check_endpoint_quiet_command(base_url: str) -> str:

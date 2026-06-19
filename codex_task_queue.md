@@ -26,6 +26,7 @@
 - [x] Re-run live Music playback proof through the native Music bridge and record the latest no-hidden-audio cleanup evidence.
 - [x] Route `speech status` / mute-status requests to the real `voice.speech_mute` backend state instead of fast-model guessing.
 - [x] Bump the canonical Jarvis app bundle and product-report headline to `0.1.470` after the speech-status/tool-catalog/copied-chat hardening work.
+- [x] Strengthen `scripts/verify_safe.py` so the official speech mute check also proves quiet `speech status` routes to `voice.speech_mute`.
 - [ ] Pick the next risky bug from `JARVIS_BUG_BACKLOG.md`, implement a focused fix, add/update tests, and commit only after meaningful passing proof.
 
 ## Completed This Turn
@@ -76,3 +77,4 @@
 - [x] Fixed `speech status` routing: focused route test passed, direct planner smoke preserved TTS/STT routes, full `tests.test_safety` passed `940/940`, rebuilt/relaunched Jarvis `0.1.469`, and live `/api/command` returned `voice.speech_mute`.
 - [x] Registered `voice.speech_mute` in the backend catalog; live `tool catalog status` returned `consistent` with no missing registry entries.
 - [x] Rebuilt/relaunched Jarvis `0.1.470` build `470`; live checks confirmed speech status, tool catalog consistency, and morning status version display.
+- [x] Updated the safe verifier to check quiet `speech status`; focused verifier tests passed and live `scripts/verify_safe.py` passed `105/105` with report `runtime/verification/verify-safe-20260620-014658.json`.
