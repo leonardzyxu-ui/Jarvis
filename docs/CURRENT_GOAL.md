@@ -63,7 +63,7 @@ without restarting from scratch.
   Playwright CLI cache, runtime logs/reports, local app bundles, and OS
   metadata.
 - Current ad-hoc app bundle has been rebuilt again as
-  `output/Jarvis-Current-17.app` and passed plist, signature, permission,
+  `output/Jarvis.app` and passed plist, signature, permission,
   worker, and hotkey self-tests.
 - App-bundle plist generation now XML-escapes configurable app name and bundle
   identifier values; the verifier builds a temporary app whose name contains
@@ -268,26 +268,26 @@ without restarting from scratch.
   `127.0.0.1:8765` worker while reporting the latest bundle.
 - `python3 scripts/verify_safe.py` passed 89/89 checks and wrote
   `runtime/verification/verify-safe-20260603-060416.json`.
-- `APP_NAME=Jarvis-Current swift-shell/scripts/build_app_bundle.sh` built
-  `output/Jarvis-Current-17.app`.
-- `plutil -lint output/Jarvis-Current-17.app/Contents/Info.plist` passed.
-- `codesign --verify --deep --strict --verbose=2 output/Jarvis-Current-17.app`
+- `swift-shell/scripts/build_app_bundle.sh` built
+  `output/Jarvis.app`.
+- `plutil -lint output/Jarvis.app/Contents/Info.plist` passed.
+- `codesign --verify --deep --strict --verbose=2 output/Jarvis.app`
   passed.
-- `output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar
+- `output/Jarvis.app/Contents/MacOS/jarvis-menu-bar
   --permission-self-test` passed.
-- `output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar
+- `output/Jarvis.app/Contents/MacOS/jarvis-menu-bar
   --hotkey-self-test` passed.
 - `JARVIS_BASE_URL=http://127.0.0.1:8847
-  output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --self-test`
+  output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --self-test`
   passed with `Verification: passed 89/89` and `Mode: pause/resume passed`.
 - `JARVIS_BASE_URL=http://127.0.0.1:8842
-  output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar
+  output/Jarvis.app/Contents/MacOS/jarvis-menu-bar
   --worker-monitor-self-test` passed.
 - `JARVIS_BASE_URL=http://127.0.0.1:8843
-  output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar
+  output/Jarvis.app/Contents/MacOS/jarvis-menu-bar
   --worker-concurrency-self-test` passed.
 - `JARVIS_BASE_URL=http://127.0.0.1:8844 JARVIS_DISABLE_WORKER_AUTOSTART=1
-  output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar
+  output/Jarvis.app/Contents/MacOS/jarvis-menu-bar
   --worker-autostart-disabled-self-test` passed.
 
 ## Latest Notes
@@ -314,7 +314,7 @@ without restarting from scratch.
   which made the shell attempt `python3 scripts/run_dashboard.py`; it failed
   immediately with `Address already in use`, and follow-up process/port audit
   confirmed no extra worker was left behind.
-- Morning status now chooses the highest numbered `Jarvis-Current-N.app`
+- Morning status now reports only the canonical `output/Jarvis.app`
   bundle instead of relying only on modification time.
 - 04:49 monitoring check: morning status still reported `89/89`, only the
   known stale default worker was visible, and bundle test ports `8841` through

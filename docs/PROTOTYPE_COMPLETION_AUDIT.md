@@ -18,7 +18,7 @@ not claim the full Jarvis product is complete.
 | Swift worker startup and recovery supervision | `swift-shell/Sources/JarvisMenuBar/Support/JarvisWorkerSupervisor.swift`, `swift run --package-path swift-shell jarvis-menu-bar --self-test`, `swift run --package-path swift-shell jarvis-menu-bar --worker-monitor-self-test`, `swift run --package-path swift-shell jarvis-menu-bar --worker-concurrency-self-test`, `swift run --package-path swift-shell jarvis-menu-bar --worker-autostart-disabled-self-test`, autostart opt-out via `JARVIS_DISABLE_WORKER_AUTOSTART=1` | Done for local startup plus serialized concurrent startup, basic health monitor/recovery, autostart opt-out, and app-quit cleanup for started workers; advanced crash policy controls deferred |
 | Native shell hotkey | `swift-shell/Sources/JarvisMenuBar/Support/JarvisHotKeyService.swift`, `swift run --package-path swift-shell jarvis-menu-bar --hotkey-self-test` | Done for default `Command+Option+J`; configuration deferred |
 | Native permission readiness | `swift-shell/Sources/JarvisMenuBar/Support/JarvisPermissionService.swift`, `swift run --package-path swift-shell jarvis-menu-bar --permission-self-test` | Done for read-only status checks; permission request/onboarding flows deferred |
-| Local app bundle packaging | `swift-shell/scripts/build_app_bundle.sh`, `output/Jarvis.app`, `output/Jarvis-Current-17.app`, `codesign --verify --deep --strict --verbose=2 output/Jarvis-Current-17.app`, bundled executable self-tests | Done for local ad-hoc-signed bundle with XML-escaped plist values; Developer ID/notarization deferred |
+| Local app bundle packaging | `swift-shell/scripts/build_app_bundle.sh`, `output/Jarvis.app`, `codesign --verify --deep --strict --verbose=2 output/Jarvis.app`, bundled executable self-tests | Done for local ad-hoc-signed bundle with XML-escaped plist values; Developer ID/notarization deferred |
 | Safe verification harness | `scripts/verify_safe.py`, `runtime/verification/verify-safe-20260603-060416.json` | Done; latest run passed 89/89 checks |
 | Audit redaction and truncation | `jarvis/audit.py`, `tests/test_safety.py`, `jarvis/self_check.py` | Done; obvious password, token, API key, secret, credential, bearer values, env/header-style secret labels, sensitive structured detail keys, standalone OpenAI/GitHub-looking key shapes, and JSON-unsafe detail values are redacted or normalized before JSONL writes, and long strings are capped |
 | Readiness summary endpoint | `GET /api/readiness`, dashboard Readiness block, `swift run --package-path swift-shell jarvis-host-probe --readiness`, `scripts/verify_safe.py` | Done; aggregates mode, worker, tool availability, self-check counts, audit status, and notes |
@@ -119,15 +119,15 @@ codesign --verify --deep --strict --verbose=2 output/Jarvis.app
 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --self-test
 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --hotkey-self-test
 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --permission-self-test
-APP_NAME=Jarvis-Current swift-shell/scripts/build_app_bundle.sh
-plutil -lint output/Jarvis-Current-17.app/Contents/Info.plist
-codesign --verify --deep --strict --verbose=2 output/Jarvis-Current-17.app
-output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --permission-self-test
-output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --hotkey-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8847 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --self-test
-JARVIS_BASE_URL=http://127.0.0.1:8842 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-monitor-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8843 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-concurrency-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8844 JARVIS_DISABLE_WORKER_AUTOSTART=1 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-autostart-disabled-self-test
+swift-shell/scripts/build_app_bundle.sh
+plutil -lint output/Jarvis.app/Contents/Info.plist
+codesign --verify --deep --strict --verbose=2 output/Jarvis.app
+output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --permission-self-test
+output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --hotkey-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8847 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --self-test
+JARVIS_BASE_URL=http://127.0.0.1:8842 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-monitor-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8843 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-concurrency-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8844 JARVIS_DISABLE_WORKER_AUTOSTART=1 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-autostart-disabled-self-test
 curl -sS http://127.0.0.1:8765/api/health
 curl -sS http://127.0.0.1:8765/api/tools
 curl -sS http://127.0.0.1:8765/api/readiness
@@ -285,7 +285,7 @@ curl -sS -X POST http://127.0.0.1:8765/api/command \
   `output/playwright/jarvis-dashboard-worker-runtime-mobile.png`; console
   warnings/errors remained 0
 - Local `output/Jarvis.app` bundle has valid plist, verifies with ad-hoc signature, launches as a long-running menu-bar process, and its bundled executable can cold-start the Python worker from outside the project directory
-- Current `output/Jarvis-Current-17.app` bundle has valid plist, verifies with
+- Current `output/Jarvis.app` bundle has valid plist, verifies with
   ad-hoc signature, and its bundled permission, worker, and hotkey self-tests
   passed
 - Temporary bundle verification now builds an app name containing spaces, `&`,

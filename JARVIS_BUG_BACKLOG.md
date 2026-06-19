@@ -558,6 +558,9 @@ Status legend:
      non-canonical app names/bundle IDs and numbered replacement bundles unless
      an explicit experiment override is set; morning status now ignores legacy
      `Jarvis-Current*.app` bundles and reports only `output/Jarvis.app`.
+   - 2026-06-19 proof update: user-facing docs/README/current-goal guidance now
+     references only the canonical `output/Jarvis.app`; a regression rejects
+     legacy `Jarvis-Current` and `Jarvis LocalOS Only` instructions.
 
 ## Safety, Privacy, And Product-Quality Bugs
 

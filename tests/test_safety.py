@@ -11600,6 +11600,22 @@ Pages occupied by compressor:             10.
         self.assertNotIn("Jarvis LocalOS Only", script)
         self.assertNotIn("LocalOS Only", script)
 
+    def test_user_facing_docs_reference_only_canonical_jarvis_app(self):
+        docs = [
+            PROJECT_ROOT / "README.md",
+            PROJECT_ROOT / "docs" / "PROTOTYPE_COMPLETION_AUDIT.md",
+            PROJECT_ROOT / "docs" / "MORNING_HANDOFF.md",
+            PROJECT_ROOT / "docs" / "CURRENT_GOAL.md",
+            PROJECT_ROOT / "CURRENT_GOAL.md",
+        ]
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in docs if path.exists())
+
+        self.assertIn("output/Jarvis.app", combined)
+        self.assertNotIn("APP_NAME=Jarvis-Current", combined)
+        self.assertNotIn("output/Jarvis-Current", combined)
+        self.assertNotIn("Jarvis LocalOS Only", combined)
+        self.assertNotIn("LocalOS Only", combined)
+
     def test_packaged_diagnostics_use_enclosing_app_bundle(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

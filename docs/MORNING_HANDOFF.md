@@ -7,7 +7,7 @@ Checkpoint target: 06:30 Beijing Standard Time
 
 - Latest verification: `89/89` passed in
   `runtime/verification/verify-safe-20260603-060416.json`.
-- Current validated bundle: `output/Jarvis-Current-17.app`.
+- Current validated bundle: `output/Jarvis.app`.
 - Current default worker: `127.0.0.1:8765` is online but stale; restart the
   existing worker before running `python3 scripts/run_dashboard.py`.
 - No approval-blocked command was left waiting. One accidental backtick command
@@ -15,7 +15,7 @@ Checkpoint target: 06:30 Beijing Standard Time
   with `Address already in use`, and left no extra worker behind.
 - Current bundle test ports `8841` through `8847` were checked closed after
   self-tests.
-- Morning status now prefers the highest numbered `Jarvis-Current-N.app`
+- Morning status now prefers the canonical `output/Jarvis.app`
   bundle, so older bundle mtimes should not confuse the handoff.
 - 04:49 monitoring check: morning status still reported `89/89`, only the
   known stale default worker was visible, and ports `8841` through `8846`
@@ -239,7 +239,7 @@ Jarvis remains a local-first prototype with:
   confirmation cases while leaving harmless grep patterns read-only.
 - Added `.gitignore` for generated caches, SwiftPM output, Playwright CLI
   cache, runtime logs, local app bundles, and OS metadata.
-- Rebuilt the current local app bundle as `output/Jarvis-Current-17.app` and
+- Rebuilt the current local app bundle as `output/Jarvis.app` and
   verified its plist, ad-hoc signature, permission self-test, worker self-test,
   hotkey self-test, worker monitor self-test, and worker concurrency self-test.
 - Hardened app-bundle plist generation to XML-escape configurable app name and
@@ -270,14 +270,14 @@ python3 scripts/morning_status.py --base-url http://127.0.0.1:8765/api/command
 It accepts both base URLs and `/api/command` URLs. It currently reports that
 `127.0.0.1:8765` is online but stale, the latest
 verification passed 89/89, and the current bundle is
-`output/Jarvis-Current-17.app`.
+`output/Jarvis.app`.
 
 Latest unit tests passed 85/85.
 Latest self-check passed 49/49.
 
 Current app bundle evidence:
 
-- Bundle: `output/Jarvis-Current-17.app`
+- Bundle: `output/Jarvis.app`
 - `plutil -lint` passed.
 - `codesign --verify --deep --strict --verbose=2` passed.
 - Bundled `--permission-self-test`, `--self-test`, and
@@ -376,10 +376,10 @@ swift run --package-path swift-shell jarvis-host-probe --mode
 swift run --package-path swift-shell jarvis-menu-bar --permission-self-test
 swift run --package-path swift-shell jarvis-menu-bar --worker-monitor-self-test
 swift run --package-path swift-shell jarvis-menu-bar --worker-concurrency-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8847 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --self-test
-JARVIS_BASE_URL=http://127.0.0.1:8842 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-monitor-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8843 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-concurrency-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8844 JARVIS_DISABLE_WORKER_AUTOSTART=1 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-autostart-disabled-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8847 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --self-test
+JARVIS_BASE_URL=http://127.0.0.1:8842 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-monitor-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8843 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-concurrency-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8844 JARVIS_DISABLE_WORKER_AUTOSTART=1 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-autostart-disabled-self-test
 ```
 
 ## Still Deferred

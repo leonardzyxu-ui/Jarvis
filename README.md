@@ -200,19 +200,20 @@ output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --hotkey-self-test
 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --permission-self-test
 ```
 
-To build a timestamp-independent current bundle without replacing an existing
-`output/Jarvis.app`, set an app name:
+The normal local app is always `output/Jarvis.app`. Use the same bundle for
+extra self-tests so macOS permissions, Dock identity, and status reports all
+refer to the app Leo actually opens:
 
 ```bash
-APP_NAME=Jarvis-Current swift-shell/scripts/build_app_bundle.sh
-plutil -lint output/Jarvis-Current-17.app/Contents/Info.plist
-codesign --verify --deep --strict --verbose=2 output/Jarvis-Current-17.app
-output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --permission-self-test
-output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --hotkey-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8847 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --self-test
-JARVIS_BASE_URL=http://127.0.0.1:8842 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-monitor-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8843 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-concurrency-self-test
-JARVIS_BASE_URL=http://127.0.0.1:8844 JARVIS_DISABLE_WORKER_AUTOSTART=1 output/Jarvis-Current-17.app/Contents/MacOS/jarvis-menu-bar --worker-autostart-disabled-self-test
+swift-shell/scripts/build_app_bundle.sh
+plutil -lint output/Jarvis.app/Contents/Info.plist
+codesign --verify --deep --strict --verbose=2 output/Jarvis.app
+output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --permission-self-test
+output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --hotkey-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8847 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --self-test
+JARVIS_BASE_URL=http://127.0.0.1:8842 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-monitor-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8843 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-concurrency-self-test
+JARVIS_BASE_URL=http://127.0.0.1:8844 JARVIS_DISABLE_WORKER_AUTOSTART=1 output/Jarvis.app/Contents/MacOS/jarvis-menu-bar --worker-autostart-disabled-self-test
 ```
 
 The menu-bar shell starts the local Python worker automatically when localhost
