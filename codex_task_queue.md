@@ -13,6 +13,7 @@
 - [x] Run the updated pre-build gate wrapper and record the `3/3` pass with explicit `suppressed_for_probe` speech contract.
 - [x] Add a morning-status warning for speech being unmuted without any Jarvis menu-bar/status-helper emergency control.
 - [x] Add current-night 0.1.468 highlights to the master report so the top shipped archive names the `8/8` target pass, Music proof, speech-proof modes, Chrome cleanup, and speech emergency status.
+- [x] Mark Gemma/Qwen-style audio-native models as `research_only` in `models.test_plan` until bounded probes and full-loop STT proof exist.
 - [ ] Pick the next risky bug from `JARVIS_BUG_BACKLOG.md`, implement a focused fix, add/update tests, and commit only after meaningful passing proof.
 
 ## Completed This Turn
@@ -31,3 +32,4 @@
 - [x] Pre-build gate wrapper passed `3/3` in `128.093s`, including full-loop regression, Chrome cleanup, and report refresh.
 - [x] Focused morning-status speech emergency tests passed, and live status reports `Speech emergency: safe (speech muted)`.
 - [x] Focused master-report render tests passed for the new current-night product highlights.
+- [x] Focused model-plan tests passed for the `audio_input_status` research-only contract.

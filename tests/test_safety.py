@@ -11009,6 +11009,9 @@ Pages occupied by compressor:             10.
         self.assertTrue(result["offline_fallback"]["cloud_first"])
         self.assertTrue(result["offline_fallback"]["remote_first"])
         self.assertFalse(result["offline_fallback"]["local_auto_run_allowed"])
+        self.assertEqual(result["offline_fallback"]["audio_input_status"]["status"], "research_only")
+        self.assertFalse(result["offline_fallback"]["audio_input_status"]["final_stt_path"])
+        self.assertIn("not promoted them into the finished wake/STT path", result["offline_fallback"]["audio_input_status"]["claim"])
         self.assertEqual(repaired["model"], "Gemma 3 4B")
         self.assertIn("Gemma 3 4B", repaired["reply"])
         self.assertNotIn("Gemma 3.4B", repaired["reply"])
@@ -11028,6 +11031,7 @@ Pages occupied by compressor:             10.
         self.assertEqual(result["offline_fallback"]["recommended_local_candidate"], "qwen3:0.6b")
         self.assertIn("fastest tiny local fallback", result["offline_fallback"]["recommended_reason"])
         self.assertFalse(result["offline_fallback"]["local_auto_run_allowed"])
+        self.assertFalse(result["offline_fallback"]["audio_input_status"]["final_stt_path"])
         self.assertIn("Do not download, load, or benchmark local models", result["offline_fallback"]["notes"][0])
 
     def test_model_test_plan_names_stopped_tailscale_before_local_fallback(self):

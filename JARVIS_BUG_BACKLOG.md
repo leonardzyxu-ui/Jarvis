@@ -335,6 +335,11 @@ Status legend:
 
 15. Open/unknown: Gemma/Qwen/audio-native model direct speech understanding was
     investigated but not converted into a final Jarvis STT path.
+    - 2026-06-19 proof update: `models.test_plan` now exposes
+      `offline_fallback.audio_input_status` with `status: research_only` and
+      `final_stt_path: false`, plus explicit requirements for bounded audio
+      probes, latency/resource comparison, and full-loop tests before any
+      audio-native model can become part of live Jarvis dictation.
 
 ## App UX, Windowing, And Overlay Bugs
 
