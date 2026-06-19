@@ -491,6 +491,12 @@ Status legend:
 
 3. Open/unknown: stronger browser/computer-control tools must avoid destructive
    actions unless confirmed.
+   - 2026-06-19 proof update: planned future `ui.automation` and `screen.ocr`
+     tool status now includes machine-readable permission gates and a
+     destructive-action block list covering send, submit, post, upload, delete,
+     purchase, settings changes, credentials, and schoolwork changes. These
+     tools still do not execute, open apps, capture screens, or read private
+     content.
 
 4. Partially fixed/risky: overnight work must not block on user approvals.
    - If a command requires approval, avoid it or defer it; Leo may be asleep.

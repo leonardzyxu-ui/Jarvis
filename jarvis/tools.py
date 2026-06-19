@@ -9077,11 +9077,25 @@ def planned_tool_status(tool_id: str) -> dict[str, Any]:
     cleaned = re.sub(r"\s+", " ", str(tool_id or "")).strip()
     registry = tool_registry()
     tool_by_id = {str(tool.get("id") or ""): tool for tool in registry.get("tools", [])}
+    destructive_without_confirmation = [
+        "send",
+        "submit",
+        "post",
+        "upload",
+        "download",
+        "delete",
+        "purchase",
+        "change_settings",
+        "enter_credentials",
+        "modify_schoolwork",
+    ]
     definitions: dict[str, dict[str, Any]] = {
         "ui.automation": {
             "status": "planned_unavailable",
             "category": "future_private_app_control",
             "requires_leo": True,
+            "destructive_actions_blocked_without_confirmation": destructive_without_confirmation,
+            "minimum_permission_gates": ["accessibility", "screen_recording"],
             "next_steps": [
                 "Verify Accessibility and Screen Recording readiness without interrupting Leo's current foreground work.",
                 "Require a target app, visible UI goal, and safe stopping condition before any click/type workflow.",
@@ -9092,6 +9106,8 @@ def planned_tool_status(tool_id: str) -> dict[str, Any]:
             "status": "planned_unavailable",
             "category": "future_private_screen_read",
             "requires_leo": True,
+            "destructive_actions_blocked_without_confirmation": destructive_without_confirmation,
+            "minimum_permission_gates": ["screen_recording"],
             "next_steps": [
                 "Define the exact target app/window and visible-text question before reading the screen.",
                 "Verify Screen Recording and Accessibility readiness without interrupting Leo's current foreground work.",
@@ -9184,6 +9200,8 @@ def planned_tool_status(tool_id: str) -> dict[str, Any]:
         "opened_app": False,
         "captured_screen": False,
         "changed_state": False,
+        "destructive_actions_blocked_without_confirmation": list(definition.get("destructive_actions_blocked_without_confirmation") or []),
+        "minimum_permission_gates": list(definition.get("minimum_permission_gates") or []),
         "next_steps": list(definition["next_steps"]),
         "reply": reply,
     }

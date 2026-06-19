@@ -12227,6 +12227,15 @@ Pages occupied by compressor:             10.
         next_steps = " ".join(result["next_steps"]).lower()
         self.assertIn("accessibility", next_steps)
         self.assertIn("confirmation", next_steps)
+        self.assertEqual(result["minimum_permission_gates"], ["accessibility", "screen_recording"])
+        blocked = set(result["destructive_actions_blocked_without_confirmation"])
+        self.assertIn("send", blocked)
+        self.assertIn("submit", blocked)
+        self.assertIn("delete", blocked)
+        self.assertIn("purchase", blocked)
+        self.assertIn("change_settings", blocked)
+        self.assertIn("enter_credentials", blocked)
+        self.assertIn("modify_schoolwork", blocked)
 
     def test_planned_tool_status_reports_teams_assignment_as_available_plan_only(self):
         result = planned_tool_status("teams.assignment")
@@ -12269,6 +12278,9 @@ Pages occupied by compressor:             10.
         self.assertFalse(result["changed_state"])
         self.assertEqual(result["category"], "future_private_screen_read")
         self.assertIn("Screen Recording", " ".join(result["next_steps"]))
+        self.assertEqual(result["minimum_permission_gates"], ["screen_recording"])
+        self.assertIn("submit", result["destructive_actions_blocked_without_confirmation"])
+        self.assertIn("enter_credentials", result["destructive_actions_blocked_without_confirmation"])
 
     def test_planned_ui_automation_status_requires_permissions_and_confirmation(self):
         result = planned_tool_status("ui.automation")
@@ -12286,6 +12298,10 @@ Pages occupied by compressor:             10.
         next_steps = " ".join(result["next_steps"]).lower()
         self.assertIn("accessibility", next_steps)
         self.assertIn("confirmation", next_steps)
+        self.assertEqual(result["minimum_permission_gates"], ["accessibility", "screen_recording"])
+        blocked = set(result["destructive_actions_blocked_without_confirmation"])
+        for action in {"send", "submit", "post", "upload", "delete", "purchase", "change_settings", "enter_credentials", "modify_schoolwork"}:
+            self.assertIn(action, blocked)
 
     def test_app_task_workflow_plan_structures_teams_assignment_without_actions(self):
         result = app_task_workflow_plan("Go to Teams, open Music class, and finish the newest Music assignment.")
