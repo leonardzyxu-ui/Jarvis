@@ -1996,6 +1996,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         payloads = voice_loop_qa.speech_payloads_from_stream_events(events)
 
         self.assertEqual([item["source"] for item in payloads], ["status", "final"])
+        self.assertEqual([item["reason"] for item in payloads], ["status", "final"])
         self.assertEqual(payloads[0]["text"], "Checking your email now.")
         self.assertEqual(payloads[1]["text"], "There is a form you may need to fill in.")
 
