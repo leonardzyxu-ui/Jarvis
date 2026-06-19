@@ -63,6 +63,7 @@
 - [x] Recovered a hidden Teams proof test that had been overwritten by a duplicate method name; browser-page usefulness and visible-screen usefulness now separately reject generic/non-Music Teams screens, and full `tests.test_safety` passed `955/955`.
 - [x] Added a test-suite integrity guard that fails on duplicate `test_*` method names inside a test class, preventing silently overwritten regression tests from returning; full `tests.test_safety` passed `956/956`.
 - [x] Added an explicit speech-payload reason assertion so voice-loop QA proves status speech and final-answer speech remain distinguishable; full `tests.test_safety` passed `956/956`.
+- [x] Added a regression guard for Leo's Chinese-character TTS bug: unknown Chinese is removed without swallowing the English words after it; full `tests.test_safety` passed `957/957`.
 - [x] Rebuilt the canonical `output/Jarvis.app` bundle at version `0.1.468`.
 - [x] Reran `scripts/verify_safe.py`; safe verification passed `105/105`.
 - [x] Refreshed report/workboard surfaces and reran `scripts/smoke_fast_latency.py`; fast latency passed `3/3`.

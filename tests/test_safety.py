@@ -17753,6 +17753,19 @@ class RuntimeSurfaceTests(unittest.TestCase):
         )
         self.assertTrue(spoken.isascii())
 
+    def test_auto_speech_sanitizer_drops_unknown_chinese_without_losing_following_english(self):
+        spoken = jarvis_tools._sanitize_spoken_text(
+            "The sender wrote 请在今天完成, and the important part is that you should fill in the form."
+        )
+
+        self.assertEqual(
+            spoken,
+            "The sender wrote, and the important part is that you should fill in the form.",
+        )
+        self.assertTrue(spoken.isascii())
+        self.assertNotIn("请", spoken)
+        self.assertIn("important part", spoken)
+
     def test_auto_speech_sanitizer_speaks_markdown_links_as_plain_labels(self):
         spoken = jarvis_tools._sanitize_spoken_text(
             "Please fill in [the short feedback form](https://example.test/form?id=123) when you have time."
