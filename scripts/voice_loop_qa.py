@@ -2124,6 +2124,9 @@ def run_native_visible_screen_follow_up_attempt(
     if not useful and summary_status in {"login_gate_visible", "assignment_subject_mismatch"}:
         status = summary_status
     response_is_auditable = useful or status in {"login_gate_visible", "assignment_subject_mismatch"}
+    navigation_targets: dict[str, Any] = {}
+    if "teams" in str(command_text or "").casefold() and "assignment" in str(command_text or "").casefold():
+        navigation_targets["assignments"] = select_ocr_line_target(capture_payload, ["Assignments"])
     return {
         "used": useful,
         "status": status,
@@ -2135,6 +2138,7 @@ def run_native_visible_screen_follow_up_attempt(
         "tool": summary_response.get("tool"),
         "response_status": summary_result.get("status"),
         "visible_reply_preview": visible_reply[:500],
+        "visible_navigation_targets": navigation_targets,
         "response": summary_response if response_is_auditable else None,
         "attempt": attempt,
         "capture_report": str(capture_path),

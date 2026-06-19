@@ -763,6 +763,13 @@ class VerifySafeScriptTests(unittest.TestCase):
                         "status": "browser_permission_blocked",
                         "tool": "browser.read_page",
                     },
+                    "visible_navigation_targets": {
+                        "assignments": {
+                            "found": True,
+                            "text": "Assignments",
+                            "center": {"x": 68.13, "y": 577.17},
+                        }
+                    },
                     "visible_reply_preview": (
                         "I read the visible Teams screen, but it does not look like the Music assignment. "
                         "I can see assignment-related text: Lesson 2: The Geography of Greece Group Assignment."
@@ -775,6 +782,8 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(proof["capability_complete"])
         self.assertEqual(proof["completion_status"], "wrong_subject")
         self.assertTrue(proof["chrome_page_read_blocked"])
+        self.assertTrue(proof["assignments_target_found"])
+        self.assertEqual(proof["assignments_target"]["center"], {"x": 68.13, "y": 577.17})
         self.assertTrue(proof["honest_wrong_subject"])
         self.assertIn("Geography of Greece", proof["visible_reply_preview"])
 
@@ -2638,6 +2647,45 @@ class VerifySafeScriptTests(unittest.TestCase):
             voice_loop_qa.select_ocr_line_target({"ocr_lines": []}, ["Assignments"]),
             {"found": False, "reason": "no_label_match"},
         )
+
+    def test_voice_loop_qa_visible_screen_attempt_reports_assignments_target(self):
+        capture_payload = {
+            "status": "captured",
+            "text": "Microsoft Teams\nAssignments\nLesson 2: The Geography of Greece Group Assignment",
+            "diagnostics": {"line_count": 3, "target_app_name": "Google Chrome"},
+            "ocr_lines": [
+                {"text": "Assignments", "pixels": {"x": 4, "y": 566, "width": 128, "height": 22}},
+            ],
+        }
+        summary_response = {
+            "tool": "screen.visible_text",
+            "result": {
+                "status": "assignment_subject_mismatch",
+                "reply": "I read the visible Teams screen, but it does not look like the Music assignment.",
+            },
+        }
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch("scripts.voice_loop_qa.subprocess.run") as run_mock, \
+             patch("scripts.voice_loop_qa.post_loopback_json", return_value=summary_response):
+            run_mock.return_value = subprocess.CompletedProcess(
+                ["probe"],
+                0,
+                stdout=json.dumps(capture_payload),
+                stderr="",
+            )
+            result = voice_loop_qa.run_native_visible_screen_follow_up_attempt(
+                command_text="Look in Teams for my newest Music assignment.",
+                base_url="http://127.0.0.1:8765",
+                follow_up_dir=Path(temp_dir),
+                timeout=5.0,
+                target_app_name="Google Chrome",
+                target_bundle_identifier="com.google.Chrome",
+                attempt=1,
+            )
+
+        self.assertEqual(result["status"], "assignment_subject_mismatch")
+        self.assertTrue(result["visible_navigation_targets"]["assignments"]["found"])
+        self.assertEqual(result["visible_navigation_targets"]["assignments"]["center"], {"x": 68.0, "y": 577.0})
 
     def test_voice_loop_qa_browser_page_usefulness_rejects_generic_screen_tool_for_teams_assignment(self):
         response = {

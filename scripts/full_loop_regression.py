@@ -1169,6 +1169,8 @@ def run_teams_assignment_case(
             )
             if action_proof.get("chrome_page_read_blocked"):
                 warnings.append("Chrome page-read automation was blocked before the visible-screen fallback.")
+            if action_proof.get("assignments_target_found"):
+                warnings.append("Visible Assignments navigation target was found for the next safe navigation step.")
         if not action_proof["passed"]:
             status = "failed"
             warnings.extend(action_proof["failures"])
@@ -1199,6 +1201,16 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
     initial_browser_follow_up = (
         follow_up.get("browser_page_follow_up_initial")
         if isinstance(follow_up.get("browser_page_follow_up_initial"), dict)
+        else {}
+    )
+    navigation_targets = (
+        follow_up.get("visible_navigation_targets")
+        if isinstance(follow_up.get("visible_navigation_targets"), dict)
+        else {}
+    )
+    assignments_target = (
+        navigation_targets.get("assignments")
+        if isinstance(navigation_targets.get("assignments"), dict)
         else {}
     )
     combined_reply = " ".join(part for part in [visible_reply, follow_up_reply] if part).strip()
@@ -1248,6 +1260,8 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
         "honest_wrong_subject": honest_wrong_subject,
         "honest_permission_blocked": honest_permission_blocked,
         "chrome_page_read_blocked": chrome_page_read_blocked,
+        "assignments_target_found": bool(assignments_target.get("found")),
+        "assignments_target": assignments_target,
         "capability_complete": capability_complete,
         "completion_status": completion_status,
         "visible_reply_preview": combined_reply[:500],
