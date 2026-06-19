@@ -597,6 +597,11 @@ Status legend:
 
 2. Partially fixed/risky: GitHub Desktop push/fetch loop.
    - GitHub Desktop claimed newer commits on remote; Fetch did not resolve it.
+   - 2026-06-19 proof update: current CLI state on
+     `codex/jarvis-overnight-20260608` reports `ahead 126, behind 0`; remote
+     ref `origin/codex/jarvis-overnight-20260608` is older than local HEAD, and
+     `git fetch --dry-run origin codex/jarvis-overnight-20260608` reported no
+     incoming updates. No push was attempted.
 
 3. Fixed/proved at least once: dirty/untracked files are now visible to Jarvis
    before release or GitHub troubleshooting.
