@@ -11122,8 +11122,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.458}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-458}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.459}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-459}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('cleanup_numbered_app_bundles()', script)
         self.assertIn("find \"$OUTPUT_ROOT\" -maxdepth 1 -type d -name \"$APP_NAME-*.app\" -exec rm -rf {} +", script)
@@ -14935,8 +14935,12 @@ class RuntimeSurfaceTests(unittest.TestCase):
             / "JarvisPermissionService.swift"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('"App perms: \\(readyCount)/\\(permissions.count) ready"', service_source)
+        self.assertIn("let blockingPermissions = permissions.filter(\\.isBlocking)", service_source)
+        self.assertIn("let readyCount = blockingPermissions.filter(\\.isReady).count", service_source)
+        self.assertIn('"App perms: \\(readyCount)/\\(blockingPermissions.count) ready"', service_source)
+        self.assertIn("var isBlocking: Bool = true", service_source)
         self.assertNotIn('"\\(readyCount)/\\(permissions.count) permissions ready"', service_source)
+        self.assertNotIn('"App perms: \\(readyCount)/\\(permissions.count) ready"', service_source)
         self.assertIn('id: "calendar-cache"', service_source)
         self.assertIn('label: "Calendar Cache"', service_source)
         self.assertIn("Needs Full Disk Access", service_source)
@@ -14962,7 +14966,23 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('"com.google.Chrome"', native_permission_source)
         self.assertIn('label: "Notifications"', service_source)
         self.assertIn("Optional unless timers or background alerts need macOS notifications.", service_source)
+        self.assertIn('state: "Optional denied"', service_source)
+        self.assertIn("isBlocking: false", service_source)
         self.assertNotIn("Jarvis has not asked for notification access.", service_source)
+
+        self_test_source = (
+            PROJECT_ROOT
+            / "swift-shell"
+            / "Sources"
+            / "JarvisMenuBar"
+            / "Support"
+            / "JarvisMenuBarSelfTest.swift"
+        ).read_text(encoding="utf-8")
+        self.assertIn("let blockingCount = snapshot.filter(\\.isBlocking).count", self_test_source)
+        self.assertIn("blockingCount == expectedIds.count - 1", self_test_source)
+        self.assertIn('$0.id == "notifications"', self_test_source)
+        self.assertIn("Notifications should be visible but optional in app readiness.", self_test_source)
+        self.assertIn("Permission summary did not include all blocking readiness rows", self_test_source)
 
         panel_source = (
             PROJECT_ROOT
@@ -14972,6 +14992,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             / "Views"
             / "JarvisPanelView.swift"
         ).read_text(encoding="utf-8")
+        self.assertIn(".filter { !$0.isReady && $0.isBlocking }", panel_source)
         self.assertIn('Pending: \\(pendingPermissionLabels.joined(separator: ", "))', panel_source)
         self.assertIn("pendingPermissionLabels", panel_source)
         self.assertIn(".lineLimit(2)", panel_source)

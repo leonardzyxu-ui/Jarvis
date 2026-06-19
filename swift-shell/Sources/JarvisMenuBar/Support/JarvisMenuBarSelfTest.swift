@@ -395,9 +395,16 @@ enum JarvisMenuBarSelfTest {
         guard incompleteRows.isEmpty else {
             throw SelfTestError.failed("Permission snapshot has incomplete rows: \(incompleteRows.map(\.id).joined(separator: ", "))")
         }
+        let blockingCount = snapshot.filter(\.isBlocking).count
+        guard blockingCount == expectedIds.count - 1 else {
+            throw SelfTestError.failed("Permission snapshot should treat notifications as the only optional row.")
+        }
+        guard snapshot.first(where: { $0.id == "notifications" })?.isBlocking == false else {
+            throw SelfTestError.failed("Notifications should be visible but optional in app readiness.")
+        }
         let summary = JarvisPermissionService.summary(snapshot)
-        guard summary.contains("/\(expectedIds.count) ready") else {
-            throw SelfTestError.failed("Permission summary did not include all readiness rows: \(summary)")
+        guard summary.contains("/\(blockingCount) ready") else {
+            throw SelfTestError.failed("Permission summary did not include all blocking readiness rows: \(summary)")
         }
         let readyMicrophone = PermissionReadiness(
             id: "microphone",

@@ -23,8 +23,9 @@ enum JarvisPermissionService {
     }
 
     static func summary(_ permissions: [PermissionReadiness]) -> String {
-        let readyCount = permissions.filter(\.isReady).count
-        return "App perms: \(readyCount)/\(permissions.count) ready"
+        let blockingPermissions = permissions.filter(\.isBlocking)
+        let readyCount = blockingPermissions.filter(\.isReady).count
+        return "App perms: \(readyCount)/\(blockingPermissions.count) ready"
     }
 
     static func wakeStartPreflight() -> WakeStartPreflight {
@@ -250,7 +251,8 @@ enum JarvisPermissionService {
                 label: "Notifications",
                 state: "Bundle needed",
                 detail: "Notification settings can be read from the packaged app bundle.",
-                isReady: false
+                isReady: false,
+                isBlocking: false
             )
         }
 
@@ -264,15 +266,17 @@ enum JarvisPermissionService {
                         label: "Notifications",
                         state: "Ready",
                         detail: "Jarvis can show user-visible prompts later.",
-                        isReady: true
+                        isReady: true,
+                        isBlocking: false
                     )
                 case .denied:
                     readiness = PermissionReadiness(
                         id: "notifications",
                         label: "Notifications",
-                        state: "Denied",
-                        detail: "Approval prompts will need another visible path.",
-                        isReady: false
+                        state: "Optional denied",
+                        detail: "Optional unless timers or background alerts need macOS notifications.",
+                        isReady: false,
+                        isBlocking: false
                     )
                 case .notDetermined:
                     readiness = PermissionReadiness(
@@ -280,7 +284,8 @@ enum JarvisPermissionService {
                         label: "Notifications",
                         state: "Not requested",
                         detail: "Optional unless timers or background alerts need macOS notifications.",
-                        isReady: false
+                        isReady: false,
+                        isBlocking: false
                     )
                 case .ephemeral:
                     readiness = PermissionReadiness(
@@ -288,15 +293,17 @@ enum JarvisPermissionService {
                         label: "Notifications",
                         state: "Temporary",
                         detail: "Notification authorization is temporary.",
-                        isReady: true
+                        isReady: true,
+                        isBlocking: false
                     )
                 @unknown default:
                     readiness = PermissionReadiness(
                         id: "notifications",
                         label: "Notifications",
                         state: "Unknown",
-                        detail: "Unknown notification authorization state.",
-                        isReady: false
+                        detail: "Unknown notification authorization state; this is optional unless timers or background alerts need notifications.",
+                        isReady: false,
+                        isBlocking: false
                     )
                 }
                 continuation.resume(returning: readiness)
@@ -311,6 +318,7 @@ struct PermissionReadiness: Identifiable, Equatable {
     let state: String
     let detail: String
     let isReady: Bool
+    var isBlocking: Bool = true
 }
 
 struct WakeStartPreflight: Equatable {

@@ -184,7 +184,7 @@ struct JarvisPanelView: View {
 
     private var readinessFooter: some View {
         let pendingPermissionLabels = model.permissions
-            .filter { !$0.isReady }
+            .filter { !$0.isReady && $0.isBlocking }
             .map(\.label)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 8) {
