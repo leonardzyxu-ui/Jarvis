@@ -28,6 +28,7 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.468 tightens the menu-bar Stop Music brake: the helper-owned Jarvis head still sends the backend stop command, and it now also notifies the main app so the visible Jarvis window records the stop result.",
     "Jarvis 0.1.467 makes contact-memory privacy explicit: alias lookup/status do not read private metadata, while email-based alias inference reports that it used Mail sender metadata only and did not read email bodies.",
     "Jarvis 0.1.466 fixes the permissions reply: optional Notifications can still appear as an optional tile, but they no longer show up in the required `Missing:` list.",
     "Jarvis 0.1.465 makes uncertain music playback visibly honest: the status line now says playback did not start or is not confirmed unless Music/LocalOS actually proves a playing state.",

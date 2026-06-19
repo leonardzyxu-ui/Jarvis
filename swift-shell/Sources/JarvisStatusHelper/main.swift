@@ -75,6 +75,7 @@ struct JarvisStatusHelperApp {
         guard MainAppNotification.openPanel.rawValue == "local.leo.jarvis.statusHelper.openPanel",
               MainAppNotification.runStatus.rawValue == "local.leo.jarvis.statusHelper.runStatus",
               MainAppNotification.toggleWakeListener.rawValue == "local.leo.jarvis.statusHelper.toggleWakeListener",
+              MainAppNotification.stopMusic.rawValue == "local.leo.jarvis.statusHelper.stopMusic",
               MainAppNotification.speechMuteChanged.rawValue == "local.leo.jarvis.statusHelper.speechMuteChanged",
               MainAppNotification.quit.rawValue == "local.leo.jarvis.statusHelper.quit" else {
             fputs("Jarvis status helper self-test failed: notification names changed.\n", stderr)
@@ -236,6 +237,7 @@ final class JarvisStatusHelperDelegate: NSObject, NSApplicationDelegate, NSMenuD
     @objc private func stopMusic() {
         Task {
             _ = try? await client.stopMusic()
+            postMainAppNotification(.stopMusic)
         }
     }
 
@@ -364,6 +366,7 @@ private enum MainAppNotification: String {
     case openPanel = "local.leo.jarvis.statusHelper.openPanel"
     case runStatus = "local.leo.jarvis.statusHelper.runStatus"
     case toggleWakeListener = "local.leo.jarvis.statusHelper.toggleWakeListener"
+    case stopMusic = "local.leo.jarvis.statusHelper.stopMusic"
     case speechMuteChanged = "local.leo.jarvis.statusHelper.speechMuteChanged"
     case quit = "local.leo.jarvis.statusHelper.quit"
 

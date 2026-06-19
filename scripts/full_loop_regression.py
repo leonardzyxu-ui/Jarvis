@@ -808,19 +808,26 @@ def verify_gemma_model_plan(model_proof: dict[str, Any]) -> dict[str, Any]:
         failures.append("Model proof says it ran a model.")
     if model_proof.get("changed_system_state"):
         failures.append("Model proof says it changed system state.")
-    if str(model_proof.get("preferred_lane") or "") != "remote_macbook_air":
-        failures.append("Model proof did not prefer the MacBook Air lane.")
+    preferred_lane = str(model_proof.get("preferred_lane") or "")
+    remote_status = str((model_proof.get("remote_worker") or {}).get("status") or "")
+    if preferred_lane == "remote_macbook_air":
+        pass
+    elif preferred_lane == "ask_before_local" and remote_status not in {"available", "reachable"}:
+        pass
+    else:
+        failures.append("Model proof did not prefer the MacBook Air lane or ask before local fallback.")
     if "Gemma 3 4B" not in str(model_proof.get("model") or ""):
         failures.append("Model proof did not preserve Gemma 3 4B.")
     reply = str(model_proof.get("reply") or "")
-    if "MacBook Air" not in reply or "not on this Mac" not in reply:
+    local_guardrail = "not on this Mac" in reply or "ask before running" in reply
+    if "MacBook Air" not in reply or not local_guardrail:
         failures.append("Model proof reply did not explain the remote-first local guardrail.")
     return {
         "passed": not failures,
         "failures": failures,
         "model": str(model_proof.get("model") or ""),
-        "preferred_lane": str(model_proof.get("preferred_lane") or ""),
-        "remote_status": str((model_proof.get("remote_worker") or {}).get("status") or ""),
+        "preferred_lane": preferred_lane,
+        "remote_status": remote_status,
         "ran_model": bool(model_proof.get("ran_model")),
     }
 

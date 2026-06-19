@@ -484,6 +484,21 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(proof["passed"])
         self.assertEqual(proof["preferred_lane"], "remote_macbook_air")
 
+    def test_full_loop_gemma_model_plan_accepts_ask_before_local_when_remote_unavailable(self):
+        proof = full_loop_regression.verify_gemma_model_plan({
+            "tool": "models.test_plan",
+            "status": "planned",
+            "ran_model": False,
+            "changed_system_state": False,
+            "model": "Gemma 3 4B",
+            "preferred_lane": "ask_before_local",
+            "remote_worker": {"status": "unavailable"},
+            "reply": "I cannot reach the MacBook Air right now. I should ask before running Gemma 3 4B on this Mac.",
+        })
+
+        self.assertTrue(proof["passed"])
+        self.assertEqual(proof["preferred_lane"], "ask_before_local")
+
     def test_full_loop_gemma_model_plan_rejects_local_model_run(self):
         proof = full_loop_regression.verify_gemma_model_plan({
             "tool": "models.test_plan",
@@ -11330,8 +11345,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.467}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-467}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.468}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-468}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('cleanup_numbered_app_bundles()', script)
         self.assertIn("find \"$OUTPUT_ROOT\" -maxdepth 1 -type d -name \"$APP_NAME-*.app\" -exec rm -rf {} +", script)
@@ -13560,6 +13575,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("stopMusic", helper_source)
         self.assertIn("unmuteAudio", helper_source)
         self.assertIn("client.stopMusic()", helper_source)
+        self.assertIn("postMainAppNotification(.stopMusic)", helper_source)
         self.assertIn("client.unmuteSystemAudio()", helper_source)
         self.assertIn("toggleSpeechMute", helper_source)
         self.assertIn("menuNeedsUpdate", helper_source)
@@ -13573,6 +13589,11 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("let response = try await sendStopMusic()", model_source)
         self.assertIn("let reply = assistantReply(for: response).trimmingCharacters", model_source)
         self.assertIn('messages.append(ChatMessage(role: .jarvis, text: reply.isEmpty ? "Music stop sent." : reply))', model_source)
+        self.assertIn("handleStatusHelperStopMusic", app_source)
+        self.assertIn("model.stopMusic()", app_source)
+        self.assertIn("MainAppNotification.stopMusic.name", app_source)
+        self.assertIn('case stopMusic = "local.leo.jarvis.statusHelper.stopMusic"', app_source)
+        self.assertIn('case stopMusic = "local.leo.jarvis.statusHelper.stopMusic"', helper_source)
         self.assertNotIn("Jarvis sent the music stop command.", model_source)
         self.assertIn("Music stop sent", model_source)
         self.assertIn("Audio unmute sent", model_source)

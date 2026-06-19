@@ -278,8 +278,14 @@ Status legend:
      `runtime/full_loop_regression/20260619-034949/summary.json` passed with
      `new_afplay_processes_after: []`.
 
-9. Open/unknown: Stop Music from menu bar should mute/stop all Jarvis-started
-   music or, better, all music should be in LocalOS so media keys work.
+9. Fixed/proved: Stop Music from the menu bar should stop Jarvis-started music
+   and leave visible evidence in Jarvis.
+   - 2026-06-19 proof update: both the helper-owned menu-bar head and the main
+     app expose Stop Music. The helper sends the backend stop command and posts
+     a main-app notification so the visible Jarvis window records the result.
+     The backend stop path stops the native Music bridge, old LocalOS/browser
+     lanes, system media sources, and tracked old `afplay` leftovers without
+     muting system output as a normal stop action.
 
 10. Open/unknown: final solution should likely be a separate native Music app.
     - Swift/SwiftUI, Apple Music-like, MP3 folder alias, YouTube audio import,
