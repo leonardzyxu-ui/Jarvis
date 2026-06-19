@@ -688,6 +688,12 @@ Status legend:
 
 4. Partially fixed/risky: report HTML should be concise/product-announcement-like
    because Leo will not read a boring long report.
+   - 2026-06-19 proof update: the master report's shipped archive now opens
+     with current 0.1.468 product highlights for the `8/8` full-loop target
+     prompt pass, precise native Music hidden-audio proof, explicit speech-proof
+     modes, Chrome/Jarvis test-tab cleanup, and speech emergency status. Focused
+     render tests pin the wording so new proof is not buried behind older
+     history.
 
 5. Fixed/proved at least once: created Chrome tabs must be cleaned before Leo
    wakes.

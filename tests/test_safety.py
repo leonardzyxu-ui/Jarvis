@@ -3513,6 +3513,15 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("report refresh self-healing", shipped)
         self.assertIn("Codex speed status", shipped)
         self.assertIn("build-and-launch", shipped.lower())
+        self.assertIn("fresh full-loop proof for Leo's target prompt set", shipped)
+        self.assertIn("zero warnings", shipped)
+        self.assertIn("ignores Piper worker command-line arguments", shipped)
+        self.assertIn("suppressed_for_probe", shipped)
+        self.assertIn("live_playback_exercised", shipped)
+        self.assertIn("--require-live-speech", shipped)
+        self.assertIn("Chrome cleanup helper now targets Jarvis report", shipped)
+        self.assertIn("speech emergency status visible", shipped)
+        self.assertIn("no Shut Up menu control is reachable", shipped)
 
     def test_render_overnight_status_reads_latest_no_prompt_verification(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -28,6 +28,11 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.468 now has fresh full-loop proof for Leo's target prompt set: Music playback, RAM/Activity Monitor, Calendar, Magic Keyboard yuan conversion, Gemma model planning, Codex Default routing, Teams assignment honesty, and Ms. Sharpay email summary all passed in one run with zero warnings.",
+    "Jarvis 0.1.468 makes Music proof cleaner and stricter: `Waving Through a Window` selects the Dear Evan Hansen Tony Awards track through the native Music bridge, verifies playback, stops it during cleanup, and ignores Piper worker command-line arguments while still failing real hidden `afplay` playback.",
+    "Jarvis 0.1.468 makes the pre-build gate more honest: quiet overnight runs are labeled `suppressed_for_probe`, opt-in live playback runs are labeled `live_playback_exercised`, and `--require-live-speech` fails closed if a caller asks for live speech proof without enabling it.",
+    "Jarvis 0.1.468 makes overnight cleanup less annoying: the Chrome cleanup helper now targets Jarvis report, workboard, wake-audition, and old LocalOS music-player test tabs while preserving normal YouTube, new-tab, and other localhost pages.",
+    "Jarvis 0.1.468 makes speech emergency status visible: morning status now checks both the Jarvis app and status helper, reads the speech mute state, and warns if speech is unmuted while no Shut Up menu control is reachable.",
     "Jarvis 0.1.468 tightens the menu-bar Stop Music brake: the helper-owned Jarvis head still sends the backend stop command, and it now also notifies the main app so the visible Jarvis window records the stop result.",
     "Jarvis 0.1.467 makes contact-memory privacy explicit: alias lookup/status do not read private metadata, while email-based alias inference reports that it used Mail sender metadata only and did not read email bodies.",
     "Jarvis 0.1.466 fixes the permissions reply: optional Notifications can still appear as an optional tile, but they no longer show up in the required `Missing:` list.",
