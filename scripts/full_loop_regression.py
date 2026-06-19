@@ -155,7 +155,6 @@ def main() -> int:
                     run_dir=run_dir / case["id"],
                     timeout=args.timeout,
                     exercise_live_speech=args.exercise_live_speech,
-                    exercise_visible_navigation=args.exercise_visible_navigation,
                 )
             )
         elif case["id"] == RAM_ACTIVITY_CASE["id"]:
@@ -470,7 +469,7 @@ def media_playback_surface_snapshot() -> dict[str, Any]:
             '''
 if application "Music" is running then
     try
-        tell application "Music"
+        tell application id "com.apple.Music"
             if player state is playing then return "Music"
         end tell
     end try

@@ -2796,6 +2796,20 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(result["visible_navigation_execution"]["status"], "live_navigation_not_unlocked")
         self.assertEqual(result["attempts"], 1)
 
+    def test_full_loop_visible_navigation_flag_is_teams_only(self):
+        source = (PROJECT_ROOT / "scripts" / "full_loop_regression.py").read_text(encoding="utf-8")
+        music_branch = source.split('if case["id"] == MUSIC_WAVING_CASE["id"]:', 1)[1].split(
+            'elif case["id"] == RAM_ACTIVITY_CASE["id"]:',
+            1,
+        )[0]
+        teams_branch = source.split('elif case["id"] == TEAMS_ASSIGNMENT_CASE["id"]:', 1)[1].split(
+            'elif case["id"] == EMAIL_SHARPAY_CASE["id"]:',
+            1,
+        )[0]
+
+        self.assertNotIn("exercise_visible_navigation=args.exercise_visible_navigation", music_branch)
+        self.assertIn("exercise_visible_navigation=args.exercise_visible_navigation", teams_branch)
+
     def test_voice_loop_qa_browser_page_usefulness_rejects_generic_screen_tool_for_teams_assignment(self):
         response = {
             "tool": "screen.visible_text",
