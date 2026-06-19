@@ -443,29 +443,19 @@ def print_process_status() -> None:
 
 
 def current_bundle_candidates(output: Path) -> list[Path]:
-    candidates = list(output.glob("Jarvis-Current*.app"))
     stable = output / "Jarvis.app"
-    if stable.exists():
-        candidates.append(stable)
-    return candidates
+    return [stable] if stable.exists() else []
 
 
 def current_bundle_sort_key(path: Path) -> tuple[int, int, float]:
-    stable_rank = 1 if path.stem == "Jarvis" else 0
-    return (stable_rank, current_bundle_number(path), path.stat().st_mtime if path.exists() else 0)
+    canonical_rank = 1 if path.stem == "Jarvis" else 0
+    return (canonical_rank, current_bundle_number(path), path.stat().st_mtime if path.exists() else 0)
 
 
 def current_bundle_number(path: Path) -> int:
     stem = path.stem
     if stem == "Jarvis":
         return 10_000
-    if stem == "Jarvis-Current":
-        return 1
-    prefix = "Jarvis-Current-"
-    if stem.startswith(prefix):
-        suffix = stem.removeprefix(prefix)
-        if suffix.isdigit():
-            return int(suffix)
     return 0
 
 

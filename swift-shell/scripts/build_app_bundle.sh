@@ -8,10 +8,12 @@ PROJECT_ROOT="$(cd "$PACKAGE_DIR/.." && pwd)"
 APP_NAME="${APP_NAME:-Jarvis}"
 BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"
 CONFIGURATION="${CONFIGURATION:-debug}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-$PROJECT_ROOT/output}"
+DEFAULT_OUTPUT_ROOT="$PROJECT_ROOT/output"
+OUTPUT_ROOT="${OUTPUT_ROOT:-$DEFAULT_OUTPUT_ROOT}"
 APP_VERSION="${APP_VERSION:-0.1.468}"
 BUILD_NUMBER="${BUILD_NUMBER:-468}"
 REPLACE_APP="${REPLACE_APP:-1}"
+ALLOW_NON_CANONICAL_JARVIS_BUNDLE="${ALLOW_NON_CANONICAL_JARVIS_BUNDLE:-0}"
 
 default_sign_identity() {
   local local_identity="Jarvis Local Code Signing"
@@ -41,6 +43,45 @@ APP_VERSION_XML="$(xml_escape "$APP_VERSION")"
 BUILD_NUMBER_XML="$(xml_escape "$BUILD_NUMBER")"
 
 mkdir -p "$OUTPUT_ROOT"
+
+is_truthy() {
+  case "$1" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+realpath_portable() {
+  python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).resolve())' "$1"
+}
+
+canonical_output_root="$(realpath_portable "$DEFAULT_OUTPUT_ROOT")"
+requested_output_root="$(realpath_portable "$OUTPUT_ROOT")"
+if [[ "$requested_output_root" == "$canonical_output_root" ]] && ! is_truthy "$ALLOW_NON_CANONICAL_JARVIS_BUNDLE"; then
+  if [[ "$APP_NAME" != "Jarvis" || "$BUNDLE_ID" != "local.leo.jarvis" ]]; then
+    cat >&2 <<EOF
+Refusing to build a non-canonical Jarvis app in $OUTPUT_ROOT.
+Use APP_NAME=Jarvis and BUNDLE_ID=local.leo.jarvis for Leo's normal app, or set
+ALLOW_NON_CANONICAL_JARVIS_BUNDLE=1 with a separate OUTPUT_ROOT for experiments.
+EOF
+    exit 1
+  fi
+  case "$REPLACE_APP" in
+    1|true|TRUE|yes|YES|on|ON)
+      ;;
+    *)
+      cat >&2 <<EOF
+Refusing to create a numbered Jarvis bundle in $OUTPUT_ROOT.
+The canonical build replaces output/Jarvis.app so Leo does not see duplicate Jarvis apps.
+EOF
+      exit 1
+      ;;
+  esac
+fi
 
 cleanup_numbered_app_bundles() {
   find "$OUTPUT_ROOT" -maxdepth 1 -type d -name "$APP_NAME-*.app" -exec rm -rf {} +

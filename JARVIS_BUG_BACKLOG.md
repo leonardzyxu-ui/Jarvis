@@ -554,6 +554,10 @@ Status legend:
 6. Partially fixed/risky: build output sometimes created alternate bundles or
    stale worker/runtime resources. Health must prove the live app is running
    bundled current resources.
+   - 2026-06-19 proof update: the real `output/` build now refuses accidental
+     non-canonical app names/bundle IDs and numbered replacement bundles unless
+     an explicit experiment override is set; morning status now ignores legacy
+     `Jarvis-Current*.app` bundles and reports only `output/Jarvis.app`.
 
 ## Safety, Privacy, And Product-Quality Bugs
 

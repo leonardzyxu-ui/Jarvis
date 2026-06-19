@@ -174,6 +174,7 @@ from scripts.morning_status import (
     base_url_from_environment,
     classify_worker_source,
     context_smoke_summary,
+    current_bundle_candidates,
     current_bundle_metadata,
     current_bundle_number,
     display_path,
@@ -11588,6 +11589,10 @@ Pages occupied by compressor:             10.
         self.assertIn('APP_VERSION="${APP_VERSION:-0.1.468}"', script)
         self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-468}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
+        self.assertIn('ALLOW_NON_CANONICAL_JARVIS_BUNDLE="${ALLOW_NON_CANONICAL_JARVIS_BUNDLE:-0}"', script)
+        self.assertIn("Refusing to build a non-canonical Jarvis app", script)
+        self.assertIn("Refusing to create a numbered Jarvis bundle", script)
+        self.assertIn("The canonical build replaces output/Jarvis.app", script)
         self.assertIn('cleanup_numbered_app_bundles()', script)
         self.assertIn("find \"$OUTPUT_ROOT\" -maxdepth 1 -type d -name \"$APP_NAME-*.app\" -exec rm -rf {} +", script)
         self.assertIn('<key>CFBundleDisplayName</key>', script)
@@ -22674,9 +22679,19 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
     def test_morning_status_current_bundle_number(self):
         self.assertEqual(current_bundle_number(Path("Jarvis.app")), 10_000)
-        self.assertEqual(current_bundle_number(Path("Jarvis-Current.app")), 1)
-        self.assertEqual(current_bundle_number(Path("Jarvis-Current-17.app")), 17)
+        self.assertEqual(current_bundle_number(Path("Jarvis-Current.app")), 0)
+        self.assertEqual(current_bundle_number(Path("Jarvis-Current-17.app")), 0)
         self.assertEqual(current_bundle_number(Path("Jarvis-Current-old.app")), 0)
+
+    def test_morning_status_ignores_legacy_current_bundles(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir)
+            legacy = output / "Jarvis-Current-17.app"
+            legacy.mkdir()
+            self.assertEqual(current_bundle_candidates(output), [])
+            stable = output / "Jarvis.app"
+            stable.mkdir()
+            self.assertEqual(current_bundle_candidates(output), [stable])
 
     def test_morning_status_bundle_metadata(self):
         with tempfile.TemporaryDirectory() as tmpdir:
