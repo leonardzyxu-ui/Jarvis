@@ -102,6 +102,7 @@ def main() -> int:
     print("Jarvis morning status")
     print(f"Project: {PROJECT_ROOT}")
     print_worker_status(base_url)
+    print_report_surfaces(base_url)
     print_latest_verification()
     print_latest_pre_build_gate()
     print_latest_context_smoke()
@@ -534,6 +535,29 @@ def print_process_status(base_url: str) -> None:
     if len(app_pids) > 1 or len(helper_pids) > 1:
         print("Action: quit duplicate Jarvis app/helper processes, then reopen once with `scripts/open_jarvis.sh`")
     print_speech_emergency_status(base_url, app_pids=app_pids, helper_pids=helper_pids)
+
+
+def report_surfaces(base_url: str) -> list[dict[str, str]]:
+    base = base_url.rstrip("/")
+    output_dir = PROJECT_ROOT / "runtime" / "overnight_status"
+    return [
+        {
+            "label": "Master report",
+            "file": str((output_dir / "report.html").resolve()),
+            "url": f"{base}/overnight-report/",
+        },
+        {
+            "label": "Workboard",
+            "file": str((output_dir / "index.html").resolve()),
+            "url": f"{base}/overnight-workboard/",
+        },
+    ]
+
+
+def print_report_surfaces(base_url: str) -> None:
+    for surface in report_surfaces(base_url):
+        print(f"{surface['label']} file: {surface['file']}")
+        print(f"{surface['label']} URL: {surface['url']}")
 
 
 def process_pids(process_name: str) -> list[str]:

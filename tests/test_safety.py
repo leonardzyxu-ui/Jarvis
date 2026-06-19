@@ -183,9 +183,11 @@ from scripts.morning_status import (
     latency_smoke_summary,
     normalize_base_url,
     pre_build_gate_summary,
+    print_report_surfaces,
     print_latest_context_smoke,
     print_latest_wake_threshold,
     print_process_status,
+    report_surfaces,
     requirement_audit_summary,
     time_since,
     verification_action,
@@ -23114,6 +23116,40 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(classify_worker_source(str(source)), "source checkout")
         self.assertEqual(classify_worker_source(external), "external path")
         self.assertEqual(display_path(str(source)), "jarvis/tools.py")
+
+    def test_morning_status_report_surfaces_include_files_and_urls(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch("scripts.morning_status.PROJECT_ROOT", root):
+                surfaces = report_surfaces("http://127.0.0.1:8765/")
+
+        self.assertEqual(
+            surfaces,
+            [
+                {
+                    "label": "Master report",
+                    "file": str((root / "runtime" / "overnight_status" / "report.html").resolve()),
+                    "url": "http://127.0.0.1:8765/overnight-report/",
+                },
+                {
+                    "label": "Workboard",
+                    "file": str((root / "runtime" / "overnight_status" / "index.html").resolve()),
+                    "url": "http://127.0.0.1:8765/overnight-workboard/",
+                },
+            ],
+        )
+
+    def test_morning_status_prints_report_surface_breadcrumbs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch("scripts.morning_status.PROJECT_ROOT", root), patch("builtins.print") as print_mock:
+                print_report_surfaces("http://127.0.0.1:8765")
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn(f"Master report file: {(root / 'runtime' / 'overnight_status' / 'report.html').resolve()}", printed)
+        self.assertIn("Master report URL: http://127.0.0.1:8765/overnight-report/", printed)
+        self.assertIn(f"Workboard file: {(root / 'runtime' / 'overnight_status' / 'index.html').resolve()}", printed)
+        self.assertIn("Workboard URL: http://127.0.0.1:8765/overnight-workboard/", printed)
 
     def test_morning_status_process_check_uses_exact_executable_name(self):
         completed = subprocess.CompletedProcess(args=["pgrep"], returncode=1, stdout="", stderr="")

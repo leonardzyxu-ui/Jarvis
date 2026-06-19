@@ -734,6 +734,10 @@ Status legend:
 
 1. Fixed/proved at least once: Leo needs paths/URLs to workboard, STT audition,
    and master report files; reports must not omit them.
+   - 2026-06-20 proof update: `scripts/morning_status.py` now prints absolute
+     master-report and workboard file paths plus loopback URLs near the top of
+     the status output, with focused regression coverage for both the data
+     contract and printed wording.
 
 2. Partially fixed/risky: live regression matrix terminology was unclear to Leo.
    - Future reports should explain testing terms in product language.
