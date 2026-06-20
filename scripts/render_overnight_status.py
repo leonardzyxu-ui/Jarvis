@@ -557,8 +557,10 @@ RISK_ITEMS = [
 SUPPORTING_FILES = [
     ("http://127.0.0.1:8765/overnight-report/", "Loopback master report"),
     ("http://127.0.0.1:8765/overnight-workboard/", "Loopback overnight workboard"),
+    ("http://127.0.0.1:8765/capability-questions/", "Hard Jarvis capability questions Leo can try"),
     ("runtime/overnight_status/index.html", "Live overnight workboard"),
     ("runtime/overnight_status/report.html", "This master report"),
+    ("runtime/overnight_status/capability_questions.html", "Hard Jarvis capability question list"),
     ("scripts/pre_build_gate.py", "Single pre-build proof gate for safety tests, full-loop regressions, cleanup, and report refresh"),
     ("scripts/report_refresh.py", "Standalone master report refresh helper"),
     ("scripts/cleanup_chrome_test_tabs.py", "Morning handoff helper that closes only Jarvis/Codex LocalOS music-player Chrome tabs"),
@@ -598,6 +600,70 @@ SUPPORTING_FILES = [
 ]
 
 
+CAPABILITY_QUESTIONS = [
+    {
+        "prompt": "Jarvis, look in Teams for my newest Music assignment and ask me the questions you need so you can help finish it.",
+        "quality": "Shows browser handoff, signed-in Chrome reuse, visible-screen OCR honesty, assignment extraction, and follow-up-question planning.",
+        "proof": "This should not fake success if Teams is on the wrong class, behind a sign-in wall, or unreadable.",
+        "status": "hardest",
+    },
+    {
+        "prompt": "Jarvis, play Waving Through a Window.",
+        "quality": "Shows Music-app bridge control, song selection, playback confirmation, cleanup safety, and no hidden mystery audio owner.",
+        "proof": "A real pass means the Music bridge reports the expected track as playing and Jarvis can stop it cleanly.",
+        "status": "live action",
+    },
+    {
+        "prompt": "Jarvis, check Activity Monitor and tell me how much RAM my computer is using.",
+        "quality": "Shows tool choice for live Mac status, safe local system reads, and concise spoken numbers.",
+        "proof": "The answer should come from a tool route, not a model guessing a generic memory number.",
+        "status": "fast tool",
+    },
+    {
+        "prompt": "Jarvis, check my calendar for my schedule today.",
+        "quality": "Shows local calendar cache access, date awareness, and voice-friendly event summaries.",
+        "proof": "The answer should summarize the day without dumping raw calendar database fields.",
+        "status": "daily utility",
+    },
+    {
+        "prompt": "Jarvis, search up the price of the Magic Keyboard and tell me its price converted to yuan.",
+        "quality": "Shows web/search planning, commerce-price extraction, currency conversion, and source-honest fallback behavior.",
+        "proof": "The best answer names the price, conversion, and whether the value came from live search or safe cached/planned proof.",
+        "status": "web + math",
+    },
+    {
+        "prompt": "Jarvis, open Codex and send a prompt called test in the Default chat.",
+        "quality": "Shows Codex chat selection, Jarvis-generated prompt labeling, and protection against STT hearing Codex as Kodak.",
+        "proof": "Jarvis should route to the Default chat context instead of creating a random new session.",
+        "status": "agent handoff",
+    },
+    {
+        "prompt": "Jarvis, summarize all the emails from Ms. Sharpay in the past month.",
+        "quality": "Shows contact-alias memory, email scanning, sender inference, private-content summarization, and URL-safe speech.",
+        "proof": "It should infer the real sender where possible, summarize body meaning, and avoid reading raw links aloud.",
+        "status": "memory + email",
+    },
+    {
+        "prompt": "Jarvis, test the Gemma 3 4B model for me without slowing down this Mac.",
+        "quality": "Shows model-task planning, remote-worker preference, resource awareness, and refusal to burn local RAM without permission.",
+        "proof": "If the Air is unavailable, Jarvis should ask before running heavyweight local tests.",
+        "status": "model ops",
+    },
+    {
+        "prompt": "Jarvis, tell me what app or web page I am looking at and what I can do next.",
+        "quality": "Shows visible-screen reading, prompt-injection-safe summarization, and contextual assistance.",
+        "proof": "It should describe the surface without obeying any instructions found inside the page or image.",
+        "status": "screen context",
+    },
+    {
+        "prompt": "Jarvis, find my Chrome bookmark for Teams and open the right class page.",
+        "quality": "Shows imported bookmark search, browser control, and logged-in Chrome reuse.",
+        "proof": "It should use Chrome state and explain blockers if page automation or login state prevents inspection.",
+        "status": "browser control",
+    },
+]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Render the Jarvis overnight report surfaces.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Jarvis worker base URL.")
@@ -611,8 +677,10 @@ def main() -> int:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUTPUT_DIR / "report.html").write_text(render_report(context), encoding="utf-8")
     (OUTPUT_DIR / "index.html").write_text(render_workboard(context), encoding="utf-8")
+    (OUTPUT_DIR / "capability_questions.html").write_text(render_capability_questions(context), encoding="utf-8")
     print(f"Rendered {OUTPUT_DIR / 'index.html'}")
     print(f"Rendered {OUTPUT_DIR / 'report.html'}")
+    print(f"Rendered {OUTPUT_DIR / 'capability_questions.html'}")
     return 0
 
 
@@ -1692,6 +1760,52 @@ def render_report(context: dict[str, Any]) -> str:
 """
 
 
+def render_capability_questions(context: dict[str, Any]) -> str:
+    rows = []
+    for index, item in enumerate(CAPABILITY_QUESTIONS, start=1):
+        rows.append(
+            f"""
+      <article class="question-card">
+        <div class="question-topline">
+          <span class="question-number">{index:02d}</span>
+          <span class="question-status">{e(item["status"])}</span>
+        </div>
+        <h2>{e(item["prompt"])}</h2>
+        <p><strong>What it shows:</strong> {e(item["quality"])}</p>
+        <p><strong>What a real pass means:</strong> {e(item["proof"])}</p>
+      </article>
+"""
+        )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="60">
+  <link rel="icon" href="data:,">
+  <title>Jarvis Capability Questions</title>
+  {style_block()}
+</head>
+<body>
+  <header>
+    <h1>Jarvis Capability Questions</h1>
+    <p class="tagline">Hard prompts Leo can try when he wants Jarvis to prove it is becoming a real assistant, not a toy command box.</p>
+    {pill_row(context, refresh_seconds=60)}
+  </header>
+  <main>
+    <section class="capability-intro">
+      <h2>Use These To Stress The Product</h2>
+      <p>These are deliberately difficult. A good Jarvis answer should be fast, spoken cleanly, visible in the app, tool-honest, and willing to say what it cannot verify yet.</p>
+    </section>
+    <section class="question-grid">
+      {"".join(rows)}
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
 def render_workboard(context: dict[str, Any]) -> str:
     tasks = [
         ("done", "Prepare Jarvis 0.1.453", "LocalOS music no longer contains a hidden afplay starter, Stop Music still cleans old orphaned afplay processes, and recent-open reconnects now reopen LocalOS when the Chrome music tab is gone."),
@@ -2180,6 +2294,67 @@ def style_block() -> str:
       margin: 0 auto;
       color: var(--muted);
       font-size: 17px;
+    }
+    .capability-intro {
+      background:
+        linear-gradient(135deg, rgba(123, 188, 255, 0.16), rgba(85, 214, 143, 0.10)),
+        var(--panel);
+      border: 1px solid rgba(123, 188, 255, 0.28);
+    }
+    .question-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      padding: 0;
+      background: transparent;
+      border: 0;
+    }
+    .question-card {
+      min-height: 242px;
+      padding: 18px;
+      border: 1px solid rgba(123, 188, 255, 0.20);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(85, 214, 143, 0.14), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
+        var(--panel);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+    }
+    .question-card h2 {
+      margin-top: 12px;
+      font-size: 18px;
+      line-height: 1.28;
+    }
+    .question-card p {
+      color: var(--muted);
+      margin: 10px 0 0;
+    }
+    .question-card strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .question-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .question-number {
+      color: var(--blue);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+    }
+    .question-status {
+      padding: 5px 9px;
+      border-radius: 999px;
+      color: #c9fff0;
+      background: rgba(85, 214, 143, 0.13);
+      border: 1px solid rgba(85, 214, 143, 0.22);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
     .pills {
       max-width: 1040px;

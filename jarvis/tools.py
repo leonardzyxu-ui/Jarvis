@@ -1386,6 +1386,7 @@ def system_status() -> dict[str, Any]:
 def _report_surface_status() -> dict[str, Any]:
     report_path = PROJECT_ROOT / "runtime" / "overnight_status" / "report.html"
     workboard_path = PROJECT_ROOT / "runtime" / "overnight_status" / "index.html"
+    capability_questions_path = PROJECT_ROOT / "runtime" / "overnight_status" / "capability_questions.html"
     return {
         "master_report": {
             "path": str(report_path),
@@ -1396,6 +1397,11 @@ def _report_surface_status() -> dict[str, Any]:
             "path": str(workboard_path),
             "exists": workboard_path.exists(),
             "url": "http://127.0.0.1:8765/overnight-workboard/",
+        },
+        "capability_questions": {
+            "path": str(capability_questions_path),
+            "exists": capability_questions_path.exists(),
+            "url": "http://127.0.0.1:8765/capability-questions/",
         },
     }
 

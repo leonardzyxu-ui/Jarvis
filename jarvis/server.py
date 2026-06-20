@@ -625,8 +625,10 @@ class JarvisServer:
                     "GET /api/integrations/localos/music/control",
                     "GET /overnight-report/",
                     "GET /overnight-workboard/",
+                    "GET /capability-questions/",
                     "HEAD /overnight-report/",
                     "HEAD /overnight-workboard/",
+                    "HEAD /capability-questions/",
                     "POST /api/mode",
                     "POST /api/plan",
                     "POST /api/speech/mute",
@@ -1245,6 +1247,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         if route.path in {"/overnight-workboard", "/overnight-workboard/"}:
             self._send_runtime_file(OVERNIGHT_STATUS_DIR / "index.html", root=OVERNIGHT_STATUS_DIR, head_only=head_only)
+            return
+        if route.path in {"/capability-questions", "/capability-questions/"}:
+            self._send_runtime_file(OVERNIGHT_STATUS_DIR / "capability_questions.html", root=OVERNIGHT_STATUS_DIR, head_only=head_only)
             return
         if route.path.startswith("/static/"):
             self._send_file(STATIC_DIR / route.path.removeprefix("/static/"), head_only=head_only)

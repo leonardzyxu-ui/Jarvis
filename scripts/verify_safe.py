@@ -1548,6 +1548,7 @@ def check_endpoint_wake_debug(base_url: str) -> str:
 def check_endpoint_overnight_report_routes(base_url: str) -> str:
     report_status, report_body, report_headers = http_response(base_url, "/overnight-report/")
     workboard_status, workboard_body, workboard_headers = http_response(base_url, "/overnight-workboard/")
+    capability_status, capability_body, capability_headers = http_response(base_url, "/capability-questions/")
     report_head_status, report_head_body, report_head_headers = http_response(
         base_url,
         "/overnight-report/",
@@ -1558,16 +1559,28 @@ def check_endpoint_overnight_report_routes(base_url: str) -> str:
         "/overnight-workboard/",
         method="HEAD",
     )
+    capability_head_status, capability_head_body, capability_head_headers = http_response(
+        base_url,
+        "/capability-questions/",
+        method="HEAD",
+    )
     require(report_status == 200, f"report status={report_status}")
     require(workboard_status == 200, f"workboard status={workboard_status}")
+    require(capability_status == 200, f"capability questions status={capability_status}")
     require(report_head_status == 200, f"report HEAD status={report_head_status}")
     require(workboard_head_status == 200, f"workboard HEAD status={workboard_head_status}")
+    require(capability_head_status == 200, f"capability questions HEAD status={capability_head_status}")
     require(report_head_body == "", "report HEAD returned a body")
     require(workboard_head_body == "", "workboard HEAD returned a body")
+    require(capability_head_body == "", "capability questions HEAD returned a body")
     require("Jarvis Master Report" in report_body, "report title missing")
     require("Jarvis Overnight Workboard" in workboard_body, "workboard title missing")
+    require("Jarvis Capability Questions" in capability_body, "capability questions title missing")
+    require("Magic Keyboard" in capability_body, "capability questions web/search prompt missing")
+    require("Ms. Sharpay" in capability_body, "capability questions email prompt missing")
     require("'unsafe-inline'" in report_headers.get("content-security-policy", ""), "report inline styles blocked")
     require("'unsafe-inline'" in workboard_headers.get("content-security-policy", ""), "workboard inline styles blocked")
+    require("'unsafe-inline'" in capability_headers.get("content-security-policy", ""), "capability questions inline styles blocked")
     require(
         report_head_headers.get("content-length") == report_headers.get("content-length"),
         "report HEAD content length mismatch",
@@ -1576,7 +1589,11 @@ def check_endpoint_overnight_report_routes(base_url: str) -> str:
         workboard_head_headers.get("content-length") == workboard_headers.get("content-length"),
         "workboard HEAD content length mismatch",
     )
-    return "report and workboard GET/HEAD HTML routes available"
+    require(
+        capability_head_headers.get("content-length") == capability_headers.get("content-length"),
+        "capability questions HEAD content length mismatch",
+    )
+    return "report, workboard, and capability questions GET/HEAD HTML routes available"
 
 
 def check_endpoint_speech_mute(base_url: str) -> str:

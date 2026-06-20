@@ -7266,19 +7266,46 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         def fake_http_response(_base_url, path, **kwargs):
             if kwargs.get("method") == "HEAD":
-                if path in {"/overnight-report/", "/overnight-workboard/"}:
+                if path in {"/overnight-report/", "/overnight-workboard/", "/capability-questions/"}:
                     return 200, "", headers
                 return 404, "", {}
             if path == "/overnight-report/":
                 return 200, "<!doctype html><title>Jarvis Master Report</title>", headers
             if path == "/overnight-workboard/":
                 return 200, "<!doctype html><title>Jarvis Overnight Workboard</title>", headers
+            if path == "/capability-questions/":
+                return 200, "<!doctype html><title>Jarvis Capability Questions</title><p>Magic Keyboard</p><p>Ms. Sharpay</p>", headers
             return 404, "", {}
 
         with patch("scripts.verify_safe.http_response", side_effect=fake_http_response):
             detail = verify_safe.check_endpoint_overnight_report_routes("http://127.0.0.1:8765")
 
-        self.assertEqual(detail, "report and workboard GET/HEAD HTML routes available")
+        self.assertEqual(detail, "report, workboard, and capability questions GET/HEAD HTML routes available")
+
+    def test_render_capability_questions_page_contains_hard_prompts(self):
+        context = {
+            "bundle": "Jarvis 0.1.test build test",
+            "bundle_source": "live worker",
+            "updated": "2026-06-21 03:40 CST",
+            "commit": "abc1234",
+            "branch": "codex/test",
+            "upstream": "origin/codex/test",
+            "git_sync": "ahead 1",
+            "git_dirty": "clean",
+            "python_test_count": 1083,
+            "verification": {"label": "passed"},
+            "no_prompt_verification": {"label": "passed"},
+            "launch_mode": "regular Dock app",
+        }
+
+        page = render_overnight_status.render_capability_questions(context)
+
+        self.assertIn("Jarvis Capability Questions", page)
+        self.assertIn("Teams for my newest Music assignment", page)
+        self.assertIn("Waving Through a Window", page)
+        self.assertIn("Magic Keyboard", page)
+        self.assertIn("Ms. Sharpay", page)
+        self.assertIn("What a real pass means", page)
 
     def test_verify_safe_checks_wake_audition_corpus_route(self):
         def fake_http_response(_base_url, path, **_kwargs):
@@ -20406,6 +20433,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertNotIn("Launch mode", status["reply"])
         self.assertIn("master_report", status["report_surfaces"])
         self.assertIn("workboard", status["report_surfaces"])
+        self.assertIn("capability_questions", status["report_surfaces"])
+        self.assertEqual(status["report_surfaces"]["capability_questions"]["url"], "http://127.0.0.1:8765/capability-questions/")
         self.assertTrue(status["report_surfaces"]["master_report"]["path"].endswith("runtime/overnight_status/report.html"))
         self.assertEqual(status["report_surfaces"]["master_report"]["url"], "http://127.0.0.1:8765/overnight-report/")
         self.assertTrue(status["report_surfaces"]["workboard"]["path"].endswith("runtime/overnight_status/index.html"))
@@ -26717,8 +26746,10 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("GET /api/codex/activity", readiness["mode"]["allowed_while_paused"])
         self.assertIn("GET /overnight-report/", readiness["mode"]["allowed_while_paused"])
         self.assertIn("GET /overnight-workboard/", readiness["mode"]["allowed_while_paused"])
+        self.assertIn("GET /capability-questions/", readiness["mode"]["allowed_while_paused"])
         self.assertIn("HEAD /overnight-report/", readiness["mode"]["allowed_while_paused"])
         self.assertIn("HEAD /overnight-workboard/", readiness["mode"]["allowed_while_paused"])
+        self.assertIn("HEAD /capability-questions/", readiness["mode"]["allowed_while_paused"])
         self.assertIn("POST /api/integrations/localos/music/snapshot", readiness["mode"]["allowed_while_paused"])
         self.assertIn("GET /api/integrations/localos/music/control", readiness["mode"]["allowed_while_paused"])
         self.assertTrue(readiness["mode"]["paused"])
