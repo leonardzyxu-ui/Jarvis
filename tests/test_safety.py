@@ -249,6 +249,49 @@ class VerifySafeScriptTests(unittest.TestCase):
         )
         self.assertEqual(full_loop_regression.select_full_loop_cases("unknown"), [])
 
+    def test_full_loop_chrome_cleanup_closes_new_target_window_by_id(self):
+        before_tabs = [{"window_id": "1", "tab_id": "10", "url": "https://example.test/leo"}]
+        after_tabs = [
+            *before_tabs,
+            {"window_id": "2", "tab_id": "20", "url": "https://teams.microsoft.com/v2/"},
+        ]
+        completed = subprocess.CompletedProcess(["osascript"], 0, "", "")
+
+        with patch("scripts.full_loop_regression.subprocess.run", return_value=completed) as run_mock:
+            result = full_loop_regression.clean_new_chrome_tabs(
+                before_tabs,
+                after_tabs,
+                hosts=("teams.microsoft.com", "teams.cloud.microsoft"),
+            )
+
+        script = run_mock.call_args.args[0][-1]
+        self.assertEqual(result["new_target_tabs"], 1)
+        self.assertEqual(result["new_target_windows"], 1)
+        self.assertEqual(result["chrome_windows_closed"], 1)
+        self.assertIn('if windowId is "2" then set end of closeWindows to w', script)
+
+    def test_full_loop_chrome_cleanup_closes_new_target_tab_by_window_and_tab_id(self):
+        before_tabs = [{"window_id": "1", "tab_id": "10", "url": "https://example.test/leo"}]
+        after_tabs = [
+            *before_tabs,
+            {"window_id": "1", "tab_id": "11", "url": "https://teams.cloud.microsoft/"},
+        ]
+        completed = subprocess.CompletedProcess(["osascript"], 0, "", "")
+
+        with patch("scripts.full_loop_regression.subprocess.run", return_value=completed) as run_mock:
+            result = full_loop_regression.clean_new_chrome_tabs(
+                before_tabs,
+                after_tabs,
+                hosts=("teams.microsoft.com", "teams.cloud.microsoft"),
+            )
+
+        script = run_mock.call_args.args[0][-1]
+        self.assertEqual(result["new_target_tabs"], 1)
+        self.assertEqual(result["new_target_windows"], 0)
+        self.assertEqual(result["chrome_windows_closed"], 0)
+        self.assertIn('if windowId is "1" and tabId is "11" then set end of closeList to t', script)
+        self.assertNotIn("https://example.test/leo", script)
+
     def test_full_loop_music_proof_accepts_expected_song(self):
         proof = full_loop_regression.verify_waving_playback({
             "playing": True,

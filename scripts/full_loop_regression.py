@@ -1602,7 +1602,7 @@ set output to ""
 tell application "Google Chrome"
   repeat with w in windows
     repeat with t in tabs of w
-      set output to output & (id of w as text) & tab & (URL of t as text) & linefeed
+      set output to output & (id of w as text) & tab & (id of t as text) & tab & (URL of t as text) & linefeed
     end repeat
   end repeat
 end tell
@@ -1623,10 +1623,13 @@ return output
     if completed.returncode != 0:
         return tabs
     for line in completed.stdout.splitlines():
-        if "\t" not in line:
-            continue
-        window_id, url = line.split("\t", 1)
-        tabs.append({"window_id": window_id, "url": url})
+        parts = line.split("\t", 2)
+        if len(parts) == 3:
+            window_id, tab_id, url = parts
+            tabs.append({"window_id": window_id, "tab_id": tab_id, "url": url})
+        elif len(parts) == 2:
+            window_id, url = parts
+            tabs.append({"window_id": window_id, "tab_id": "", "url": url})
     return tabs
 
 
@@ -1636,28 +1639,62 @@ def clean_new_chrome_tabs(
     *,
     hosts: tuple[str, ...],
 ) -> dict[str, Any]:
-    before_pairs = {(tab.get("window_id", ""), tab.get("url", "")) for tab in before_tabs}
-    new_urls = []
+    before_pairs = {
+        (tab.get("window_id", ""), tab.get("tab_id", ""), tab.get("url", ""))
+        for tab in before_tabs
+    }
+    before_window_ids = {str(tab.get("window_id") or "") for tab in before_tabs}
+    after_by_window: dict[str, list[dict[str, str]]] = {}
+    new_target_tabs: list[dict[str, str]] = []
     for tab in after_tabs:
-        pair = (tab.get("window_id", ""), tab.get("url", ""))
+        window_id = str(tab.get("window_id") or "")
+        tab_id = str(tab.get("tab_id") or "")
         url = str(tab.get("url") or "")
+        after_by_window.setdefault(window_id, []).append(tab)
+        pair = (window_id, tab_id, url)
         if pair in before_pairs:
             continue
         if any(host in url for host in hosts):
-            new_urls.append(url)
-    if not new_urls:
-        return {"chrome_tabs_closed": 0, "new_target_tabs": 0}
-    conditions = "\n".join(
-        f'      if tabUrl is "{escape_applescript_string(url)}" then set end of closeList to t'
-        for url in new_urls
+            new_target_tabs.append({"window_id": window_id, "tab_id": tab_id, "url": url})
+    if not new_target_tabs:
+        return {"chrome_tabs_closed": 0, "chrome_windows_closed": 0, "new_target_tabs": 0, "new_target_windows": 0}
+    new_target_window_ids = {
+        window_id
+        for window_id, tabs in after_by_window.items()
+        if window_id not in before_window_ids
+        and tabs
+        and any(tab in new_target_tabs for tab in tabs)
+        and all(any(host in str(tab.get("url") or "") for host in hosts) for tab in tabs)
+    }
+    tab_conditions = "\n".join(
+        (
+            f'      if windowId is "{escape_applescript_string(tab["window_id"])}" '
+            f'and tabId is "{escape_applescript_string(tab["tab_id"])}" '
+            f'then set end of closeList to t'
+        )
+        for tab in new_target_tabs
+        if str(tab.get("window_id") or "") not in new_target_window_ids
+    )
+    window_conditions = "\n".join(
+        f'    if windowId is "{escape_applescript_string(window_id)}" then set end of closeWindows to w'
+        for window_id in sorted(new_target_window_ids)
     )
     script = f'''
 tell application "Google Chrome"
+  set closeWindows to {{}}
   repeat with w in windows
+    set windowId to id of w as text
+{window_conditions}
+  end repeat
+  repeat with w in closeWindows
+    close w
+  end repeat
+  repeat with w in windows
+    set windowId to id of w as text
     set closeList to {{}}
     repeat with t in tabs of w
-      set tabUrl to URL of t
-{conditions}
+      set tabId to id of t as text
+{tab_conditions}
     end repeat
     repeat with t in closeList
       close t
@@ -1674,8 +1711,10 @@ end tell
         check=False,
     )
     return {
-        "chrome_tabs_closed": len(new_urls) if completed.returncode == 0 else 0,
-        "new_target_tabs": len(new_urls),
+        "chrome_tabs_closed": len(new_target_tabs) if completed.returncode == 0 else 0,
+        "chrome_windows_closed": len(new_target_window_ids) if completed.returncode == 0 else 0,
+        "new_target_tabs": len(new_target_tabs),
+        "new_target_windows": len(new_target_window_ids),
         "cleanup_returncode": completed.returncode,
         "cleanup_error": completed.stderr.strip()[-500:],
     }
