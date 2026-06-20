@@ -183,6 +183,7 @@ from scripts.morning_status import (
     format_uptime,
     latency_smoke_summary,
     normalize_base_url,
+    pre_build_gate_cleanup_warning,
     pre_build_gate_teams_blocker,
     pre_build_gate_summary,
     print_report_surfaces,
@@ -24613,6 +24614,30 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Music Class no-click navigation plan is ready at (214.0, 344.0)", blocker)
         self.assertIn("All teams no-click navigation plan is ready at (257.0, 322.5)", blocker)
         self.assertIn("Assignments no-click navigation plan is ready at (68.13, 577.17)", blocker)
+
+    def test_morning_status_pre_build_gate_cleanup_warning_summary(self):
+        warning = pre_build_gate_cleanup_warning(
+            {
+                "results": [
+                    {
+                        "id": "cleanup_chrome_test_tabs",
+                        "ok": False,
+                        "fatal": False,
+                        "stdout_tail": json.dumps(
+                            {
+                                "error": "Chrome cleanup warm-up timed out after 8s while reading Chrome windows.",
+                                "warmup": {"status": "timeout", "timeout_seconds": 8},
+                                "attempts": [],
+                            }
+                        ),
+                    }
+                ]
+            }
+        )
+
+        self.assertIn("warm-up timed out", warning)
+        self.assertIn("warm-up timeout", warning)
+        self.assertIn("0 cleanup attempt(s)", warning)
 
     def test_render_overnight_status_latest_latency_smoke_accepts_checked_success(self):
         with tempfile.TemporaryDirectory() as temp_dir:

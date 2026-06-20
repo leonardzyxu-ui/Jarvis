@@ -251,6 +251,9 @@ def print_latest_pre_build_gate() -> None:
     teams_blocker = pre_build_gate_teams_blocker(data)
     if teams_blocker:
         print(f"Teams blocker: {teams_blocker}")
+    cleanup_warning = pre_build_gate_cleanup_warning(data)
+    if cleanup_warning:
+        print(f"Chrome cleanup warning: {cleanup_warning}")
 
 
 def pre_build_gate_summary(data: dict[str, Any]) -> dict[str, Any]:
@@ -356,6 +359,33 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
             parts.append(f"Assignments no-click navigation plan is ready{point_text}")
         elif proof.get("assignments_target_found"):
             parts.append("Assignments OCR target was found")
+        return "; ".join(parts) + "."
+    return ""
+
+
+def pre_build_gate_cleanup_warning(data: dict[str, Any]) -> str:
+    results = data.get("results")
+    if not isinstance(results, list):
+        return ""
+    for item in results:
+        if not isinstance(item, dict) or item.get("id") != "cleanup_chrome_test_tabs" or item.get("ok"):
+            continue
+        text = str(item.get("stdout_tail") or item.get("stdout") or "").strip()
+        detail: dict[str, Any] = {}
+        if text:
+            try:
+                loaded = json.loads(text)
+            except json.JSONDecodeError:
+                loaded = {}
+            if isinstance(loaded, dict):
+                detail = loaded
+        error = str(detail.get("error") or item.get("stderr_tail") or item.get("stdout_tail") or "cleanup did not complete").strip()
+        attempts = detail.get("attempts") if isinstance(detail.get("attempts"), list) else []
+        warmup = detail.get("warmup") if isinstance(detail.get("warmup"), dict) else {}
+        parts = [error]
+        if warmup:
+            parts.append(f"warm-up {warmup.get('status') or 'unknown'}")
+        parts.append(f"{len(attempts)} cleanup attempt(s)")
         return "; ".join(parts) + "."
     return ""
 
