@@ -44,7 +44,7 @@ VISIBLE_SCREEN_PROBE = JARVIS_APP / "Contents" / "MacOS" / "jarvis-visible-scree
 VISIBLE_SCREEN_FOLLOW_UP_RETRY_ATTEMPTS = 4
 VISIBLE_SCREEN_FOLLOW_UP_RETRY_DELAY_SECONDS = 1.6
 VISIBLE_SCREEN_FOLLOW_UP_INITIAL_OPEN_DELAY_SECONDS = 1.2
-VISIBLE_SCREEN_FOLLOW_UP_OPEN_TIMEOUT_SECONDS = 15.0
+VISIBLE_SCREEN_FOLLOW_UP_OPEN_TIMEOUT_SECONDS = 4.0
 SPEECH_AUDIT_MAX_WORKERS = 2
 LOCAL_STT_ROOT = PROJECT_ROOT / "runtime" / "stt_models" / "faster_whisper"
 LOCAL_STT_PYTHON = LOCAL_STT_ROOT / ".venv" / "bin" / "python"
@@ -3264,32 +3264,19 @@ tell application "Google Chrome"
     if (count of windows) = 0 then
         make new window
     end if
-    set matchedTab to false
-    repeat with w in windows
-        set tabIndex to 1
-        repeat with t in tabs of w
-            set tabURL to URL of t
-            if tabURL is targetURL then
-                set active tab index of w to tabIndex
-                set index of w to 1
-                set matchedTab to true
-                exit repeat
-            end if
-            set tabIndex to tabIndex + 1
-        end repeat
-        if matchedTab then
-            exit repeat
-        end if
-    end repeat
-    if not matchedTab then
+    set frontURL to ""
+    set frontTitle to ""
+    try
+        set frontURL to URL of active tab of front window
+        set frontTitle to title of active tab of front window
+    end try
+    if frontURL does not contain targetHost and frontTitle does not contain targetHost then
         tell front window
             make new tab at end of tabs with properties {{URL:targetURL}}
             set active tab index to (count of tabs)
         end tell
     end if
-    set frontURL to ""
-    set frontTitle to ""
-    repeat 25 times
+    repeat 12 times
         delay 0.2
         try
             set frontURL to URL of active tab of front window
