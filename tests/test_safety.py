@@ -27103,6 +27103,11 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     "file": str((root / "runtime" / "overnight_status" / "index.html").resolve()),
                     "url": "http://127.0.0.1:8765/overnight-workboard/",
                 },
+                {
+                    "label": "Capability questions",
+                    "file": str((root / "runtime" / "overnight_status" / "capability_questions.html").resolve()),
+                    "url": "http://127.0.0.1:8765/capability-questions/",
+                },
             ],
         )
 
@@ -27117,6 +27122,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Master report URL: http://127.0.0.1:8765/overnight-report/", printed)
         self.assertIn(f"Workboard file: {(root / 'runtime' / 'overnight_status' / 'index.html').resolve()}", printed)
         self.assertIn("Workboard URL: http://127.0.0.1:8765/overnight-workboard/", printed)
+        self.assertIn(f"Capability questions file: {(root / 'runtime' / 'overnight_status' / 'capability_questions.html').resolve()}", printed)
+        self.assertIn("Capability questions URL: http://127.0.0.1:8765/capability-questions/", printed)
 
     def test_morning_status_process_check_uses_exact_executable_name(self):
         completed = subprocess.CompletedProcess(args=["pgrep"], returncode=1, stdout="", stderr="")

@@ -962,6 +962,11 @@ def report_surfaces(base_url: str) -> list[dict[str, str]]:
             "file": str((output_dir / "index.html").resolve()),
             "url": f"{base}/overnight-workboard/",
         },
+        {
+            "label": "Capability questions",
+            "file": str((output_dir / "capability_questions.html").resolve()),
+            "url": f"{base}/capability-questions/",
+        },
     ]
 
 
