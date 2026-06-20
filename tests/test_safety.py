@@ -805,6 +805,10 @@ class VerifySafeScriptTests(unittest.TestCase):
                             "requires_explicit_live_navigation": True,
                             "point": {"x": 68.13, "y": 577.17},
                         },
+                        "sequence": [
+                            {"key": "requested_class", "label": "requested class", "plan": {"planned": True}},
+                            {"key": "assignments", "label": "Assignments", "plan": {"planned": True}},
+                        ],
                     },
                     "visible_reply_preview": (
                         "I read the visible Teams screen, but it does not look like the Music assignment. "
@@ -829,6 +833,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(proof["assignments_target"]["center"], {"x": 68.13, "y": 577.17})
         self.assertTrue(proof["assignments_navigation_plan_ready"])
         self.assertFalse(proof["assignments_navigation_plan"]["will_click"])
+        self.assertEqual([step["key"] for step in proof["visible_navigation_sequence"]], ["requested_class", "assignments"])
         self.assertTrue(proof["honest_wrong_subject"])
         self.assertIn("Geography of Greece", proof["visible_reply_preview"])
 
@@ -2879,6 +2884,34 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(plan["will_click"])
         self.assertTrue(plan["requires_explicit_live_navigation"])
         self.assertEqual(plan["point"], {"x": 68.0, "y": 577.0})
+        self.assertEqual(
+            [step["key"] for step in result["visible_navigation_targets"]["sequence"]],
+            ["requested_class", "assignments"],
+        )
+
+    def test_voice_loop_qa_visible_navigation_sequence_uses_all_teams_before_assignments_when_class_missing(self):
+        targets = {
+            "requested_class_plan": {"planned": False, "will_click": False},
+            "all_teams_plan": {
+                "planned": True,
+                "will_click": False,
+                "point": {"x": 257.0, "y": 322.5},
+            },
+            "assignments_plan": {
+                "planned": True,
+                "will_click": False,
+                "point": {"x": 68.0, "y": 577.0},
+            },
+        }
+
+        sequence = voice_loop_qa.visible_navigation_sequence(targets)
+
+        self.assertEqual(
+            [step["key"] for step in sequence],
+            ["all_teams", "requested_class_after_all_teams", "assignments"],
+        )
+        self.assertEqual(sequence[0]["plan"]["point"], {"x": 257.0, "y": 322.5})
+        self.assertEqual(sequence[1]["plan"]["reason"], "requires_previous_step")
 
     def test_voice_loop_qa_visible_navigation_plan_fails_closed(self):
         plan = voice_loop_qa.visible_navigation_plan(
@@ -24550,6 +24583,10 @@ class RuntimeSurfaceTests(unittest.TestCase):
                                     "assignments_navigation_plan": {
                                         "point": {"x": 68.13, "y": 577.17}
                                     },
+                                    "visible_navigation_sequence": [
+                                        {"key": "requested_class", "label": "requested class"},
+                                        {"key": "assignments", "label": "Assignments"},
+                                    ],
                                 },
                             }
                         ]
@@ -24572,6 +24609,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertIn("Teams assignment is wrong_subject", blocker)
         self.assertIn("Chrome page-read is blocked", blocker)
+        self.assertIn("next no-click sequence: requested class -> Assignments", blocker)
         self.assertIn("Music Class no-click navigation plan is ready at (214.0, 344.0)", blocker)
         self.assertIn("All teams no-click navigation plan is ready at (257.0, 322.5)", blocker)
         self.assertIn("Assignments no-click navigation plan is ready at (68.13, 577.17)", blocker)

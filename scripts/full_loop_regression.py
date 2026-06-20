@@ -1256,6 +1256,11 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
         if isinstance(navigation_targets.get("all_teams_plan"), dict)
         else {}
     )
+    navigation_sequence = (
+        navigation_targets.get("sequence")
+        if isinstance(navigation_targets.get("sequence"), list)
+        else []
+    )
     combined_reply = " ".join(part for part in [visible_reply, follow_up_reply] if part).strip()
     lower_reply = combined_reply.casefold()
     failures: list[str] = []
@@ -1315,6 +1320,7 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
         "all_teams_target": all_teams_target,
         "all_teams_navigation_plan_ready": bool(all_teams_plan.get("planned")),
         "all_teams_navigation_plan": all_teams_plan,
+        "visible_navigation_sequence": navigation_sequence,
         "capability_complete": capability_complete,
         "completion_status": completion_status,
         "visible_reply_preview": combined_reply[:500],

@@ -1987,7 +1987,19 @@ def run_native_visible_screen_follow_up(
     if exercise_visible_navigation and isinstance(latest_failure, dict):
         targets = latest_failure.get("visible_navigation_targets")
         if isinstance(targets, dict):
-            plan = targets.get("requested_class_plan")
+            sequence = targets.get("sequence") if isinstance(targets.get("sequence"), list) else []
+            plan = next(
+                (
+                    step.get("plan")
+                    for step in sequence
+                    if isinstance(step, dict)
+                    and isinstance(step.get("plan"), dict)
+                    and step["plan"].get("planned")
+                ),
+                None,
+            )
+            if not isinstance(plan, dict):
+                plan = targets.get("requested_class_plan")
             if not (isinstance(plan, dict) and plan.get("planned")):
                 plan = targets.get("all_teams_plan")
             if not (isinstance(plan, dict) and plan.get("planned")):
@@ -2200,6 +2212,7 @@ def run_native_visible_screen_follow_up_attempt(
             action="click",
             purpose="open the Teams Assignments view before reading the requested Music assignment",
         )
+        navigation_targets["sequence"] = visible_navigation_sequence(navigation_targets)
     return {
         "used": useful,
         "status": status,
@@ -2317,6 +2330,72 @@ def visible_navigation_plan(
         "point": {"x": round(x, 2), "y": round(y, 2)},
         "target": target,
     }
+
+
+def visible_navigation_sequence(navigation_targets: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the safest ordered Teams navigation plan from the visible state."""
+    if not isinstance(navigation_targets, dict):
+        return []
+
+    requested_class = _visible_navigation_sequence_step(
+        navigation_targets,
+        "requested_class",
+        "requested class",
+        "open the requested Teams class before reading its Assignments view",
+    )
+    if requested_class:
+        return [requested_class, *_visible_navigation_sequence_tail(navigation_targets)]
+
+    all_teams = _visible_navigation_sequence_step(
+        navigation_targets,
+        "all_teams",
+        "All teams",
+        "return to the Teams list before looking for the requested class",
+    )
+    if all_teams:
+        return [
+            all_teams,
+            {
+                "key": "requested_class_after_all_teams",
+                "label": "requested class",
+                "reason": "look for the requested Teams class after opening All teams",
+                "plan": {"planned": False, "reason": "requires_previous_step", "will_click": False},
+            },
+            *_visible_navigation_sequence_tail(navigation_targets),
+        ]
+
+    return _visible_navigation_sequence_tail(navigation_targets)
+
+
+def _visible_navigation_sequence_step(
+    navigation_targets: dict[str, Any],
+    key: str,
+    label: str,
+    reason: str,
+) -> dict[str, Any] | None:
+    plan = navigation_targets.get(f"{key}_plan")
+    if not isinstance(plan, dict) or not plan.get("planned"):
+        return None
+    return {
+        "key": key,
+        "label": label,
+        "reason": reason,
+        "plan": plan,
+    }
+
+
+def _visible_navigation_sequence_tail(navigation_targets: dict[str, Any]) -> list[dict[str, Any]]:
+    assignments_plan = navigation_targets.get("assignments_plan")
+    if not isinstance(assignments_plan, dict) or not assignments_plan.get("planned"):
+        return []
+    return [
+        {
+            "key": "assignments",
+            "label": "Assignments",
+            "reason": "open Assignments after the requested class is visible",
+            "plan": assignments_plan,
+        }
+    ]
 
 
 def execute_visible_navigation_plan(

@@ -315,6 +315,15 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
         parts = [f"Teams assignment is {completion}"]
         if proof.get("chrome_page_read_blocked"):
             parts.append("Chrome page-read is blocked")
+        sequence = proof.get("visible_navigation_sequence")
+        if isinstance(sequence, list) and sequence:
+            labels = [
+                str(item.get("label") or item.get("key") or "").strip()
+                for item in sequence
+                if isinstance(item, dict) and str(item.get("label") or item.get("key") or "").strip()
+            ]
+            if labels:
+                parts.append(f"next no-click sequence: {' -> '.join(labels)}")
         if proof.get("requested_class_navigation_plan_ready"):
             plan = (
                 proof.get("requested_class_navigation_plan")
