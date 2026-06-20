@@ -5482,16 +5482,33 @@ class VerifySafeScriptTests(unittest.TestCase):
                  },
              ) as attempt_mock, \
              patch(
+                 "scripts.voice_loop_qa.open_chrome_follow_up_url_in_new_visible_window",
+                 return_value={
+                     "browser_open_attempted": True,
+                     "browser_url": "https://teams.microsoft.com/v2/",
+                     "browser_open_method": "chrome_new_visible_window",
+                     "browser_open_visibility_recovery_attempted": True,
+                     "browser_open_visibility_recovery_method": "chrome_new_visible_window",
+                     "browser_open_returncode": 0,
+                     "browser_open_active_url": "https://teams.cloud.microsoft/",
+                     "browser_open_active_title": "Teams and Channels | General | Microsoft Teams",
+                     "browser_open_verification_url": "https://teams.cloud.microsoft/",
+                     "browser_open_verification_source": "active_url",
+                     "browser_open_target_host_verified": True,
+                     "browser_open_login_gate": False,
+                 },
+             ) as visibility_recovery_mock, \
+             patch(
                  "scripts.voice_loop_qa.read_chrome_front_tab_state",
                  return_value={
                      "browser_open_attempted": True,
                      "browser_open_settle_check": True,
                      "browser_open_returncode": 0,
-                     "browser_open_active_url": "",
-                     "browser_open_active_title": "https://teams.microsoft.com/v2/?clientexperience=t3",
-                     "browser_open_verification_url": "https://teams.microsoft.com/v2/?clientexperience=t3",
-                     "browser_open_verification_source": "active_title_url",
-                     "browser_open_target_host_verified": False,
+                     "browser_open_active_url": "https://teams.cloud.microsoft/",
+                     "browser_open_active_title": "Teams and Channels | General | Microsoft Teams",
+                     "browser_open_verification_url": "https://teams.cloud.microsoft/",
+                     "browser_open_verification_source": "active_url",
+                     "browser_open_target_host_verified": True,
                      "browser_open_login_gate": False,
                  },
              ):
@@ -5504,12 +5521,15 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         self.assertEqual(attempt_mock.call_count, 2)
-        self.assertEqual(attempt_mock.call_args.kwargs["preferred_window_title_contains"], "")
+        visibility_recovery_mock.assert_called_once()
+        self.assertEqual(attempt_mock.call_args.kwargs["preferred_window_title_contains"], "Teams and Channels | General | Microsoft Teams")
         self.assertEqual(result["status"], "browser_focus_not_verified")
         self.assertTrue(result["browser_focus_mismatch"])
+        self.assertTrue(result["browser_open_visibility_recovery_attempted"])
+        self.assertEqual(result["browser_open_visibility_recovery_method"], "chrome_new_visible_window")
         self.assertFalse(result["used"])
         self.assertIn("did not contain Teams content", result["visible_reply_preview"])
-        self.assertEqual(result["browser_open_verification_source"], "active_title_url")
+        self.assertEqual(result["browser_open_verification_source"], "active_url")
         targets = result["visible_navigation_targets"]
         self.assertEqual(targets["sequence"], [])
         self.assertFalse(targets["teams_search"]["found"])
@@ -5563,6 +5583,23 @@ class VerifySafeScriptTests(unittest.TestCase):
                  side_effect=[wrong_surface_attempt, recovered_attempt],
              ) as attempt_mock, \
              patch(
+                 "scripts.voice_loop_qa.open_chrome_follow_up_url_in_new_visible_window",
+                 return_value={
+                     "browser_open_attempted": True,
+                     "browser_url": "https://teams.cloud.microsoft/",
+                     "browser_open_method": "chrome_new_visible_window",
+                     "browser_open_visibility_recovery_attempted": True,
+                     "browser_open_visibility_recovery_method": "chrome_new_visible_window",
+                     "browser_open_returncode": 0,
+                     "browser_open_active_url": "https://teams.cloud.microsoft/",
+                     "browser_open_active_title": "Teams and Channels | General | Microsoft Teams",
+                     "browser_open_verification_url": "https://teams.cloud.microsoft/",
+                     "browser_open_verification_source": "active_url",
+                     "browser_open_target_host_verified": True,
+                     "browser_open_login_gate": False,
+                 },
+             ) as visibility_recovery_mock, \
+             patch(
                  "scripts.voice_loop_qa.read_chrome_front_tab_state",
                  return_value={
                      "browser_open_attempted": True,
@@ -5585,11 +5622,34 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         self.assertEqual(attempt_mock.call_count, 2)
+        visibility_recovery_mock.assert_called_once()
         settle_mock.assert_called_once()
         self.assertEqual(result["status"], "completed")
         self.assertTrue(result["used"])
         self.assertEqual(result["attempts"], 2)
         self.assertIn("Music Assignment", result["visible_reply_preview"])
+
+    def test_voice_loop_qa_new_visible_chrome_window_recovery_uses_fresh_window(self):
+        completed = subprocess.CompletedProcess(
+            args=["osascript"],
+            returncode=0,
+            stdout="Teams and Channels | General | Microsoft Teams\nhttps://teams.cloud.microsoft/",
+            stderr="",
+        )
+        with patch("scripts.voice_loop_qa.subprocess.run", return_value=completed) as run_mock:
+            result = voice_loop_qa.open_chrome_follow_up_url_in_new_visible_window(
+                url="https://teams.microsoft.com/v2/",
+                timeout=5.0,
+            )
+
+        self.assertTrue(result["browser_open_attempted"])
+        self.assertTrue(result["browser_open_visibility_recovery_attempted"])
+        self.assertEqual(result["browser_open_method"], "chrome_new_visible_window")
+        self.assertEqual(result["browser_open_verification_source"], "active_url")
+        self.assertTrue(result["browser_open_target_host_verified"])
+        script = run_mock.call_args.args[0][-1]
+        self.assertIn("make new window", script)
+        self.assertIn("set URL of active tab of newWindow to targetURL", script)
 
     def test_voice_loop_qa_visible_screen_followup_rejects_jarvis_window_ocr_after_teams_open(self):
         self.assertTrue(

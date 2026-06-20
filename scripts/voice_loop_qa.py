@@ -2135,6 +2135,37 @@ def run_native_visible_screen_follow_up(
         ):
             latest_failure = teams_wrong_surface_attempt_failure(attempt_result, browser_open)
             if attempt < max_attempts and teams_wrong_surface_retry_worthwhile(attempt_result):
+                visibility_recovery = open_chrome_follow_up_url_in_new_visible_window(
+                    url=str(browser_open.get("browser_url") or ""),
+                    timeout=timeout,
+                )
+                if visibility_recovery.get("browser_open_attempted"):
+                    browser_open.update(visibility_recovery)
+                    result.update(visibility_recovery)
+                    latest_failure.update(
+                        {
+                            "browser_open_visibility_recovery_attempted": visibility_recovery.get("browser_open_visibility_recovery_attempted"),
+                            "browser_open_visibility_recovery_method": visibility_recovery.get("browser_open_visibility_recovery_method"),
+                            "browser_open_active_title": browser_open.get("browser_open_active_title"),
+                            "browser_open_active_url": browser_open.get("browser_open_active_url"),
+                            "browser_open_verification_url": browser_open.get("browser_open_verification_url"),
+                            "browser_open_verification_source": browser_open.get("browser_open_verification_source"),
+                        }
+                    )
+                if browser_open.get("browser_open_login_gate"):
+                    return {
+                        **result,
+                        **latest_failure,
+                        "status": "login_gate_visible",
+                        "used": False,
+                        "attempts": attempt,
+                        "browser_open_login_gate": True,
+                        "visible_reply_preview": (
+                            "Teams opened in Chrome, but Microsoft is showing a sign-in gate. "
+                            "I have not inspected the newest Music assignment yet."
+                        ),
+                        "duration_seconds": round(time.monotonic() - started, 3),
+                    }
                 browser_after_mismatch = read_chrome_front_tab_state(
                     target_host=(urlparse(str(browser_open.get("browser_url") or "")).hostname or "").lower(),
                     timeout=timeout,
@@ -3214,6 +3245,96 @@ return frontTitle & linefeed & frontURL
         return {
             "browser_open_attempted": True,
             "browser_url": url,
+            "browser_open_error": f"{type(error).__name__}: {error}",
+        }
+
+
+def open_chrome_follow_up_url_in_new_visible_window(*, url: str, timeout: float) -> dict[str, Any]:
+    """Open a fresh Chrome window for OCR when an existing Teams tab is on another Space."""
+    url = str(url or "").strip()
+    if not url or not re.match(r"^https?://", url, flags=re.IGNORECASE):
+        return {"browser_open_attempted": False, "browser_open_visibility_recovery_attempted": False}
+    target_host = (urlparse(url).hostname or "").lower()
+    applescript = f"""
+set targetURL to "{escape_applescript_string(url)}"
+set targetHost to "{escape_applescript_string(target_host)}"
+tell application "Google Chrome"
+    activate
+    set newWindow to make new window
+    set URL of active tab of newWindow to targetURL
+    set index of newWindow to 1
+    set frontURL to ""
+    set frontTitle to ""
+    repeat 25 times
+        delay 0.2
+        try
+            set frontURL to URL of active tab of front window
+            set frontTitle to title of active tab of front window
+        end try
+        if frontURL contains targetHost then
+            exit repeat
+        end if
+        if frontTitle contains targetHost then
+            exit repeat
+        end if
+        if frontURL contains "login.microsoftonline.com" or frontURL contains "login.live.com" then
+            exit repeat
+        end if
+    end repeat
+end tell
+return frontTitle & linefeed & frontURL
+"""
+    try:
+        completed = subprocess.run(
+            ["/usr/bin/osascript", "-e", applescript],
+            cwd=PROJECT_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=min(VISIBLE_SCREEN_FOLLOW_UP_OPEN_TIMEOUT_SECONDS, max(5.0, timeout)),
+            check=False,
+        )
+        stdout = completed.stdout.strip()
+        title, active_url = parse_chrome_front_tab_output(stdout)
+        verification_url, verification_source = chrome_front_tab_verification_url(title, active_url)
+        active_host = (urlparse(verification_url).hostname or "").lower()
+        login_gate = chrome_front_tab_login_gate(title=title, active_url=active_url)
+        target_host_verified = chrome_front_tab_host_verified(
+            target_host=target_host,
+            active_host=active_host,
+            verification_source=verification_source,
+        )
+        return {
+            "browser_open_attempted": True,
+            "browser_url": url,
+            "browser_open_method": "chrome_new_visible_window",
+            "browser_open_visibility_recovery_attempted": True,
+            "browser_open_visibility_recovery_method": "chrome_new_visible_window",
+            "browser_open_returncode": completed.returncode,
+            "browser_open_stdout_tail": stdout[-500:],
+            "browser_open_stderr_tail": completed.stderr.strip()[-500:],
+            "browser_open_active_title": title,
+            "browser_open_active_url": active_url,
+            "browser_open_verification_url": verification_url,
+            "browser_open_verification_source": verification_source,
+            "browser_open_login_gate": login_gate,
+            "browser_open_target_host_verified": bool(completed.returncode == 0 and target_host_verified),
+        }
+    except subprocess.TimeoutExpired as error:
+        return {
+            "browser_open_attempted": True,
+            "browser_url": url,
+            "browser_open_method": "chrome_new_visible_window",
+            "browser_open_visibility_recovery_attempted": True,
+            "browser_open_visibility_recovery_method": "chrome_new_visible_window",
+            "browser_open_error": f"TimeoutExpired: {error}",
+        }
+    except Exception as error:
+        return {
+            "browser_open_attempted": True,
+            "browser_url": url,
+            "browser_open_method": "chrome_new_visible_window",
+            "browser_open_visibility_recovery_attempted": True,
+            "browser_open_visibility_recovery_method": "chrome_new_visible_window",
             "browser_open_error": f"{type(error).__name__}: {error}",
         }
 
