@@ -72,11 +72,13 @@ def is_cleanup_target(url: str) -> bool:
     return False
 
 
-def _cleanup_jxa(*, close_targets: bool) -> str:
+def _cleanup_jxa(*, close_targets: bool, close_duplicate_teams: bool = False) -> str:
     close_targets_js = "true" if close_targets else "false"
+    close_duplicate_teams_js = "true" if close_duplicate_teams else "false"
     return f'''
 const chrome = Application("Google Chrome");
 const closeTargets = {close_targets_js};
+const closeDuplicateTeams = {close_duplicate_teams_js};
 const localosMusicHttpUrl = {json.dumps(LOCALOS_MUSIC_HTTP_URL)};
 const localosMusicFileMarker = {json.dumps(LOCALOS_MUSIC_FILE_MARKER)};
 const jarvisLoopbackPrefixes = {json.dumps(list(JARVIS_LOOPBACK_PREFIXES))};
@@ -93,23 +95,39 @@ function isCleanupTarget(url) {{
 }}
 
 const targets = [];
+const genericTeamsTabs = [];
 for (const win of chrome.windows()) {{
   const tabs = win.tabs();
   for (let index = tabs.length - 1; index >= 0; index -= 1) {{
     const tab = tabs[index];
     const url = String(tab.url() || "");
-    if (!isCleanupTarget(url)) continue;
     const title = String(tab.title() || "");
+    if (
+      closeDuplicateTeams &&
+      url === "https://teams.cloud.microsoft/" &&
+      title === "Teams and Channels | General | Microsoft Teams"
+    ) {{
+      genericTeamsTabs.push({{ tab, title, url }});
+      continue;
+    }}
+    if (!isCleanupTarget(url)) continue;
     targets.push({{ title, url }});
     if (closeTargets) tab.close();
+  }}
+}}
+if (closeDuplicateTeams && genericTeamsTabs.length > 1) {{
+  for (let index = 1; index < genericTeamsTabs.length; index += 1) {{
+    const target = genericTeamsTabs[index];
+    targets.push({{ title: target.title, url: target.url, reason: "duplicate_generic_teams_tab" }});
+    if (closeTargets) target.tab.close();
   }}
 }}
 JSON.stringify(targets);
 '''
 
 
-def cleanup_chrome_test_tabs(*, execute: bool) -> dict[str, Any]:
-    script = _cleanup_jxa(close_targets=execute)
+def cleanup_chrome_test_tabs(*, execute: bool, close_duplicate_teams: bool = False) -> dict[str, Any]:
+    script = _cleanup_jxa(close_targets=execute, close_duplicate_teams=close_duplicate_teams)
     warmup = _chrome_warmup()
     if warmup.get("status") == "timeout":
         return {
@@ -181,7 +199,11 @@ def cleanup_chrome_test_tabs(*, execute: bool) -> dict[str, Any]:
             "error": f"Chrome cleanup returned invalid JSON: {error}",
         }
     targets = [
-        {"title": str(item.get("title") or ""), "url": str(item.get("url") or "")}
+        {
+            "title": str(item.get("title") or ""),
+            "url": str(item.get("url") or ""),
+            "reason": str(item.get("reason") or "jarvis_test_tab"),
+        }
         for item in loaded
         if isinstance(item, dict)
     ]
@@ -191,6 +213,7 @@ def cleanup_chrome_test_tabs(*, execute: bool) -> dict[str, Any]:
         "closed_count": len(targets) if execute else 0,
         "target_count": len(targets),
         "targets": targets,
+        "close_duplicate_teams": bool(close_duplicate_teams),
         "attempts": attempts,
         "warmup": warmup,
     }
@@ -200,10 +223,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", help="Actually close matching Chrome tabs.")
     parser.add_argument("--dry-run", action="store_false", dest="execute", help="Preview matching tabs without closing them. This is the default.")
+    parser.add_argument("--close-duplicate-teams", action="store_true", help="Also close duplicate generic Teams tabs while keeping one visible Teams tab.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     args = parser.parse_args(argv)
 
-    result = cleanup_chrome_test_tabs(execute=args.execute)
+    result = cleanup_chrome_test_tabs(execute=args.execute, close_duplicate_teams=args.close_duplicate_teams)
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
     elif result["ok"]:

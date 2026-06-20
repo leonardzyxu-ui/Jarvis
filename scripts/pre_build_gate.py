@@ -288,7 +288,7 @@ def cleanup_chrome_step() -> dict[str, Any]:
     return {
         "id": "cleanup_chrome_test_tabs",
         "label": "Clean up Jarvis Chrome test tabs",
-        "command": [sys.executable, "scripts/cleanup_chrome_test_tabs.py", "--execute", "--json"],
+        "command": [sys.executable, "scripts/cleanup_chrome_test_tabs.py", "--execute", "--close-duplicate-teams", "--json"],
         "always_run_next": True,
         "fatal": False,
     }

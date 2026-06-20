@@ -1429,6 +1429,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("scripts/probe_stop_speaking.py", steps[2]["command"])
         self.assertEqual(steps[2]["proof_contract"]["speech_mode"], "suppressed_for_stop_speaking")
         self.assertFalse(steps[2]["proof_contract"]["starts_audio"])
+        self.assertIn("--close-duplicate-teams", steps[3]["command"])
         self.assertFalse(steps[3]["fatal"])
 
     def test_pre_build_gate_can_exercise_live_speech_explicitly(self):
@@ -2049,6 +2050,51 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(result["closed_count"], 1)
         self.assertIn("const closeTargets = true", run_mock.call_args.args[0][-1])
 
+    def test_cleanup_chrome_test_tabs_can_close_duplicate_generic_teams_tabs(self):
+        completed = subprocess.CompletedProcess(
+            args=["osascript"],
+            returncode=0,
+            stdout=json.dumps([
+                {
+                    "title": "Teams and Channels | General | Microsoft Teams",
+                    "url": "https://teams.cloud.microsoft/",
+                    "reason": "duplicate_generic_teams_tab",
+                },
+                {
+                    "title": "Teams and Channels | General | Microsoft Teams",
+                    "url": "https://teams.cloud.microsoft/",
+                    "reason": "duplicate_generic_teams_tab",
+                },
+            ]),
+            stderr="",
+        )
+        with patch("scripts.cleanup_chrome_test_tabs.subprocess.run", return_value=completed) as run_mock:
+            result = cleanup_chrome_test_tabs.cleanup_chrome_test_tabs(execute=True, close_duplicate_teams=True)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["executed"])
+        self.assertTrue(result["close_duplicate_teams"])
+        self.assertEqual(result["target_count"], 2)
+        self.assertEqual(result["closed_count"], 2)
+        self.assertEqual({target["reason"] for target in result["targets"]}, {"duplicate_generic_teams_tab"})
+        script = run_mock.call_args.args[0][-1]
+        self.assertIn("const closeDuplicateTeams = true", script)
+        self.assertIn("genericTeamsTabs.length > 1", script)
+
+    def test_cleanup_chrome_test_tabs_duplicate_teams_mode_is_opt_in(self):
+        completed = subprocess.CompletedProcess(
+            args=["osascript"],
+            returncode=0,
+            stdout=json.dumps([]),
+            stderr="",
+        )
+        with patch("scripts.cleanup_chrome_test_tabs.subprocess.run", return_value=completed) as run_mock:
+            result = cleanup_chrome_test_tabs.cleanup_chrome_test_tabs(execute=False)
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["close_duplicate_teams"])
+        self.assertIn("const closeDuplicateTeams = false", run_mock.call_args.args[0][-1])
+
     def test_cleanup_chrome_test_tabs_timeout_is_reported_cleanly(self):
         with patch(
             "scripts.cleanup_chrome_test_tabs.subprocess.run",
@@ -2187,7 +2233,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             exit_code = cleanup_chrome_test_tabs.main(["--dry-run"])
 
         self.assertEqual(exit_code, 0)
-        cleanup_mock.assert_called_once_with(execute=False)
+        cleanup_mock.assert_called_once_with(execute=False, close_duplicate_teams=False)
         self.assertIn("Would close 2 Jarvis/Codex Chrome test tab(s).", stdout.getvalue())
 
     def test_codex_cli_proxy_benchmark_defaults_to_dry_run(self):
