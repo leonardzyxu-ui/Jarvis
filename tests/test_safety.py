@@ -25523,6 +25523,54 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("gate ran on oldgate", suffix)
         self.assertEqual(pre_build_gate_stale_suffix({"source_commit": ""}), ", source commit unknown")
 
+    def test_morning_status_labels_teams_blocker_from_stale_gate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            gate_dir = root / "runtime" / "pre_build_gate"
+            gate_dir.mkdir(parents=True)
+            report_path = root / "runtime" / "full_loop_regression" / "summary.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "case_id": "teams_music_assignment_honesty",
+                                "status": "warning",
+                                "action_proof": {"completion_status": "wrong_subject"},
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (gate_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "passed": 0,
+                        "total": 1,
+                        "source_commit": "oldgate",
+                        "results": [
+                            {
+                                "id": "full_loop_regression",
+                                "ok": False,
+                                "stdout_tail": f"Report: {report_path}\nteams_music_assignment_honesty: warning",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("scripts.morning_status.PROJECT_ROOT", root), \
+                 patch("scripts.morning_status.git_commit_short", return_value="newhead"), \
+                 patch("builtins.print") as print_mock:
+                print_latest_pre_build_gate()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn("Teams blocker from stale gate: Teams assignment is wrong_subject.", printed)
+
     def test_morning_status_pre_build_gate_teams_blocker_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             report_path = Path(temp_dir) / "summary.json"
@@ -25676,7 +25724,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
                                         "coordinate_space": "screen_points",
                                     },
                                     "visible_navigation_execution_steps": [
-                                        {"attempted": True, "executed": True, "status": "clicked"}
+                                        {"attempted": True, "executed": True, "status": "clicked"},
+                                        {"attempted": True, "executed": True, "status": "type_search", "query": "Music"},
                                     ],
                                 },
                             }
@@ -25690,7 +25739,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 diagnostic = latest_teams_live_navigation_diagnostic()
 
         self.assertIn("stopped as browser_back navigation_loop_prevented at (257.13, 323.04) in screen points", diagnostic)
-        self.assertIn("1 step(s)", diagnostic)
+        self.assertIn("2 step(s) (clicked -> type_search Music)", diagnostic)
         self.assertIn("runtime/full_loop_regression/20260620-095114/summary.json", diagnostic)
 
     def test_morning_status_latest_teams_diagnostic_prefers_fresh_not_exercised_artifact(self):

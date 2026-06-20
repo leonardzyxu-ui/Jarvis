@@ -252,7 +252,8 @@ def print_latest_pre_build_gate() -> None:
     )
     teams_blocker = pre_build_gate_teams_blocker(data)
     if teams_blocker:
-        print(f"Teams blocker: {teams_blocker}")
+        prefix = "Teams blocker from stale gate" if stale_suffix else "Teams blocker"
+        print(f"{prefix}: {teams_blocker}")
     cleanup_warning = pre_build_gate_cleanup_warning(data)
     if cleanup_warning:
         print(f"Chrome cleanup warning: {cleanup_warning}")
@@ -529,8 +530,25 @@ def latest_teams_live_navigation_diagnostic() -> str:
             else:
                 action = f"stopped as {action_prefix}{status}{point_text}{coordinate_text}"
             step_count = len(steps) if isinstance(steps, list) else 0
-            return f"{action}; {step_count} step(s); {report.relative_to(PROJECT_ROOT)}, age {age}"
+            step_text = teams_navigation_steps_text(steps) if isinstance(steps, list) else ""
+            return f"{action}; {step_count} step(s){step_text}; {report.relative_to(PROJECT_ROOT)}, age {age}"
     return ""
+
+
+def teams_navigation_steps_text(steps: list[object]) -> str:
+    labels: list[str] = []
+    for raw_step in steps:
+        if not isinstance(raw_step, dict):
+            continue
+        status = str(raw_step.get("status") or "unknown").strip() or "unknown"
+        query = str(raw_step.get("query") or "").strip()
+        if query:
+            labels.append(f"{status} {query}")
+        else:
+            labels.append(status)
+    if not labels:
+        return ""
+    return f" ({' -> '.join(labels)})"
 
 
 def print_latest_teams_live_navigation_diagnostic() -> None:
