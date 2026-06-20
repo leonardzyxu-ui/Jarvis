@@ -1068,12 +1068,6 @@ final class JarvisShellModel: ObservableObject {
                         set matchedTab to true
                         exit repeat
                     end if
-                    if (targetHost is "teams.microsoft.com" or targetHost is "teams.cloud.microsoft") and (tabURL contains "teams.microsoft.com" or tabURL contains "teams.cloud.microsoft") then
-                        set active tab index of w to tabIndex
-                        set index of w to 1
-                        set matchedTab to true
-                        exit repeat
-                    end if
                     set tabIndex to tabIndex + 1
                 end repeat
                 if matchedTab then

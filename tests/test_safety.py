@@ -15684,7 +15684,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("openURLInSignedInChromeSession(url)", model_source)
         self.assertIn('URL(fileURLWithPath: "/usr/bin/osascript")', model_source)
         self.assertIn('tell application "Google Chrome"', model_source)
-        self.assertIn('tabURL contains "teams.cloud.microsoft"', model_source)
+        self.assertIn("if tabURL is targetURL then", model_source)
+        self.assertNotIn('tabURL contains "teams.cloud.microsoft"', model_source)
+        self.assertNotIn('tabURL contains "teams.microsoft.com"', model_source)
         self.assertIn("runTeamsBrowserFollowUp(commandText)", model_source)
         self.assertIn("runNativeChromePageRead", model_source)
         self.assertIn("browserPageReadResponseLooksUseful", model_source)
@@ -17521,7 +17523,13 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('global_latest_path = REPORT_DIR / "latest.json"', script_source)
         self.assertIn('["/usr/bin/osascript", "-e", applescript]', script_source)
         self.assertIn('"browser_open_method": "chrome_existing_session"', script_source)
-        self.assertIn('tabURL contains "teams.cloud.microsoft"', script_source)
+        self.assertIn("if tabURL is targetURL then", script_source)
+        self.assertIn("repeat 10 times", script_source)
+        self.assertIn('if frontURL is not "" then', script_source)
+        self.assertIn("verification_url = active_url", script_source)
+        self.assertIn("verification_url = title", script_source)
+        self.assertNotIn('tabURL contains "teams.cloud.microsoft"', script_source)
+        self.assertNotIn('tabURL contains "teams.microsoft.com"', script_source)
 
     def test_swift_app_has_experimental_wake_listener_contract(self):
         listener_source = (

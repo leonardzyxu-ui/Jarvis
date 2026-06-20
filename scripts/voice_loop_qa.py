@@ -2643,12 +2643,6 @@ tell application "Google Chrome"
                 set matchedTab to true
                 exit repeat
             end if
-            if (targetHost is "teams.microsoft.com" or targetHost is "teams.cloud.microsoft") and (tabURL contains "teams.microsoft.com" or tabURL contains "teams.cloud.microsoft") then
-                set active tab index of w to tabIndex
-                set index of w to 1
-                set matchedTab to true
-                exit repeat
-            end if
             set tabIndex to tabIndex + 1
         end repeat
         if matchedTab then
@@ -2661,13 +2655,18 @@ tell application "Google Chrome"
             set active tab index to (count of tabs)
         end tell
     end if
-    delay 0.3
     set frontURL to ""
     set frontTitle to ""
-    try
-        set frontURL to URL of active tab of front window
-        set frontTitle to title of active tab of front window
-    end try
+    repeat 10 times
+        delay 0.2
+        try
+            set frontURL to URL of active tab of front window
+            set frontTitle to title of active tab of front window
+        end try
+        if frontURL is not "" then
+            exit repeat
+        end if
+    end repeat
 end tell
 return frontTitle & linefeed & frontURL
 """
@@ -2682,7 +2681,10 @@ return frontTitle & linefeed & frontURL
         )
         stdout = completed.stdout.strip()
         title, active_url = parse_chrome_front_tab_output(stdout)
-        active_host = (urlparse(active_url).hostname or "").lower()
+        verification_url = active_url
+        if not verification_url and re.match(r"^https?://", title, flags=re.IGNORECASE):
+            verification_url = title
+        active_host = (urlparse(verification_url).hostname or "").lower()
         target_host_verified = active_host == target_host or (
             target_host in {"teams.microsoft.com", "teams.cloud.microsoft"}
             and active_host in {"teams.microsoft.com", "teams.cloud.microsoft"}
