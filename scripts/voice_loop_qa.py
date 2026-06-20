@@ -2012,8 +2012,16 @@ def run_native_visible_screen_follow_up(
     if exercise_visible_navigation and isinstance(latest_failure, dict):
         seen_navigation_points: set[tuple[float, float]] = set()
         for navigation_attempt in range(1, 4):
-            plan = next_visible_navigation_plan(latest_failure)
+            plan = next_visible_navigation_plan(latest_failure, seen_navigation_points=seen_navigation_points)
             if not isinstance(plan, dict) or not plan.get("planned"):
+                if navigation_steps:
+                    latest_failure["visible_navigation_execution"] = {
+                        "attempted": False,
+                        "executed": False,
+                        "status": "navigation_loop_prevented",
+                        "reason": "no_untried_navigation_plan",
+                    }
+                    latest_failure["visible_navigation_execution_steps"] = list(navigation_steps)
                 break
             point = plan.get("point") if isinstance(plan.get("point"), dict) else {}
             try:
@@ -2029,6 +2037,7 @@ def run_native_visible_screen_follow_up(
                     "action": str(plan.get("action") or "click"),
                     "coordinate_space": str(plan.get("coordinate_space") or "unknown"),
                 }
+                latest_failure["visible_navigation_execution_steps"] = list(navigation_steps)
                 break
             seen_navigation_points.add(point_key)
             navigation_result = execute_visible_navigation_plan(
@@ -2228,6 +2237,16 @@ def run_native_visible_screen_follow_up_attempt(
                 action="click",
                 purpose="open the requested Teams class before reading its Assignments view",
             )
+            search_target = select_ocr_line_target(capture_payload, ["Search"])
+            search_plan = visible_navigation_plan(
+                search_target,
+                action="type_search",
+                purpose="search Teams for the requested class before reading its Assignments view",
+            )
+            if search_plan.get("planned"):
+                search_plan["query"] = subject_labels[0]
+            navigation_targets["teams_search"] = search_target
+            navigation_targets["teams_search_plan"] = search_plan
         all_teams_target = select_ocr_line_target(capture_payload, ["All teams"])
         navigation_targets["all_teams"] = all_teams_target
         navigation_targets["all_teams_plan"] = visible_navigation_plan(
@@ -2439,19 +2458,37 @@ def visible_navigation_sequence(navigation_targets: dict[str, Any]) -> list[dict
     if all_teams:
         return [
             all_teams,
+            *_visible_navigation_search_step(navigation_targets),
             {
                 "key": "requested_class_after_all_teams",
                 "label": "requested class",
                 "reason": "look for the requested Teams class after opening All teams",
                 "plan": {"planned": False, "reason": "requires_previous_step", "will_click": False},
             },
-            *_visible_navigation_sequence_tail(navigation_targets),
         ]
 
     return _visible_navigation_sequence_tail(navigation_targets)
 
 
-def next_visible_navigation_plan(follow_up: dict[str, Any]) -> dict[str, Any] | None:
+def _visible_navigation_search_step(navigation_targets: dict[str, Any]) -> list[dict[str, Any]]:
+    search_plan = navigation_targets.get("teams_search_plan")
+    if not isinstance(search_plan, dict) or not search_plan.get("planned"):
+        return []
+    return [
+        {
+            "key": "teams_search",
+            "label": "Teams search",
+            "reason": "search for the requested Teams class when it is not visible",
+            "plan": search_plan,
+        }
+    ]
+
+
+def next_visible_navigation_plan(
+    follow_up: dict[str, Any],
+    *,
+    seen_navigation_points: set[tuple[float, float]] | None = None,
+) -> dict[str, Any] | None:
     targets = follow_up.get("visible_navigation_targets")
     if not isinstance(targets, dict):
         return None
@@ -2463,16 +2500,31 @@ def next_visible_navigation_plan(follow_up: dict[str, Any]) -> dict[str, Any] | 
             if isinstance(step, dict)
             and isinstance(step.get("plan"), dict)
             and step["plan"].get("planned")
+            and not visible_navigation_plan_point_seen(step["plan"], seen_navigation_points)
         ),
         None,
     )
     if isinstance(plan, dict):
         return plan
-    for key in ("requested_class_plan", "all_teams_plan", "assignments_plan"):
+    for key in ("requested_class_plan", "all_teams_plan", "teams_search_plan"):
         plan = targets.get(key)
-        if isinstance(plan, dict) and plan.get("planned"):
+        if isinstance(plan, dict) and plan.get("planned") and not visible_navigation_plan_point_seen(plan, seen_navigation_points):
             return plan
     return None
+
+
+def visible_navigation_plan_point_seen(
+    plan: dict[str, Any],
+    seen_navigation_points: set[tuple[float, float]] | None,
+) -> bool:
+    if not seen_navigation_points:
+        return False
+    point = plan.get("point") if isinstance(plan.get("point"), dict) else {}
+    try:
+        point_key = (round(float(point.get("x")), 2), round(float(point.get("y")), 2))
+    except (TypeError, ValueError):
+        return False
+    return point_key in seen_navigation_points
 
 
 def _visible_navigation_sequence_step(
@@ -2576,6 +2628,53 @@ end tell
         y = float(point.get("y"))
     except (TypeError, ValueError):
         return {"attempted": False, "executed": False, "status": "point_missing"}
+    if action == "type_search":
+        query = str(plan.get("query") or "").strip()
+        if not query:
+            return {"attempted": False, "executed": False, "status": "query_missing"}
+        applescript = f'''
+tell application "{escape_applescript_string(target_app_name)}" to activate
+delay 0.2
+tell application "System Events"
+  tell process "{escape_applescript_string(target_app_name)}"
+    click at {{{round(x, 2)}, {round(y, 2)}}}
+    delay 0.2
+    keystroke "a" using command down
+    keystroke "{escape_applescript_string(query)}"
+    key code 36
+  end tell
+end tell
+'''
+        search_timeout = max(3.0, min(timeout, 10.0))
+        try:
+            completed = subprocess.run(
+                ["/usr/bin/osascript", "-e", applescript],
+                cwd=PROJECT_ROOT,
+                text=True,
+                capture_output=True,
+                timeout=search_timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "attempted": True,
+                "executed": False,
+                "status": "type_search_timeout",
+                "target_app_name": target_app_name,
+                "point": {"x": round(x, 2), "y": round(y, 2)},
+                "timeout_seconds": round(search_timeout, 3),
+                "stderr_tail": str(exc)[-500:],
+            }
+        return {
+            "attempted": True,
+            "executed": completed.returncode == 0,
+            "status": "type_search" if completed.returncode == 0 else "type_search_failed",
+            "target_app_name": target_app_name,
+            "point": {"x": round(x, 2), "y": round(y, 2)},
+            "query": query,
+            "returncode": completed.returncode,
+            "stderr_tail": completed.stderr.strip()[-500:],
+        }
     applescript = f'''
 tell application "{escape_applescript_string(target_app_name)}" to activate
 delay 0.2

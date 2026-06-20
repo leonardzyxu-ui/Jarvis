@@ -1354,17 +1354,19 @@ def visible_navigation_execution_warning(action_proof: dict[str, Any]) -> str:
     execution = action_proof.get("visible_navigation_execution")
     if not isinstance(execution, dict):
         return ""
-    action = str(execution.get("action") or "visible navigation").replace("_", " ").strip()
+    raw_action = str(execution.get("action") or "").replace("_", " ").strip()
+    action = raw_action or "visible navigation"
+    noun = action if action == "visible navigation" else f"{action} navigation"
     status = str(execution.get("status") or "unknown").replace("_", " ").strip()
     if execution.get("executed"):
-        return f"Live {action} navigation was exercised and returned {status}."
+        return f"Live {noun} was exercised and returned {status}."
     if str(execution.get("status") or "") == "navigation_loop_prevented":
         if execution.get("attempted"):
-            return f"Live {action} navigation was exercised but stopped as {status}."
-        return f"Live {action} navigation was requested but stopped as {status}."
+            return f"Live {noun} was exercised but stopped as {status}."
+        return f"Live {noun} was requested but stopped as {status}."
     if not execution.get("attempted"):
         return ""
-    return f"Live {action} navigation was exercised but stopped as {status}."
+    return f"Live {noun} was exercised but stopped as {status}."
 
 
 def chrome_tab_snapshot() -> list[dict[str, str]]:

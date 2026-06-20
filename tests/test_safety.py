@@ -3276,10 +3276,50 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertEqual(
             [step["key"] for step in sequence],
-            ["all_teams", "requested_class_after_all_teams", "assignments"],
+            ["all_teams", "requested_class_after_all_teams"],
         )
         self.assertEqual(sequence[0]["plan"]["point"], {"x": 257.0, "y": 322.5})
         self.assertEqual(sequence[1]["plan"]["reason"], "requires_previous_step")
+
+    def test_voice_loop_qa_visible_navigation_sequence_can_search_for_missing_class(self):
+        targets = {
+            "requested_class_plan": {"planned": False, "will_click": False},
+            "all_teams_plan": {
+                "planned": True,
+                "will_click": False,
+                "point": {"x": 257.0, "y": 322.5},
+            },
+            "teams_search_plan": {
+                "planned": True,
+                "action": "type_search",
+                "will_click": False,
+                "point": {"x": 474.0, "y": 255.0},
+                "query": "Music",
+            },
+            "assignments_plan": {
+                "planned": True,
+                "will_click": False,
+                "point": {"x": 68.0, "y": 577.0},
+            },
+        }
+
+        sequence = voice_loop_qa.visible_navigation_sequence(targets)
+
+        self.assertEqual(
+            [step["key"] for step in sequence],
+            ["all_teams", "teams_search", "requested_class_after_all_teams"],
+        )
+        next_plan = voice_loop_qa.next_visible_navigation_plan(
+            {"visible_navigation_targets": {"sequence": sequence}},
+            seen_navigation_points={(257.0, 322.5)},
+        )
+        self.assertEqual(next_plan["action"], "type_search")
+        self.assertEqual(next_plan["query"], "Music")
+        exhausted_plan = voice_loop_qa.next_visible_navigation_plan(
+            {"visible_navigation_targets": {"sequence": sequence, **targets}},
+            seen_navigation_points={(257.0, 322.5), (474.0, 255.0)},
+        )
+        self.assertIsNone(exhausted_plan)
 
     def test_voice_loop_qa_chevron_all_teams_uses_leading_screen_click_point(self):
         capture_payload = {
@@ -3330,6 +3370,33 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(result["executed"])
         self.assertEqual(result["status"], "browser_back")
         self.assertIn("keystroke \"[\" using command down", run_mock.call_args.args[0][2])
+
+    def test_voice_loop_qa_execute_visible_navigation_can_type_teams_search(self):
+        plan = {
+            "planned": True,
+            "will_click": False,
+            "action": "type_search",
+            "point": {"x": 474.0, "y": 255.0},
+            "coordinate_space": "screen_points",
+            "query": "Music",
+        }
+
+        with patch.dict(os.environ, {"JARVIS_ALLOW_LIVE_UI_NAVIGATION": "1"}), \
+             patch("scripts.voice_loop_qa.subprocess.run", return_value=subprocess.CompletedProcess(["osascript"], 0, stdout="", stderr="")) as run_mock:
+            result = voice_loop_qa.execute_visible_navigation_plan(
+                plan,
+                target_app_name="Google Chrome",
+                timeout=30.0,
+            )
+
+        self.assertTrue(result["attempted"])
+        self.assertTrue(result["executed"])
+        self.assertEqual(result["status"], "type_search")
+        self.assertEqual(result["query"], "Music")
+        script = run_mock.call_args.args[0][2]
+        self.assertIn("click at {474.0, 255.0}", script)
+        self.assertIn('keystroke "Music"', script)
+        self.assertIn("key code 36", script)
 
     def test_voice_loop_qa_visible_navigation_plan_fails_closed(self):
         plan = voice_loop_qa.visible_navigation_plan(
@@ -3600,8 +3667,8 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         self.assertEqual(result["visible_navigation_execution"]["status"], "navigation_loop_prevented")
-        self.assertEqual(result["visible_navigation_execution"]["action"], "browser_back")
-        self.assertEqual(result["visible_navigation_execution"]["coordinate_space"], "screen_points")
+        self.assertEqual(result["visible_navigation_execution"]["reason"], "no_untried_navigation_plan")
+        self.assertEqual(result["visible_navigation_execution_steps"][0]["status"], "browser_back")
 
     def test_voice_loop_qa_visible_screen_followup_can_continue_after_all_teams_click(self):
         command_response = {"tool": "teams.assignment", "result": {}}
