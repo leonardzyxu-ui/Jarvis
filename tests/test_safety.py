@@ -15452,6 +15452,23 @@ Pages occupied by compressor:             10.
             page = root / "runtime" / "stt_audition" / "index.html"
             page.parent.mkdir(parents=True)
             page.write_text("<!doctype html><title>Jarvis STT Audition</title>", encoding="utf-8")
+            apple_probe = root / "runtime" / "stt_apple_probe" / "latest.json"
+            apple_probe.parent.mkdir(parents=True)
+            apple_probe.write_text(
+                json.dumps({
+                    "status": "completed",
+                    "authorized": True,
+                    "authorization_not_requested": False,
+                    "transcript": "Hey Jarvis check my calendar",
+                    "word_match": True,
+                    "duration_seconds": 2.1,
+                    "apple_duration_seconds": 0.4,
+                    "requested_microphone_permission": False,
+                    "requested_speech_permission": False,
+                    "sent_audio": False,
+                }),
+                encoding="utf-8",
+            )
             jarvis_app = root / "output" / "Jarvis.app"
             jarvis_app.mkdir(parents=True)
             local_stt_python = root / "runtime" / "stt_models" / "faster_whisper" / ".venv" / "bin" / "python"
@@ -15479,6 +15496,12 @@ Pages occupied by compressor:             10.
         self.assertEqual(result["unattended_fallback_candidate_id"], "faster-whisper-tiny-en-local")
         self.assertEqual(result["current_live_listener_engine"], "apple-speech-native")
         self.assertEqual(result["current_live_listener_surface"], "Hey Jarvis macOS app listener")
+        self.assertTrue(result["latest_apple_speech_probe"]["available"])
+        self.assertEqual(result["latest_apple_speech_probe"]["status"], "completed")
+        self.assertTrue(result["latest_apple_speech_probe"]["word_match"])
+        self.assertEqual(result["latest_apple_speech_probe"]["apple_duration_seconds"], 0.4)
+        self.assertFalse(result["latest_apple_speech_probe"]["requested_speech_permission"])
+        self.assertFalse(result["latest_apple_speech_probe"]["sent_audio"])
         self.assertEqual(result["live_stt_policy"]["permission_prompt_safe_default"], "local")
         self.assertTrue(result["live_stt_policy"]["dictation_task_hint"])
         self.assertTrue(result["live_stt_policy"]["live_listener_uses_apple_speech"])
@@ -19230,6 +19253,19 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn('return title_text, "active_title_url"', script_source)
         self.assertNotIn('tabURL contains "teams.cloud.microsoft"', script_source)
         self.assertNotIn('tabURL contains "teams.microsoft.com"', script_source)
+
+    def test_apple_speech_probe_script_is_no_prompt_and_writes_latest(self):
+        script_source = (PROJECT_ROOT / "scripts" / "probe_apple_speech_stt.py").read_text(encoding="utf-8")
+
+        self.assertIn("--stt-file-self-test", script_source)
+        self.assertIn("runtime\" / \"stt_apple_probe", script_source)
+        self.assertIn("latest.json", script_source)
+        self.assertIn('"requested_microphone_permission": False', script_source)
+        self.assertIn('"requested_speech_permission": False', script_source)
+        self.assertIn('"sent_audio": False', script_source)
+        self.assertIn('"installed_anything": False', script_source)
+        self.assertIn("/usr/bin/open", script_source)
+        self.assertNotIn("SFSpeechRecognizer.requestAuthorization", script_source)
 
     def test_swift_app_has_experimental_wake_listener_contract(self):
         listener_source = (

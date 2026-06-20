@@ -8651,6 +8651,7 @@ def _voice_loop_utterances(transcript: str) -> list[str]:
 def stt_candidate_status() -> dict[str, Any]:
     """Return speech-to-text candidate readiness without recording audio."""
     page_path = PROJECT_ROOT / "runtime" / "stt_audition" / "index.html"
+    apple_probe_latest = _latest_apple_speech_probe()
     jarvis_app_path = PROJECT_ROOT / "output" / "Jarvis.app"
     local_faster_whisper_python = PROJECT_ROOT / "runtime" / "stt_models" / "faster_whisper" / ".venv" / "bin" / "python"
     page_exists = page_path.exists()
@@ -8708,6 +8709,7 @@ def stt_candidate_status() -> dict[str, Any]:
         "page_exists": page_exists,
         "jarvis_app_path": str(jarvis_app_path),
         "jarvis_app_exists": jarvis_app_exists,
+        "latest_apple_speech_probe": apple_probe_latest,
         "reference_sentences": list(STT_REFERENCE_SENTENCES),
         "candidate_count": len(candidates),
         "audition_ready_count": audition_ready_count,
@@ -8741,6 +8743,30 @@ def stt_candidate_status() -> dict[str, Any]:
             "Only after Leo approves installation, add local model install/run scripts for the best offline candidates.",
         ],
         "reply": reply,
+    }
+
+
+def _latest_apple_speech_probe() -> dict[str, Any]:
+    latest_path = PROJECT_ROOT / "runtime" / "stt_apple_probe" / "latest.json"
+    if not latest_path.exists():
+        return {"available": False, "path": str(latest_path)}
+    try:
+        data = json.loads(latest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return {"available": False, "path": str(latest_path), "error": f"{type(error).__name__}: {error}"}
+    return {
+        "available": True,
+        "path": str(latest_path),
+        "status": data.get("status"),
+        "authorized": data.get("authorized"),
+        "authorization_not_requested": data.get("authorization_not_requested", False),
+        "transcript": data.get("transcript"),
+        "word_match": data.get("word_match"),
+        "duration_seconds": data.get("duration_seconds"),
+        "apple_duration_seconds": data.get("apple_duration_seconds"),
+        "requested_microphone_permission": data.get("requested_microphone_permission"),
+        "requested_speech_permission": data.get("requested_speech_permission"),
+        "sent_audio": data.get("sent_audio"),
     }
 
 
