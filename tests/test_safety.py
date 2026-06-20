@@ -188,6 +188,7 @@ from scripts.morning_status import (
     latest_teams_live_navigation_diagnostic,
     normalize_base_url,
     pre_build_gate_cleanup_warning,
+    pre_build_gate_music_blocker,
     pre_build_gate_stale_suffix,
     pre_build_gate_teams_blocker,
     pre_build_gate_summary,
@@ -27657,6 +27658,106 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("Teams blocker from stale gate: Teams assignment is wrong_subject.", printed)
+
+    def test_morning_status_pre_build_gate_music_blocker_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "summary.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "case_id": "music_play_waving_through_window",
+                                "status": "warning",
+                                "warnings": [
+                                    "Chrome media-surface inspection was blocked, so this proof could not rule out hidden Chrome audio."
+                                ],
+                                "cleanup": {
+                                    "verified_stopped": True,
+                                    "new_afplay_processes_after": [],
+                                    "new_media_surfaces_after": [],
+                                    "media_surfaces_after": {"blocked": ["Google Chrome"]},
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            blocker = pre_build_gate_music_blocker(
+                {
+                    "results": [
+                        {
+                            "id": "full_loop_regression",
+                            "ok": False,
+                            "stdout_tail": f"Report: {report_path}\nmusic_play_waving_through_window: warning",
+                        }
+                    ]
+                }
+            )
+
+        self.assertIn("Music playback proof is warning", blocker)
+        self.assertIn("could not rule out hidden Chrome audio", blocker)
+        self.assertIn("Chrome media inspection is blocked", blocker)
+        self.assertIn("native Music cleanup verified stopped", blocker)
+        self.assertIn("no new afplay process was detected", blocker)
+        self.assertIn("no new detected media surface remained", blocker)
+
+    def test_morning_status_prints_music_blocker(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            gate_dir = root / "runtime" / "pre_build_gate"
+            report_path = root / "runtime" / "full_loop_regression" / "summary.json"
+            gate_dir.mkdir(parents=True)
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "case_id": "music_play_waving_through_window",
+                                "status": "warning",
+                                "warnings": ["Chrome media-surface inspection was blocked."],
+                                "cleanup": {
+                                    "verified_stopped": True,
+                                    "new_afplay_processes_after": [],
+                                    "new_media_surfaces_after": [],
+                                    "media_surfaces_after": {"blocked": ["Google Chrome"]},
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (gate_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "passed": 0,
+                        "total": 1,
+                        "source_commit": "head",
+                        "results": [
+                            {
+                                "id": "full_loop_regression",
+                                "ok": False,
+                                "stdout_tail": f"Report: {report_path}\nmusic_play_waving_through_window: warning",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("scripts.morning_status.PROJECT_ROOT", root), \
+                 patch("scripts.morning_status.git_commit_short", return_value="head"), \
+                 patch("builtins.print") as print_mock:
+                print_latest_pre_build_gate()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn("Music blocker: Music playback proof is warning", printed)
+        self.assertIn("Chrome media inspection is blocked", printed)
 
     def test_morning_status_pre_build_gate_teams_blocker_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -256,6 +256,10 @@ def print_latest_pre_build_gate() -> None:
     if teams_blocker:
         prefix = "Teams blocker from stale gate" if stale_suffix else "Teams blocker"
         print(f"{prefix}: {teams_blocker}")
+    music_blocker = pre_build_gate_music_blocker(data)
+    if music_blocker:
+        prefix = "Music blocker from stale gate" if stale_suffix else "Music blocker"
+        print(f"{prefix}: {music_blocker}")
     cleanup_warning = pre_build_gate_cleanup_warning(data)
     if cleanup_warning:
         print(f"Chrome cleanup warning: {cleanup_warning}")
@@ -449,6 +453,43 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
         elif proof.get("assignments_target_found"):
             parts.append("Assignments OCR target was found")
         return "; ".join(parts) + "."
+    return ""
+
+
+def pre_build_gate_music_blocker(data: dict[str, Any]) -> str:
+    full_loop_path = pre_build_gate_full_loop_report_path(data)
+    if not full_loop_path:
+        return ""
+    try:
+        full_loop = json.loads(full_loop_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    results = full_loop.get("results")
+    if not isinstance(results, list):
+        return ""
+    for item in results:
+        if not isinstance(item, dict) or item.get("case_id") != "music_play_waving_through_window":
+            continue
+        if str(item.get("status") or "") == "passed":
+            return ""
+        warnings = [str(value).strip() for value in item.get("warnings") or [] if str(value).strip()]
+        cleanup = item.get("cleanup") if isinstance(item.get("cleanup"), dict) else {}
+        media_after = cleanup.get("media_surfaces_after") if isinstance(cleanup.get("media_surfaces_after"), dict) else {}
+        blocked = media_after.get("blocked") if isinstance(media_after.get("blocked"), list) else []
+        parts = [f"Music playback proof is {item.get('status') or 'not passed'}"]
+        if warnings:
+            parts.extend(warnings)
+        if "Google Chrome" in blocked:
+            parts.append("Chrome media inspection is blocked")
+        if cleanup.get("verified_stopped") is True:
+            parts.append("native Music cleanup verified stopped")
+        new_afplay = cleanup.get("new_afplay_processes_after")
+        if isinstance(new_afplay, list) and not new_afplay:
+            parts.append("no new afplay process was detected")
+        new_media = cleanup.get("new_media_surfaces_after")
+        if isinstance(new_media, list) and not new_media:
+            parts.append("no new detected media surface remained")
+        return "; ".join(dict.fromkeys(parts)) + "."
     return ""
 
 
