@@ -17961,6 +17961,15 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("runWakeStartStop", self_test_source)
         self.assertIn("runSpeechFileTranscription", self_test_source)
         self.assertIn("SFSpeechURLRecognitionRequest", self_test_source)
+        self.assertIn("authorization_not_requested", self_test_source)
+        self.assertIn("let authorizationStatus = SFSpeechRecognizer.authorizationStatus()", self_test_source)
+        self.assertLess(
+            self_test_source.index("let authorizationStatus = SFSpeechRecognizer.authorizationStatus()"),
+            self_test_source.index("SFSpeechURLRecognitionRequest"),
+        )
+        self.assertNotIn("let authorization = await requestSpeechRecognitionAuthorization()", self_test_source)
+        self.assertNotIn("SFSpeechRecognizer.requestAuthorization", self_test_source)
+        self.assertNotIn("SpeechAuthorizationGate", self_test_source)
         self.assertIn("writeJSON", self_test_source)
         self.assertIn("resettingCount <= 3", self_test_source)
         self.assertIn("listener.start()", self_test_source)

@@ -560,21 +560,21 @@ enum JarvisMenuBarSelfTest {
             throw SelfTestError.failed("Audio file does not exist: \(audioPath)")
         }
 
-        let authorization = await requestSpeechRecognitionAuthorization()
-        guard authorization.status == .authorized else {
+        let authorizationStatus = SFSpeechRecognizer.authorizationStatus()
+        guard authorizationStatus == .authorized else {
             try writeJSON(
                 [
-                    "status": authorization.timedOut ? "authorization_timeout" : "not_authorized",
+                    "status": "not_authorized",
                     "authorized": false,
-                    "authorization": speechAuthorizationLabel(authorization.status),
-                    "authorization_timed_out": authorization.timedOut,
+                    "authorization": speechAuthorizationLabel(authorizationStatus),
+                    "authorization_not_requested": true,
                     "audio_path": audioPath,
                     "transcript": "",
                     "duration_seconds": round(Date().timeIntervalSince(startedAt) * 1000) / 1000,
                 ],
                 to: outputPath
             )
-            print("Jarvis STT file self-test skipped: speech recognition \(speechAuthorizationLabel(authorization.status))")
+            print("Jarvis STT file self-test skipped: speech recognition \(speechAuthorizationLabel(authorizationStatus)); authorization not requested")
             return
         }
 
@@ -752,25 +752,6 @@ enum JarvisMenuBarSelfTest {
     }
 
     #if canImport(Speech)
-    private static func requestSpeechRecognitionAuthorization() async -> SpeechAuthorizationResult {
-        let currentStatus = SFSpeechRecognizer.authorizationStatus()
-        if currentStatus != .notDetermined {
-            return SpeechAuthorizationResult(status: currentStatus, timedOut: false)
-        }
-        return await withCheckedContinuation { continuation in
-            let gate = SpeechAuthorizationGate()
-            SFSpeechRecognizer.requestAuthorization { status in
-                gate.finish(continuation, result: SpeechAuthorizationResult(status: status, timedOut: false))
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 8) {
-                gate.finish(
-                    continuation,
-                    result: SpeechAuthorizationResult(status: .notDetermined, timedOut: true)
-                )
-            }
-        }
-    }
-
     private static func transcribeAudioFile(_ audioURL: URL, recognizer: SFSpeechRecognizer) async throws -> String {
         let request = SFSpeechURLRecognitionRequest(url: audioURL)
         request.shouldReportPartialResults = false
@@ -809,34 +790,10 @@ enum JarvisMenuBarSelfTest {
             return "unknown"
         }
     }
-    #endif
+#endif
 }
 
 #if canImport(Speech)
-private struct SpeechAuthorizationResult: Sendable {
-    let status: SFSpeechRecognizerAuthorizationStatus
-    let timedOut: Bool
-}
-
-private final class SpeechAuthorizationGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var finished = false
-
-    func finish(
-        _ continuation: CheckedContinuation<SpeechAuthorizationResult, Never>,
-        result: SpeechAuthorizationResult
-    ) {
-        lock.lock()
-        if finished {
-            lock.unlock()
-            return
-        }
-        finished = true
-        lock.unlock()
-        continuation.resume(returning: result)
-    }
-}
-
 private final class SpeechTranscriptionGate: @unchecked Sendable {
     private let lock = NSLock()
     private var task: SFSpeechRecognitionTask?
