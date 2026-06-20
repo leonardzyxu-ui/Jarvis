@@ -2721,9 +2721,15 @@ def select_ocr_line_target(
         screen_center = ocr_line_screen_center(best, capture_payload)
         if screen_center:
             best["screen_center"] = screen_center
+        window_relative_center = ocr_line_window_relative_point(best, capture_payload, anchor="center")
+        if window_relative_center:
+            best["window_relative_center"] = window_relative_center
         screen_leading = ocr_line_screen_leading_point(best, capture_payload)
         if screen_leading:
             best["screen_leading"] = screen_leading
+        window_relative_leading = ocr_line_window_relative_point(best, capture_payload, anchor="leading")
+        if window_relative_leading:
+            best["window_relative_leading"] = window_relative_leading
     return best if best and best.get("found") else {"found": False, "reason": "no_label_match"}
 
 
@@ -2733,6 +2739,35 @@ def ocr_line_screen_center(target: dict[str, Any], capture_payload: dict[str, An
 
 def ocr_line_screen_leading_point(target: dict[str, Any], capture_payload: dict[str, Any]) -> dict[str, float] | None:
     return ocr_line_screen_point(target, capture_payload, anchor="leading")
+
+
+def ocr_line_window_relative_point(
+    target: dict[str, Any],
+    capture_payload: dict[str, Any],
+    *,
+    anchor: str,
+) -> dict[str, float] | None:
+    pixels = target.get("pixels") if isinstance(target.get("pixels"), dict) else {}
+    diagnostics = capture_payload.get("diagnostics") if isinstance(capture_payload.get("diagnostics"), dict) else {}
+    try:
+        pixel_x = float(pixels.get("x"))
+        pixel_y = float(pixels.get("y"))
+        pixel_width = float(pixels.get("width"))
+        pixel_height = float(pixels.get("height"))
+        scale_x = float(diagnostics.get("capture_scale_x"))
+        scale_y = float(diagnostics.get("capture_scale_y"))
+    except (TypeError, ValueError):
+        return None
+    if pixel_width <= 0 or pixel_height <= 0 or scale_x <= 0 or scale_y <= 0:
+        return None
+    if anchor == "leading":
+        anchor_x = pixel_x + min(max(pixel_width * 0.18, 8.0), 18.0)
+    else:
+        anchor_x = pixel_x + pixel_width / 2.0
+    return {
+        "x": round(anchor_x / scale_x, 2),
+        "y": round((pixel_y + pixel_height / 2.0) / scale_y, 2),
+    }
 
 
 def ocr_line_screen_point(
@@ -2787,6 +2822,8 @@ def visible_navigation_plan(
         }
     target_text = str(target.get("text") or "")
     is_back_target = target_text.lstrip().startswith(("‹", "<"))
+    if is_back_target and action == "click":
+        action = "browser_back"
     preferred_point = "screen_leading" if is_back_target else "screen_center"
     center = target.get(preferred_point) if isinstance(target.get(preferred_point), dict) else {}
     if not center and preferred_point != "screen_center":
@@ -2813,6 +2850,9 @@ def visible_navigation_plan(
         "target_text": target_text,
         "point": {"x": round(x, 2), "y": round(y, 2)},
         "coordinate_space": coordinate_space,
+        "window_relative_point": target.get(
+            "window_relative_leading" if preferred_point == "screen_leading" else "window_relative_center"
+        ),
         "target": target,
     }
 
@@ -3061,6 +3101,17 @@ end tell
         y = float(point.get("y"))
     except (TypeError, ValueError):
         return {"attempted": False, "executed": False, "status": "point_missing", **metadata}
+    click_x_expr = str(round(x, 2))
+    click_y_expr = str(round(y, 2))
+    relative_point = plan.get("window_relative_point") if isinstance(plan.get("window_relative_point"), dict) else {}
+    try:
+        relative_x = float(relative_point.get("x"))
+        relative_y = float(relative_point.get("y"))
+    except (TypeError, ValueError):
+        relative_x = relative_y = None
+    if relative_x is not None and relative_y is not None:
+        click_x_expr = f"(item 1 of windowBounds) + {round(relative_x, 2)}"
+        click_y_expr = f"(item 2 of windowBounds) + {round(relative_y, 2)}"
     if action == "type_search":
         query = str(plan.get("query") or "").strip()
         if not query:
@@ -3068,9 +3119,18 @@ end tell
         applescript = f'''
 tell application "{escape_applescript_string(target_app_name)}" to activate
 delay 0.2
+set clickX to {round(x, 2)}
+set clickY to {round(y, 2)}
+try
+  tell application "{escape_applescript_string(target_app_name)}"
+    set windowBounds to bounds of front window
+  end tell
+  set clickX to {click_x_expr}
+  set clickY to {click_y_expr}
+end try
 tell application "System Events"
   tell process "{escape_applescript_string(target_app_name)}"
-    click at {{{round(x, 2)}, {round(y, 2)}}}
+    click at {{clickX, clickY}}
     delay 0.2
     keystroke "a" using command down
     keystroke "{escape_applescript_string(query)}"
@@ -3105,6 +3165,7 @@ end tell
             "status": "type_search" if completed.returncode == 0 else "type_search_failed",
             "target_app_name": target_app_name,
             "point": {"x": round(x, 2), "y": round(y, 2)},
+            "used_window_relative_point": relative_x is not None and relative_y is not None,
             "query": query,
             "returncode": completed.returncode,
             "stderr_tail": completed.stderr.strip()[-500:],
@@ -3113,9 +3174,18 @@ end tell
     applescript = f'''
 tell application "{escape_applescript_string(target_app_name)}" to activate
 delay 0.2
+set clickX to {round(x, 2)}
+set clickY to {round(y, 2)}
+try
+  tell application "{escape_applescript_string(target_app_name)}"
+    set windowBounds to bounds of front window
+  end tell
+  set clickX to {click_x_expr}
+  set clickY to {click_y_expr}
+end try
 tell application "System Events"
   tell process "{escape_applescript_string(target_app_name)}"
-    click at {{{round(x, 2)}, {round(y, 2)}}}
+    click at {{clickX, clickY}}
   end tell
 end tell
 '''
@@ -3146,6 +3216,7 @@ end tell
         "status": "clicked" if completed.returncode == 0 else "click_failed",
         "target_app_name": target_app_name,
         "point": {"x": round(x, 2), "y": round(y, 2)},
+        "used_window_relative_point": relative_x is not None and relative_y is not None,
         "returncode": completed.returncode,
         "stderr_tail": completed.stderr.strip()[-500:],
         **metadata,

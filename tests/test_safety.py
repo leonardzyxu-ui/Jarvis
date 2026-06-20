@@ -4173,7 +4173,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         )
 
         self.assertEqual(target["screen_center"], {"x": 117.0, "y": 274.0})
-        self.assertEqual(plan["action"], "click")
+        self.assertEqual(plan["action"], "browser_back")
         self.assertLess(plan["point"]["x"], target["screen_center"]["x"])
         self.assertEqual(plan["point"], {"x": 107.39, "y": 274.0})
         self.assertEqual(plan["coordinate_space"], "screen_points")
@@ -4233,7 +4233,9 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(result["action"], "type_search")
         self.assertEqual(result["target_text"], "Search")
         script = run_mock.call_args.args[0][2]
-        self.assertIn("click at {474.0, 255.0}", script)
+        self.assertIn("set clickX to 474.0", script)
+        self.assertIn("set clickY to 255.0", script)
+        self.assertIn("click at {clickX, clickY}", script)
         self.assertIn('keystroke "Music"', script)
         self.assertIn("key code 36", script)
 
@@ -4270,8 +4272,10 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertEqual(target["center"], {"x": 257.0, "y": 322.5})
         self.assertEqual(target["screen_center"], {"x": 228.5, "y": 211.25})
+        self.assertEqual(target["window_relative_center"], {"x": 128.5, "y": 161.25})
         self.assertEqual(plan["coordinate_space"], "screen_points")
         self.assertEqual(plan["point"], {"x": 228.5, "y": 211.25})
+        self.assertEqual(plan["window_relative_point"], {"x": 128.5, "y": 161.25})
 
     def test_voice_loop_qa_execute_visible_navigation_requires_unlock(self):
         plan = {
@@ -4314,7 +4318,35 @@ class VerifySafeScriptTests(unittest.TestCase):
         script = run_mock.call_args.args[0][-1]
         self.assertIn('tell application "Google Chrome" to activate', script)
         self.assertIn('tell process "Google Chrome"', script)
-        self.assertIn("click at {68.0, 577.0}", script)
+        self.assertIn("set clickX to 68.0", script)
+        self.assertIn("set clickY to 577.0", script)
+        self.assertIn("click at {clickX, clickY}", script)
+
+    def test_voice_loop_qa_execute_visible_navigation_uses_window_relative_point_after_activation(self):
+        plan = {
+            "planned": True,
+            "will_click": False,
+            "point": {"x": 228.5, "y": 211.25},
+            "window_relative_point": {"x": 128.5, "y": 161.25},
+            "coordinate_space": "screen_points",
+        }
+        completed = subprocess.CompletedProcess(["osascript"], 0, stdout="", stderr="")
+        with patch.dict(os.environ, {"JARVIS_ALLOW_LIVE_UI_NAVIGATION": "1"}, clear=False), \
+             patch("scripts.voice_loop_qa.subprocess.run", return_value=completed) as run_mock:
+            result = voice_loop_qa.execute_visible_navigation_plan(
+                plan,
+                target_app_name="Google Chrome",
+                timeout=5.0,
+            )
+
+        self.assertTrue(result["attempted"])
+        self.assertTrue(result["executed"])
+        self.assertTrue(result["used_window_relative_point"])
+        script = run_mock.call_args.args[0][-1]
+        self.assertIn("set windowBounds to bounds of front window", script)
+        self.assertIn("set clickX to (item 1 of windowBounds) + 128.5", script)
+        self.assertIn("set clickY to (item 2 of windowBounds) + 161.25", script)
+        self.assertIn("click at {clickX, clickY}", script)
 
     def test_voice_loop_qa_execute_visible_navigation_refuses_image_pixels(self):
         plan = {
