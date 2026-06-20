@@ -13740,14 +13740,23 @@ def _visible_screen_summary_is_unhelpful_teams_shell(summary: dict[str, Any], *,
         return False
     teams_shell_markers = (
         "teams.cloud.microsoft",
+        "teams cloud microsoft",
+        "teams cloud microsott",
         "teams.microsoft.com",
+        "teams microsoft",
         "teams and channels",
         "microsoft teams",
     )
-    assignment_markers = ("assignment", "assignments", "rubric", "due", "classwork", "homework")
-    return any(marker in digest_text for marker in teams_shell_markers) and not any(
-        marker in digest_text for marker in assignment_markers
+    wrong_surface_markers = (
+        "local assistant prototype",
+        "slide 1 of",
+        "format background",
     )
+    assignment_markers = ("assignment", "assignments", "rubric", "due", "classwork", "homework")
+    has_assignment_marker = any(marker in digest_text for marker in assignment_markers)
+    if any(marker in digest_text for marker in teams_shell_markers) and not has_assignment_marker:
+        return True
+    return any(marker in digest_text for marker in wrong_surface_markers) and not has_assignment_marker
 
 
 def _chrome_bookmark_profile_paths() -> list[tuple[str, Path]]:

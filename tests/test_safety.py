@@ -11504,6 +11504,55 @@ class PlannerTests(unittest.TestCase):
         self.assertNotIn("I read Google Chrome. I can see", result["reply"])
         osascript_mock.assert_not_called()
 
+    def test_browser_read_page_rejects_mangled_teams_wrong_space_ocr(self):
+        fake_scan = {"status": "ok", "findings": []}
+        with patch("jarvis.tools._find_executable", return_value="/usr/bin/osascript"), \
+             patch("jarvis.tools._native_chrome_page_probe", return_value={
+                 "status": "chrome_javascript_unavailable",
+                 "title": "Teams and Channels | General | Microsoft Teams",
+                 "url": "https://teams.cloud.microsoft/",
+                 "domain": "teams.cloud.microsoft",
+                 "page_text": "",
+                 "returncode": -1723,
+                 "stderr": "Access not allowed. (-1723)",
+                 "chrome_automation": {"status": "preflight_ready", "is_ready": True},
+                 "used_native_browser_probe": True,
+             }), \
+             patch("jarvis.tools._native_visible_screen_probe", return_value={
+                 "status": "captured",
+                 "text": "\n".join([
+                     "Slide 1 of 68",
+                     "2026 TALENT SHOW REMINDERS",
+                     "Local assistant prototype",
+                     "Jarvis",
+                     "Ask Gemini",
+                     "teams cloud microsott",
+                 ]),
+                 "diagnostics": {
+                     "source": "native_vision_ocr_screen_display_fallback",
+                     "ocr_engine": "apple_vision",
+                     "line_count": 6,
+                     "capture_method": "chrome_applescript_display_crop",
+                     "target_app_name": "Google Chrome",
+                     "window_title": "Teams and Channels | General | Microsoft Teams",
+                 },
+             }), \
+             patch("jarvis.tools.scan_untrusted_text", return_value=fake_scan), \
+             patch("jarvis.tools._run_osascript") as osascript_mock:
+            result = browser_read_page(
+                max_chars=1000,
+                command="Look in Teams for my newest Music assignment and ask me questions.",
+            )
+
+        self.assertEqual(result["tool"], "browser.read_page")
+        self.assertEqual(result["status"], "teams_page_text_unavailable")
+        self.assertTrue(result["used_native_visible_screen_fallback"])
+        self.assertEqual(result["visible_screen_fallback_source"], "native_vision_ocr_screen_display_fallback")
+        self.assertNotIn("Slide 1 of", result["reply"])
+        self.assertIn("Teams is open in Chrome", result["reply"])
+        self.assertIn("have not inspected the assignment", result["spoken_summary"])
+        osascript_mock.assert_not_called()
+
     def test_browser_read_page_keeps_automation_block_when_visible_screen_fallback_is_not_useful(self):
         with patch("jarvis.tools._find_executable", return_value="/usr/bin/osascript"), \
              patch("jarvis.tools._native_chrome_page_probe", return_value={
