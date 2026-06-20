@@ -866,6 +866,27 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(proof["capability_complete"])
         self.assertEqual(proof["completion_status"], "not_inspected")
 
+    def test_full_loop_teams_unreadable_page_is_honest_permission_block(self):
+        proof = full_loop_regression.verify_teams_assignment_honesty({
+            "result": {
+                "visible_reply_preview": (
+                    "Teams is open in Chrome, but Jarvis cannot reliably read the Teams page text yet."
+                ),
+                "visible_screen_follow_up": {
+                    "status": "browser_permission_blocked",
+                    "tool": "browser.read_page",
+                    "visible_reply_preview": (
+                        "Teams is open in Chrome, but Jarvis cannot reliably read the Teams page text yet."
+                    ),
+                },
+            },
+        })
+
+        self.assertTrue(proof["passed"])
+        self.assertTrue(proof["honest_permission_blocked"])
+        self.assertFalse(proof["capability_complete"])
+        self.assertEqual(proof["completion_status"], "permission_blocked")
+
     def test_full_loop_teams_honesty_reports_browser_focus_failure(self):
         proof = full_loop_regression.verify_teams_assignment_honesty({
             "result": {
@@ -4392,6 +4413,61 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(result["used"])
         self.assertEqual(result["browser_open_active_url"], "https://chatgpt.com/codex")
         self.assertEqual(result["attempts"], 0)
+
+    def test_voice_loop_qa_visible_screen_followup_rejects_wrong_surface_ocr_after_teams_open(self):
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch(
+                 "scripts.voice_loop_qa.run_browser_page_follow_up",
+                 return_value={
+                     "used": False,
+                     "status": "response_not_useful",
+                     "tool": "browser.read_page",
+                     "response_status": "no_page_text",
+                     "visible_reply_preview": "I need a visible page before I can summarize it.",
+                 },
+             ), \
+             patch(
+                 "scripts.voice_loop_qa.open_visible_screen_follow_up_url",
+                 return_value={
+                     "browser_open_attempted": True,
+                     "browser_open_returncode": 0,
+                     "browser_open_active_url": "",
+                     "browser_open_active_title": "https://teams.microsoft.com/v2/?clientexperience=t3",
+                     "browser_open_verification_url": "https://teams.microsoft.com/v2/?clientexperience=t3",
+                     "browser_open_verification_source": "active_title_url",
+                     "browser_open_target_host_verified": True,
+                 },
+             ), \
+             patch(
+                 "scripts.voice_loop_qa.run_native_visible_screen_follow_up_attempt",
+                 return_value={
+                     "used": False,
+                     "status": "assignment_subject_mismatch",
+                     "tool": "screen.visible_text",
+                     "response_status": "assignment_subject_mismatch",
+                     "captured_text_preview": (
+                         "Chrome File Edit View Codex often prompts for approval despite a Full Access setting."
+                     ),
+                     "visible_reply_preview": (
+                         "I read the visible Teams screen, but it does not look like the Music assignment. "
+                         "I can see assignment-related text: Codex often prompts for approval."
+                     ),
+                 },
+             ) as attempt_mock:
+            result = voice_loop_qa.run_native_visible_screen_follow_up(
+                command_text="Look in Teams for my newest Music assignment.",
+                command_response={"tool": "teams.assignment", "result": {"url": "https://teams.microsoft.com/v2/"}},
+                base_url="http://127.0.0.1:8765",
+                run_dir=Path(temp_dir),
+                timeout=5.0,
+            )
+
+        self.assertEqual(attempt_mock.call_count, 1)
+        self.assertEqual(result["status"], "browser_focus_not_verified")
+        self.assertTrue(result["browser_focus_mismatch"])
+        self.assertFalse(result["used"])
+        self.assertIn("did not contain Teams content", result["visible_reply_preview"])
+        self.assertEqual(result["browser_open_verification_source"], "active_title_url")
 
     def test_voice_loop_qa_parse_chrome_front_tab_output(self):
         title, active_url = voice_loop_qa.parse_chrome_front_tab_output("Microsoft Teams\nhttps://teams.microsoft.com/v2/\n")

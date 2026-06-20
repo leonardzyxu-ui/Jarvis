@@ -1285,6 +1285,8 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
     honest_permission_blocked = (
         "chrome is blocking jarvis from controlling the current page" in lower_reply
         or "chrome control permission" in lower_reply
+        or "cannot reliably read the teams page text" in lower_reply
+        or "teams is open in chrome, but jarvis cannot reliably read" in lower_reply
     )
     chrome_page_read_blocked = any(
         str(item.get("status") or "") == "browser_permission_blocked"

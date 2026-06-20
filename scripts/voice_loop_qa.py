@@ -2024,6 +2024,27 @@ def run_native_visible_screen_follow_up(
             target_bundle_identifier=target["target_bundle_identifier"],
             attempt=attempt,
         )
+        if visible_screen_attempt_mismatches_expected_teams(
+            command_text=command_text,
+            browser_open=browser_open,
+            attempt_result=attempt_result,
+        ):
+            latest_failure = {
+                **attempt_result,
+                "used": False,
+                "status": "browser_focus_not_verified",
+                "browser_focus_mismatch": True,
+                "browser_open_active_title": browser_open.get("browser_open_active_title"),
+                "browser_open_active_url": browser_open.get("browser_open_active_url"),
+                "browser_open_verification_url": browser_open.get("browser_open_verification_url"),
+                "browser_open_verification_source": browser_open.get("browser_open_verification_source"),
+                "visible_reply_preview": (
+                    "Teams was opened in Chrome, but the visible screen OCR did not contain Teams content. "
+                    "I have not inspected the newest Music assignment yet."
+                ),
+                "response": None,
+            }
+            break
         if attempt_result.get("status") == "completed":
             return {
                 **result,
@@ -2093,6 +2114,26 @@ def run_native_visible_screen_follow_up(
                 target_bundle_identifier=target["target_bundle_identifier"],
                 attempt=max_attempts + navigation_attempt,
             )
+            if visible_screen_attempt_mismatches_expected_teams(
+                command_text=command_text,
+                browser_open=browser_open,
+                attempt_result=after_navigation,
+            ):
+                after_navigation = {
+                    **after_navigation,
+                    "used": False,
+                    "status": "browser_focus_not_verified",
+                    "browser_focus_mismatch": True,
+                    "browser_open_active_title": browser_open.get("browser_open_active_title"),
+                    "browser_open_active_url": browser_open.get("browser_open_active_url"),
+                    "browser_open_verification_url": browser_open.get("browser_open_verification_url"),
+                    "browser_open_verification_source": browser_open.get("browser_open_verification_source"),
+                    "visible_reply_preview": (
+                        "Teams was opened in Chrome, but the visible screen OCR did not contain Teams content. "
+                        "I have not inspected the newest Music assignment yet."
+                    ),
+                    "response": None,
+                }
             after_navigation["visible_navigation_execution"] = navigation_result
             after_navigation["visible_navigation_execution_steps"] = list(navigation_steps)
             if after_navigation.get("status") == "completed":
@@ -2244,6 +2285,7 @@ def run_native_visible_screen_follow_up_attempt(
             "probe_stderr_tail": stderr[-500:],
             "capture_status": capture_payload.get("status"),
             "captured_text_chars": len(captured_text),
+            "captured_text_preview": captured_text[:300],
             "error": f"{type(error).__name__}: {error}",
             "attempt": attempt,
             "capture_report": str(capture_path),
@@ -2303,6 +2345,7 @@ def run_native_visible_screen_follow_up_attempt(
         "probe_stderr_tail": stderr[-500:],
         "capture_status": capture_payload.get("status"),
         "captured_text_chars": len(captured_text),
+        "captured_text_preview": captured_text[:300],
         "tool": summary_response.get("tool"),
         "response_status": summary_result.get("status"),
         "visible_reply_preview": visible_reply[:500],
@@ -2320,6 +2363,48 @@ def requested_assignment_subject_navigation_labels(command_text: str) -> list[st
     if re.search(r"\b(?:music|musical|song|songs|instrument|instruments|choir|band)\b", lower_command):
         return ["Music", "Music Class", "Music Assignments"]
     return []
+
+
+def visible_screen_attempt_mismatches_expected_teams(
+    *,
+    command_text: str,
+    browser_open: dict[str, Any],
+    attempt_result: dict[str, Any],
+) -> bool:
+    lower_command = str(command_text or "").casefold()
+    if "teams" not in lower_command or "assignment" not in lower_command:
+        return False
+    browser_text = " ".join(
+        [
+            str(browser_open.get("browser_open_verification_url") or ""),
+            str(browser_open.get("browser_open_active_url") or ""),
+            str(browser_open.get("browser_open_active_title") or ""),
+        ]
+    ).casefold()
+    if not any(marker in browser_text for marker in ("teams.microsoft.com", "teams.cloud.microsoft", "microsoft teams")):
+        return False
+    captured_text = str(attempt_result.get("captured_text_preview") or "").casefold()
+    reply_text = str(attempt_result.get("visible_reply_preview") or "").casefold()
+    attempt_text = " ".join([captured_text, reply_text]).strip()
+    if not attempt_text:
+        return False
+    captured_teams_markers = ("teams", "classwork", "rubric", "homework", "microsoft teams")
+    if captured_text and any(marker in captured_text for marker in captured_teams_markers):
+        return False
+    wrong_surface_markers = (
+        "google chrome. i can see",
+        "without people",
+        "youtube",
+        "codex",
+        "chatgpt",
+        "prompts for approval",
+    )
+    if captured_text:
+        return any(marker in captured_text for marker in wrong_surface_markers) or len(captured_text) >= 80
+    teams_reply_markers = ("teams", "assignment", "assignments", "classwork", "rubric", "homework", "microsoft")
+    if any(marker in reply_text for marker in teams_reply_markers):
+        return False
+    return any(marker in attempt_text for marker in wrong_surface_markers) or len(attempt_text) >= 80
 
 
 def select_ocr_line_target(
