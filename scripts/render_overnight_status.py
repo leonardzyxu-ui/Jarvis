@@ -848,6 +848,9 @@ def proof_items_with_verification(
             f"selected {full_loop['selected_title']!r}, voice loop {full_loop['voice_loop_status']}, "
             f"cleanup {full_loop['cleanup_label']}{speed_note}{case_note} ({full_loop['path']})."
         )
+        teams_live_navigation = str(full_loop.get("teams_live_navigation_diagnostic") or "")
+        if teams_live_navigation:
+            items.append(f"Teams live navigation diagnostic: {teams_live_navigation}.")
     if crash and crash.get("path"):
         crash_version = str(crash.get("version") or "unknown")
         crash_build = str(crash.get("build") or "unknown")
@@ -1323,6 +1326,7 @@ def latest_full_loop_regression() -> dict[str, Any]:
         "selected_title": "",
         "voice_loop_status": "",
         "cleanup_label": "not run",
+        "teams_live_navigation_diagnostic": "",
     }
     if not latest.exists():
         return empty
@@ -1382,7 +1386,49 @@ def latest_full_loop_regression() -> dict[str, Any]:
         "selected_title": str(action_proof.get("selected_title") or ""),
         "voice_loop_status": str(first.get("voice_loop_status") or ""),
         "cleanup_label": f"stop {'ok' if stop_ok else 'failed'}, close {'ok' if close_ok else 'failed'}",
+        "teams_live_navigation_diagnostic": latest_teams_live_navigation_diagnostic(),
     }
+
+
+def latest_teams_live_navigation_diagnostic() -> str:
+    reports = sorted((PROJECT_ROOT / "runtime" / "full_loop_regression").glob("*/summary.json"))
+    for report in reversed(reports):
+        try:
+            data = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        diagnostic = teams_live_navigation_diagnostic(data, report)
+        if diagnostic:
+            return diagnostic
+    return ""
+
+
+def teams_live_navigation_diagnostic(data: dict[str, Any], report_path: Path | None = None) -> str:
+    results = data.get("results") if isinstance(data.get("results"), list) else []
+    for result in results:
+        if not isinstance(result, dict) or result.get("case_id") != "teams_music_assignment_honesty":
+            continue
+        action_proof = result.get("action_proof") if isinstance(result.get("action_proof"), dict) else {}
+        execution = action_proof.get("visible_navigation_execution")
+        if not isinstance(execution, dict):
+            continue
+        status = str(execution.get("status") or "").strip()
+        if not status:
+            continue
+        point = execution.get("point") if isinstance(execution.get("point"), dict) else {}
+        point_text = ""
+        if "x" in point and "y" in point:
+            point_text = f" at ({point.get('x')}, {point.get('y')})"
+        steps = action_proof.get("visible_navigation_execution_steps")
+        step_count = len(steps) if isinstance(steps, list) else 0
+        step_text = f"; {step_count} step(s)" if step_count else ""
+        path_text = ""
+        if report_path is not None:
+            path = str(report_path.relative_to(PROJECT_ROOT)) if report_path.is_relative_to(PROJECT_ROOT) else str(report_path)
+            path_text = f"; {path}"
+        verb = "clicked" if status == "clicked" else f"stopped as {status}"
+        return f"latest live Teams navigation {verb}{point_text}{step_text}{path_text}"
+    return ""
 
 
 def shorten(value: str, limit: int) -> str:

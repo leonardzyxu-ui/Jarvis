@@ -4480,6 +4480,11 @@ class VerifySafeScriptTests(unittest.TestCase):
                 "slowest_case_id": "email_sharpay_month",
                 "slowest_case_seconds": 45.327,
                 "duration_seconds": 132.456,
+                "teams_live_navigation_diagnostic": (
+                    "latest live Teams navigation stopped as navigation_loop_prevented "
+                    "at (257.13, 323.04); 1 step(s); "
+                    "runtime/full_loop_regression/20260620-095114/summary.json"
+                ),
             },
         )
         self.assertTrue(any(
@@ -4491,6 +4496,12 @@ class VerifySafeScriptTests(unittest.TestCase):
             for item in full_loop_proof
         ))
         self.assertTrue(any("total 132.456s" in item for item in full_loop_proof))
+        self.assertTrue(any(
+            "Teams live navigation diagnostic: latest live Teams navigation stopped as "
+            "navigation_loop_prevented at (257.13, 323.04); 1 step(s); "
+            "runtime/full_loop_regression/20260620-095114/summary.json." in item
+            for item in full_loop_proof
+        ))
         self.assertEqual(render_overnight_status.bundle_label("0.1.439", "439"), "Jarvis 0.1.439 build 439")
         self.assertEqual(render_overnight_status.bundle_label("unknown", "unknown"), "live bundle metadata unavailable")
         self.assertEqual(render_overnight_status.launch_label("unknown"), "not inspected")
