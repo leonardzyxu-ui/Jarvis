@@ -28,6 +28,7 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 SHIPPED_ITEMS = [
+    "Jarvis 0.1.487 makes `capabilities status` match the new proof surfaces: Jarvis now reports the Capability Questions proof board as a prepared local surface instead of only mentioning STT and Wake audition pages.",
     "Jarvis 0.1.486 makes the proof board reachable from the menu-bar head too: both the normal status item and emergency helper now include `Open Questions` beside the report and wake-test links.",
     "Jarvis 0.1.485 makes the show-off prompt list easier to use: the Jarvis window now has a Questions button, and the Capability Questions page shows proof badges from the latest full-loop run so Leo can see what is proved, warning, or not covered.",
     "Jarvis 0.1.484 improves Teams visible-screen recovery: if strict Chrome window capture fails after Teams is foregrounded, Jarvis can fall back to main-display Apple Vision OCR instead of stopping at a native capture failure.",

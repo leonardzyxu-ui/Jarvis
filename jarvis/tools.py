@@ -10875,6 +10875,8 @@ def capabilities_status() -> dict[str, Any]:
     codex = status.get("codex", {})
     timers = status.get("timers", {})
     codex_jobs = status.get("codex_jobs", {})
+    report_surfaces = status.get("report_surfaces", {}) if isinstance(status.get("report_surfaces"), dict) else {}
+    capability_questions = report_surfaces.get("capability_questions", {}) if isinstance(report_surfaces.get("capability_questions"), dict) else {}
     latency_state = "working" if latency.get("status") == "passed" else str(latency.get("status") or "needs_attention")
     launch_state = "working" if launch.get("status") == "available" else str(launch.get("status") or "needs_attention")
     capabilities = [
@@ -11001,6 +11003,15 @@ def capabilities_status() -> dict[str, Any]:
             "needs_leo": False,
         },
         {
+            "id": "capability_questions",
+            "status": "prepared" if capability_questions.get("exists") else "not_built",
+            "summary": "The Capability Questions proof board lists hard prompts and labels the latest full-loop proof as proved, warning, or not covered.",
+            "test_prompt": "open capability questions",
+            "needs_leo": False,
+            "page": capability_questions.get("url"),
+            "path": capability_questions.get("path"),
+        },
+        {
             "id": "tts",
             "status": "partial",
             "summary": "Explicit local speech commands and voice.stop_speaking interruption exist; automatic spoken replies and progress speech depend on current settings.",
@@ -11048,7 +11059,7 @@ def capabilities_status() -> dict[str, Any]:
         f"Capability status: {working} working, {partial} partial, {prepared} prepared, {needs_attention} needing attention. "
         "Working now includes typed chat, fast casual chat, latency status, Codex async delegation, launch diagnostics, source-access diagnostics, and the overnight workboard route. "
         "Partial work includes email, quick device controls, guarded middle planning, remote helper diagnostics, Jarvis-Codex daily memory, experimental wake/STT, TTS with stop-speaking interruption, and computer control. "
-        "Prepared surfaces include the STT and wake audition pages. "
+        "Prepared surfaces include the STT audition page, wake audition page, and capability questions proof board. "
         "Not finished yet: full raw chat-history memory, hardened false-wake tuning, and long-running wake listener reliability. "
         "This diagnostic did not read email, screenshots, microphone audio, or files."
     )
