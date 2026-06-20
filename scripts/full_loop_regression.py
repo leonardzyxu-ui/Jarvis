@@ -1185,12 +1185,16 @@ def run_teams_assignment_case(
                 warnings.append("Visible All teams navigation target was found for the next safe navigation step.")
             if action_proof.get("assignments_target_found"):
                 warnings.append("Visible Assignments navigation target was found for the next safe navigation step.")
-            if action_proof.get("requested_class_navigation_plan_ready"):
-                warnings.append("A non-clicking requested-class navigation plan is ready; live navigation still requires an explicit safe run.")
-            if action_proof.get("all_teams_navigation_plan_ready"):
-                warnings.append("A non-clicking All teams navigation plan is ready; live navigation still requires an explicit safe run.")
-            if action_proof.get("assignments_navigation_plan_ready"):
-                warnings.append("A non-clicking Assignments navigation plan is ready; live navigation still requires an explicit safe run.")
+            live_navigation_summary = visible_navigation_execution_warning(action_proof)
+            if live_navigation_summary:
+                warnings.append(live_navigation_summary)
+            else:
+                if action_proof.get("requested_class_navigation_plan_ready"):
+                    warnings.append("A non-clicking requested-class navigation plan is ready; live navigation still requires an explicit safe run.")
+                if action_proof.get("all_teams_navigation_plan_ready"):
+                    warnings.append("A non-clicking All teams navigation plan is ready; live navigation still requires an explicit safe run.")
+                if action_proof.get("assignments_navigation_plan_ready"):
+                    warnings.append("A non-clicking Assignments navigation plan is ready; live navigation still requires an explicit safe run.")
         if not action_proof["passed"]:
             status = "failed"
             warnings.extend(action_proof["failures"])
@@ -1314,6 +1318,8 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
         "browser_focus_not_verified": browser_focus_not_verified,
         "browser_open_active_url": str(follow_up.get("browser_open_active_url") or ""),
         "browser_open_active_title": str(follow_up.get("browser_open_active_title") or ""),
+        "browser_open_verification_url": str(follow_up.get("browser_open_verification_url") or ""),
+        "browser_open_verification_source": str(follow_up.get("browser_open_verification_source") or ""),
         "assignments_target_found": bool(assignments_target.get("found")),
         "assignments_target": assignments_target,
         "assignments_navigation_plan_ready": bool(assignments_plan.get("planned")),
@@ -1342,6 +1348,23 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
         "visible_reply_preview": combined_reply[:500],
         "follow_up_status": str(follow_up.get("status") or ""),
     }
+
+
+def visible_navigation_execution_warning(action_proof: dict[str, Any]) -> str:
+    execution = action_proof.get("visible_navigation_execution")
+    if not isinstance(execution, dict):
+        return ""
+    action = str(execution.get("action") or "visible navigation").replace("_", " ").strip()
+    status = str(execution.get("status") or "unknown").replace("_", " ").strip()
+    if execution.get("executed"):
+        return f"Live {action} navigation was exercised and returned {status}."
+    if str(execution.get("status") or "") == "navigation_loop_prevented":
+        if execution.get("attempted"):
+            return f"Live {action} navigation was exercised but stopped as {status}."
+        return f"Live {action} navigation was requested but stopped as {status}."
+    if not execution.get("attempted"):
+        return ""
+    return f"Live {action} navigation was exercised but stopped as {status}."
 
 
 def chrome_tab_snapshot() -> list[dict[str, str]]:

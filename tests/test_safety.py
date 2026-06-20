@@ -866,6 +866,33 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(proof["browser_open_active_title"], "Codex")
         self.assertEqual(proof["browser_open_active_url"], "https://chatgpt.com/codex")
 
+    def test_full_loop_teams_honesty_preserves_browser_verification_source(self):
+        proof = full_loop_regression.verify_teams_assignment_honesty({
+            "result": {
+                "visible_reply_preview": (
+                    "Opening your Teams bookmark in signed-in Chrome now. "
+                    "I have not inspected the newest Music assignment until a later visible page or screen read succeeds."
+                ),
+                "visible_screen_follow_up": {
+                    "status": "assignment_subject_mismatch",
+                    "tool": "screen.visible_text",
+                    "browser_open_active_title": "https://teams.microsoft.com/v2/?clientexperience=t3",
+                    "browser_open_active_url": "",
+                    "browser_open_verification_url": "https://teams.microsoft.com/v2/?clientexperience=t3",
+                    "browser_open_verification_source": "active_title_url",
+                    "visible_reply_preview": (
+                        "I read the visible Teams screen, but it does not look like the Music assignment. "
+                        "I can see assignment-related text: Lesson 2: The Geography of Greece Group Assignment."
+                    ),
+                },
+            },
+        })
+
+        self.assertTrue(proof["passed"])
+        self.assertEqual(proof["browser_open_active_url"], "")
+        self.assertEqual(proof["browser_open_verification_url"], "https://teams.microsoft.com/v2/?clientexperience=t3")
+        self.assertEqual(proof["browser_open_verification_source"], "active_title_url")
+
     def test_full_loop_teams_honesty_preserves_visible_navigation_execution(self):
         execution = {
             "attempted": True,
@@ -892,6 +919,36 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(proof["completion_status"], "wrong_subject")
         self.assertEqual(proof["visible_navigation_execution"], execution)
         self.assertEqual(proof["visible_navigation_execution_steps"], [execution])
+
+    def test_full_loop_visible_navigation_warning_replaces_not_attempted_copy(self):
+        proof = {
+            "visible_navigation_execution": {
+                "attempted": True,
+                "executed": False,
+                "action": "browser_back",
+                "status": "navigation_loop_prevented",
+            },
+        }
+
+        self.assertEqual(
+            full_loop_regression.visible_navigation_execution_warning(proof),
+            "Live browser back navigation was exercised but stopped as navigation loop prevented.",
+        )
+
+    def test_full_loop_visible_navigation_warning_reports_loop_prevented_before_click(self):
+        proof = {
+            "visible_navigation_execution": {
+                "attempted": False,
+                "executed": False,
+                "action": "browser_back",
+                "status": "navigation_loop_prevented",
+            },
+        }
+
+        self.assertEqual(
+            full_loop_regression.visible_navigation_execution_warning(proof),
+            "Live browser back navigation was requested but stopped as navigation loop prevented.",
+        )
 
     def test_full_loop_email_sharpay_accepts_resolved_sender_summary(self):
         proof = full_loop_regression.verify_email_sharpay_honesty({
@@ -4090,6 +4147,15 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertEqual(title, "Microsoft Teams")
         self.assertEqual(active_url, "https://teams.microsoft.com/v2/")
+
+    def test_voice_loop_qa_chrome_front_tab_verification_uses_title_url_when_active_url_blank(self):
+        verification_url, source = voice_loop_qa.chrome_front_tab_verification_url(
+            "https://teams.microsoft.com/v2/?clientexperience=t3",
+            "",
+        )
+
+        self.assertEqual(verification_url, "https://teams.microsoft.com/v2/?clientexperience=t3")
+        self.assertEqual(source, "active_title_url")
 
     def test_voice_loop_qa_visible_screen_followup_preserves_assignment_mismatch_after_browser_block(self):
         with tempfile.TemporaryDirectory() as temp_dir, \
@@ -17526,8 +17592,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("if tabURL is targetURL then", script_source)
         self.assertIn("repeat 10 times", script_source)
         self.assertIn('if frontURL is not "" then', script_source)
-        self.assertIn("verification_url = active_url", script_source)
-        self.assertIn("verification_url = title", script_source)
+        self.assertIn("chrome_front_tab_verification_url(title, active_url)", script_source)
+        self.assertIn('"browser_open_verification_source": verification_source', script_source)
+        self.assertIn('return title_text, "active_title_url"', script_source)
         self.assertNotIn('tabURL contains "teams.cloud.microsoft"', script_source)
         self.assertNotIn('tabURL contains "teams.microsoft.com"', script_source)
 

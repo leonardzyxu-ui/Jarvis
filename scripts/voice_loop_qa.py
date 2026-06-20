@@ -2681,9 +2681,7 @@ return frontTitle & linefeed & frontURL
         )
         stdout = completed.stdout.strip()
         title, active_url = parse_chrome_front_tab_output(stdout)
-        verification_url = active_url
-        if not verification_url and re.match(r"^https?://", title, flags=re.IGNORECASE):
-            verification_url = title
+        verification_url, verification_source = chrome_front_tab_verification_url(title, active_url)
         active_host = (urlparse(verification_url).hostname or "").lower()
         target_host_verified = active_host == target_host or (
             target_host in {"teams.microsoft.com", "teams.cloud.microsoft"}
@@ -2698,6 +2696,8 @@ return frontTitle & linefeed & frontURL
             "browser_open_stderr_tail": completed.stderr.strip()[-500:],
             "browser_open_active_title": title,
             "browser_open_active_url": active_url,
+            "browser_open_verification_url": verification_url,
+            "browser_open_verification_source": verification_source,
             "browser_open_target_host_verified": bool(completed.returncode == 0 and target_host_verified),
         }
     except Exception as error:
@@ -2717,6 +2717,16 @@ def parse_chrome_front_tab_output(stdout: str) -> tuple[str, str]:
     title = lines[0].strip() if lines else ""
     active_url = lines[1].strip() if len(lines) > 1 else ""
     return title, active_url
+
+
+def chrome_front_tab_verification_url(title: str, active_url: str) -> tuple[str, str]:
+    url = str(active_url or "").strip()
+    if url:
+        return url, "active_url"
+    title_text = str(title or "").strip()
+    if re.match(r"^https?://", title_text, flags=re.IGNORECASE):
+        return title_text, "active_title_url"
+    return "", ""
 
 
 def browser_page_follow_up_response_looks_useful(response: dict[str, Any], *, command_text: str = "") -> bool:
