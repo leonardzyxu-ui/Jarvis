@@ -14468,8 +14468,12 @@ Pages occupied by compressor:             10.
         self.assertFalse(result["sent_audio"])
         self.assertEqual(result["preferred_live_candidate_id"], "apple-speech-native")
         self.assertEqual(result["unattended_fallback_candidate_id"], "faster-whisper-tiny-en-local")
+        self.assertEqual(result["current_live_listener_engine"], "apple-speech-native")
+        self.assertEqual(result["current_live_listener_surface"], "Hey Jarvis macOS app listener")
         self.assertEqual(result["live_stt_policy"]["permission_prompt_safe_default"], "local")
         self.assertTrue(result["live_stt_policy"]["dictation_task_hint"])
+        self.assertTrue(result["live_stt_policy"]["live_listener_uses_apple_speech"])
+        self.assertTrue(result["live_stt_policy"]["unattended_tests_use_local_fallback"])
         self.assertIn("chrome-web-speech", candidates)
         self.assertIn("apple-speech-native", candidates)
         self.assertIn("faster-whisper-tiny-en-local", candidates)
@@ -26564,6 +26568,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
             "result": {
                 "preferred_live_candidate_id": "apple-speech-native",
                 "unattended_fallback_candidate_id": "faster-whisper-tiny-en-local",
+                "current_live_listener_engine": "apple-speech-native",
+                "current_live_listener_surface": "Hey Jarvis macOS app listener",
                 "live_stt_policy": {
                     "permission_prompt_safe_default": "local",
                     "apple_speech_requires_explicit_opt_in": True,
@@ -26572,6 +26578,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             },
         })
 
+        self.assertIn("live listener apple-speech-native via Hey Jarvis macOS app listener", summary)
         self.assertIn("preferred apple-speech-native", summary)
         self.assertIn("fallback faster-whisper-tiny-en-local", summary)
         self.assertIn("permission-safe default local", summary)
@@ -26587,6 +26594,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 "result": {
                     "preferred_live_candidate_id": "apple-speech-native",
                     "unattended_fallback_candidate_id": "faster-whisper-tiny-en-local",
+                    "current_live_listener_engine": "apple-speech-native",
+                    "current_live_listener_surface": "Hey Jarvis macOS app listener",
                     "live_stt_policy": {
                         "permission_prompt_safe_default": "local",
                         "apple_speech_requires_explicit_opt_in": True,
@@ -26601,7 +26610,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(post_mock.call_args.args[1]["command"], "speech recognition candidates")
         self.assertTrue(post_mock.call_args.args[1]["suppress_speech"])
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
-        self.assertIn("Speech input: preferred apple-speech-native", printed)
+        self.assertIn("live listener apple-speech-native via Hey Jarvis macOS app listener", printed)
+        self.assertIn("Speech input: live listener apple-speech-native", printed)
+        self.assertIn("preferred apple-speech-native", printed)
         self.assertIn("fallback faster-whisper-tiny-en-local", printed)
         self.assertIn("status check does not request permissions", printed)
 

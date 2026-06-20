@@ -46,6 +46,7 @@
 
 ## Completed This Turn
 
+- [x] Made Apple Speech/Dictation status explicit: `voice.stt_candidates` now reports `current_live_listener_engine: apple-speech-native` for the Hey Jarvis macOS listener, keeps `faster-whisper-tiny-en-local` as the unattended fallback, and `scripts/morning_status.py` prints the live listener engine without recording audio or requesting permissions. Focused tests passed.
 - [x] Started the official macOS UI upgrade: the app now has a visible `Jarvis Activity` panel for commands, tool use, browser opens, speech state, replies, and errors; Copy Chat JSON includes `action_events`; the summon popout is smaller and clipped to reduce the rectangular gradient artifact.
 - [x] Fixed the model-test plan latency regression: Jarvis now uses a short MacBook Air reachability probe for `models.test_plan` and gives a shorter spoken reply when the Air is unreachable. Live Gemma case passed in `15.571s` at `runtime/full_loop_regression/20260620-160125/summary.json`, and later passed in `11.298s` in the full gate.
 - [x] Added a bounded retry for transient HTTP 502/503/504 voice-loop failures in the Sharpay email full-loop case. Live Sharpay case passed at `runtime/full_loop_regression/20260620-160202/summary.json`; in the refreshed full gate it passed in `34.052s`.

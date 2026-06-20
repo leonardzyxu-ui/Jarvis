@@ -8679,6 +8679,8 @@ def stt_candidate_status() -> dict[str, Any]:
         "installed_engine_count": installed_engine_count,
         "preferred_live_candidate_id": "apple-speech-native",
         "unattended_fallback_candidate_id": "faster-whisper-tiny-en-local",
+        "current_live_listener_engine": "apple-speech-native",
+        "current_live_listener_surface": "Hey Jarvis macOS app listener",
         "live_stt_policy": {
             "preferred": "apple-speech-native",
             "fallback": "faster-whisper-tiny-en-local",
@@ -8686,6 +8688,8 @@ def stt_candidate_status() -> dict[str, Any]:
             "apple_speech_requires_explicit_opt_in": True,
             "apple_speech_request_permissions_during_status": False,
             "dictation_task_hint": True,
+            "live_listener_uses_apple_speech": True,
+            "unattended_tests_use_local_fallback": True,
         },
         "candidates": candidates,
         "recommended_first_pass": [

@@ -646,10 +646,17 @@ def speech_input_policy_summary(command_payload: dict[str, Any]) -> str:
         return ""
     preferred = str(result.get("preferred_live_candidate_id") or policy.get("preferred") or "").strip()
     fallback = str(result.get("unattended_fallback_candidate_id") or policy.get("fallback") or "").strip()
+    live_engine = str(result.get("current_live_listener_engine") or "").strip()
+    live_surface = str(result.get("current_live_listener_surface") or "").strip()
     safe_default = str(policy.get("permission_prompt_safe_default") or "").strip()
     opt_in = bool(policy.get("apple_speech_requires_explicit_opt_in"))
     no_status_prompt = policy.get("apple_speech_request_permissions_during_status") is False
     parts: list[str] = []
+    if live_engine:
+        live_phrase = f"live listener {live_engine}"
+        if live_surface:
+            live_phrase += f" via {live_surface}"
+        parts.append(live_phrase)
     if preferred:
         parts.append(f"preferred {preferred}")
     if fallback:
