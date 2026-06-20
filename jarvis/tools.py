@@ -370,6 +370,28 @@ STT_CANDIDATE_DEFINITIONS = [
         "notes": "Good fallback for comparing Apple's recognition without wiring microphone capture yet.",
     },
     {
+        "id": "apple-speech-native",
+        "name": "Apple Speech native",
+        "kind": "app_bundle_speech",
+        "accent_fit": "likely_best_current_live_option",
+        "privacy": "uses_apple_speech_recognition_when_leo_has_granted_the_app_permission",
+        "expected_latency": "fast_after_authorization",
+        "executables": [],
+        "audition_mode": "jarvis_app_audio_file_self_test_or_live_wake_listener",
+        "notes": "Preferred opt-in live dictation lane. It uses SFSpeechRecognizer with dictation task hint and must fall back to local STT when not authorized.",
+    },
+    {
+        "id": "faster-whisper-tiny-en-local",
+        "name": "faster-whisper tiny.en local",
+        "kind": "current_local_fallback",
+        "accent_fit": "usable_for_regression_qa_not_final_live_dictation",
+        "privacy": "local_file_transcription",
+        "expected_latency": "slower_first_run_but_safe_unattended",
+        "executables": [],
+        "audition_mode": "voice_loop_qa_local_file_transcription",
+        "notes": "Current unattended fallback for regression tests. It avoids permission prompts but can miss punctuation and technical words.",
+    },
+    {
         "id": "whisper-cpp-tiny-en",
         "name": "whisper.cpp tiny.en",
         "kind": "local_cli_future",
@@ -8594,7 +8616,11 @@ def _voice_loop_utterances(transcript: str) -> list[str]:
 def stt_candidate_status() -> dict[str, Any]:
     """Return speech-to-text candidate readiness without recording audio."""
     page_path = PROJECT_ROOT / "runtime" / "stt_audition" / "index.html"
+    jarvis_app_path = PROJECT_ROOT / "output" / "Jarvis.app"
+    local_faster_whisper_python = PROJECT_ROOT / "runtime" / "stt_models" / "faster_whisper" / ".venv" / "bin" / "python"
     page_exists = page_path.exists()
+    jarvis_app_exists = jarvis_app_path.exists()
+    local_faster_whisper_ready = local_faster_whisper_python.exists()
     candidates: list[dict[str, Any]] = []
     installed_engine_count = 0
     audition_ready_count = 0
@@ -8605,7 +8631,9 @@ def stt_candidate_status() -> dict[str, Any]:
             installed_engine_count += 1
         kind = str(definition.get("kind") or "")
         manual_ready = kind in {"browser_builtin", "system_manual"} and page_exists
-        audition_ready = bool(manual_ready or executable_available)
+        apple_native_ready = kind == "app_bundle_speech" and jarvis_app_exists
+        local_fallback_ready = kind == "current_local_fallback" and local_faster_whisper_ready
+        audition_ready = bool(manual_ready or executable_available or apple_native_ready or local_fallback_ready)
         if audition_ready:
             audition_ready_count += 1
         candidates.append(
@@ -8615,7 +8643,12 @@ def stt_candidate_status() -> dict[str, Any]:
                 "local_engine_installed": executable_available,
                 "audition_ready": audition_ready,
                 "requires_foreground_browser": kind == "browser_builtin",
-                "requires_microphone_permission": kind == "browser_builtin",
+                "requires_microphone_permission": kind in {"browser_builtin", "app_bundle_speech"},
+                "requires_speech_recognition_permission": kind == "app_bundle_speech",
+                "uses_apple_speech_framework": kind == "app_bundle_speech",
+                "uses_current_local_fallback": kind == "current_local_fallback",
+                "jarvis_app_available": jarvis_app_exists if kind == "app_bundle_speech" else None,
+                "local_faster_whisper_available": local_faster_whisper_ready if kind == "current_local_fallback" else None,
                 "requires_install": kind.endswith("_future") and not executable_available,
             }
         )
@@ -8638,12 +8671,26 @@ def stt_candidate_status() -> dict[str, Any]:
         "sent_audio": False,
         "page_path": str(page_path),
         "page_exists": page_exists,
+        "jarvis_app_path": str(jarvis_app_path),
+        "jarvis_app_exists": jarvis_app_exists,
         "reference_sentences": list(STT_REFERENCE_SENTENCES),
         "candidate_count": len(candidates),
         "audition_ready_count": audition_ready_count,
         "installed_engine_count": installed_engine_count,
+        "preferred_live_candidate_id": "apple-speech-native",
+        "unattended_fallback_candidate_id": "faster-whisper-tiny-en-local",
+        "live_stt_policy": {
+            "preferred": "apple-speech-native",
+            "fallback": "faster-whisper-tiny-en-local",
+            "permission_prompt_safe_default": "local",
+            "apple_speech_requires_explicit_opt_in": True,
+            "apple_speech_request_permissions_during_status": False,
+            "dictation_task_hint": True,
+        },
         "candidates": candidates,
         "recommended_first_pass": [
+            "apple-speech-native",
+            "faster-whisper-tiny-en-local",
             "chrome-web-speech",
             "macos-dictation-manual",
             "whisper-cpp-base-en",
@@ -8668,6 +8715,7 @@ def stt_audition_status() -> dict[str, Any]:
         f"{'available' if exists else 'not created yet'}. "
         "It can compare a reference sentence with a recognized or pasted transcript, score word accuracy, character accuracy, WER, first-result latency, and export JSON. "
         "It now treats punctuation accuracy and dictation quality as separate metrics so perfect word recognition cannot hide missing commas or periods. "
+        "Apple Speech native is the preferred opt-in live dictation lane when the app already has permission; local faster-whisper remains the no-prompt fallback for unattended tests. "
         "This status check did not open a browser, record audio, request microphone permission, or send audio anywhere."
     )
     if exists:
@@ -8691,6 +8739,9 @@ def stt_audition_status() -> dict[str, Any]:
         "audition_ready_count": candidate_snapshot["audition_ready_count"],
         "candidate_status_tool": "voice.stt_candidates",
         "reference_sentences": candidate_snapshot["reference_sentences"],
+        "preferred_live_candidate_id": candidate_snapshot["preferred_live_candidate_id"],
+        "unattended_fallback_candidate_id": candidate_snapshot["unattended_fallback_candidate_id"],
+        "live_stt_policy": candidate_snapshot["live_stt_policy"],
         "metrics": [
             "word_accuracy",
             "character_accuracy",
@@ -8733,6 +8784,7 @@ def stt_session_plan(candidate_id: str | None = None, reference_sentence: str | 
         "Capture first-result latency, final-result latency, recognized transcript, punctuation accuracy, dictation quality, and Leo's 1-10 human score.",
         "Save the row in the audition table and export JSON after at least three comparable candidates.",
         "Compare command readiness for Jarvis commands, but compare dictation quality and punctuation separately before choosing a recognizer for long text.",
+        "Prefer Apple Speech native for live dictation only after it is already authorized and measured; keep faster-whisper tiny.en as the unattended no-prompt fallback.",
         "If all candidates understand words but drop punctuation, keep the fastest acceptable STT and tell the receiving model that the command is dictated text.",
     ]
     reply = (

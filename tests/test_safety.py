@@ -14249,6 +14249,10 @@ Pages occupied by compressor:             10.
         self.assertGreaterEqual(result["candidate_count"], 1)
         self.assertIn("voice.stt_candidates", result["candidate_status_tool"])
         self.assertTrue(result["reference_sentences"])
+        self.assertEqual(result["preferred_live_candidate_id"], "apple-speech-native")
+        self.assertEqual(result["unattended_fallback_candidate_id"], "faster-whisper-tiny-en-local")
+        self.assertTrue(result["live_stt_policy"]["apple_speech_requires_explicit_opt_in"])
+        self.assertFalse(result["live_stt_policy"]["apple_speech_request_permissions_during_status"])
 
     def test_stt_candidate_status_reports_catalog_without_audio_or_installs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -14256,6 +14260,11 @@ Pages occupied by compressor:             10.
             page = root / "runtime" / "stt_audition" / "index.html"
             page.parent.mkdir(parents=True)
             page.write_text("<!doctype html><title>Jarvis STT Audition</title>", encoding="utf-8")
+            jarvis_app = root / "output" / "Jarvis.app"
+            jarvis_app.mkdir(parents=True)
+            local_stt_python = root / "runtime" / "stt_models" / "faster_whisper" / ".venv" / "bin" / "python"
+            local_stt_python.parent.mkdir(parents=True)
+            local_stt_python.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
 
             def fake_find_executable(name: str) -> str | None:
                 if name == "whisper-cli":
@@ -14274,10 +14283,24 @@ Pages occupied by compressor:             10.
         self.assertFalse(result["opened_browser"])
         self.assertFalse(result["installed_anything"])
         self.assertFalse(result["sent_audio"])
+        self.assertEqual(result["preferred_live_candidate_id"], "apple-speech-native")
+        self.assertEqual(result["unattended_fallback_candidate_id"], "faster-whisper-tiny-en-local")
+        self.assertEqual(result["live_stt_policy"]["permission_prompt_safe_default"], "local")
+        self.assertTrue(result["live_stt_policy"]["dictation_task_hint"])
         self.assertIn("chrome-web-speech", candidates)
+        self.assertIn("apple-speech-native", candidates)
+        self.assertIn("faster-whisper-tiny-en-local", candidates)
         self.assertIn("whisper-cpp-base-en", candidates)
         self.assertTrue(candidates["whisper-cpp-base-en"]["local_engine_installed"])
         self.assertTrue(candidates["chrome-web-speech"]["requires_foreground_browser"])
+        self.assertTrue(candidates["apple-speech-native"]["uses_apple_speech_framework"])
+        self.assertTrue(candidates["apple-speech-native"]["requires_speech_recognition_permission"])
+        self.assertTrue(candidates["apple-speech-native"]["jarvis_app_available"])
+        self.assertTrue(candidates["faster-whisper-tiny-en-local"]["uses_current_local_fallback"])
+        self.assertTrue(candidates["faster-whisper-tiny-en-local"]["local_faster_whisper_available"])
+        self.assertFalse(candidates["faster-whisper-tiny-en-local"]["requires_microphone_permission"])
+        self.assertIn("apple-speech-native", result["recommended_first_pass"])
+        self.assertIn("faster-whisper-tiny-en-local", result["recommended_first_pass"])
         self.assertGreaterEqual(result["audition_ready_count"], 2)
         self.assertTrue(result["reference_sentences"])
 
@@ -14307,6 +14330,8 @@ Pages occupied by compressor:             10.
         self.assertFalse(result["started_recognition"])
         self.assertFalse(result["sent_audio"])
         self.assertFalse(result["installed_anything"])
+        self.assertIn("Apple Speech native", " ".join(result["steps"]))
+        self.assertIn("faster-whisper tiny.en", " ".join(result["steps"]))
 
     def test_voice_session_plan_maps_full_loop_without_audio_or_models(self):
         result = voice_session_plan("check my email")
