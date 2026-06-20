@@ -6327,6 +6327,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 self.assertIn(version, shipped)
                 self.assertIn(version, proof)
                 self.assertIn(version, workboard)
+        self.assertIn("0.1.482", shipped)
         self.assertIn("0.1.481", shipped)
         self.assertIn("0.1.480", shipped)
         self.assertIn("0.1.479", shipped)
@@ -14952,8 +14953,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.481}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-481}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.482}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-482}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('ALLOW_NON_CANONICAL_JARVIS_BUNDLE="${ALLOW_NON_CANONICAL_JARVIS_BUNDLE:-0}"', script)
         self.assertIn("Refusing to build a non-canonical Jarvis app", script)
