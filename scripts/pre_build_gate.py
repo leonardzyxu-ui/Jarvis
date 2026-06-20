@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.render_overnight_status import normalize_base_url  # noqa: E402
+from scripts.physical_audio_preflight import physical_audio_preflight  # noqa: E402
 
 
 REPORT_DIR = PROJECT_ROOT / "runtime" / "pre_build_gate"
@@ -255,6 +256,17 @@ def live_speech_requirement_failure() -> dict[str, Any]:
 
 
 def physical_capture_requirement_failure(*, exercise_live_speech: bool) -> dict[str, Any]:
+    try:
+        preflight = physical_audio_preflight()
+    except Exception as error:  # pragma: no cover - defensive gate path.
+        preflight = {
+            "ok": False,
+            "status": "physical_audio_preflight_error",
+            "error": f"{type(error).__name__}: {error}",
+            "requests_microphone": False,
+            "captures_audio": False,
+        }
+    status = str(preflight.get("status") or "unknown")
     return {
         "id": "physical_capture_requirement",
         "label": "Physical speaker/microphone capture requirement",
@@ -263,8 +275,11 @@ def physical_capture_requirement_failure(*, exercise_live_speech: bool) -> dict[
         "seconds": 0.0,
         "timeout_seconds": 0.0,
         "command": [],
-        "stdout_tail": "",
-        "stderr_tail": "Refused to pass: --require-physical-capture was set, but physical speaker/microphone capture is not implemented.",
+        "stdout_tail": tail_text(json.dumps(preflight, ensure_ascii=False, sort_keys=True)),
+        "stderr_tail": (
+            "Refused to pass: --require-physical-capture was set, but physical speaker/microphone "
+            f"capture is not ready ({status})."
+        ),
         "proof_contract": speech_proof_contract(exercise_live_speech=exercise_live_speech),
     }
 

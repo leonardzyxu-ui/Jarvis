@@ -1000,7 +1000,13 @@ class VerifySafeScriptTests(unittest.TestCase):
             calls.append(command)
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("scripts.pre_build_gate.physical_audio_preflight", return_value={
+            "ok": True,
+            "status": "loopback_device_missing",
+            "ready_for_physical_capture": False,
+            "requests_microphone": False,
+            "captures_audio": False,
+        }):
             summary = pre_build_gate.run_gate(
                 base_url="http://127.0.0.1:8765",
                 output_dir=Path(tmpdir),
@@ -1013,6 +1019,8 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(summary["require_physical_capture"])
         self.assertEqual(summary["results"][0]["id"], "physical_capture_requirement")
         self.assertIn("--require-physical-capture", summary["results"][0]["stderr_tail"])
+        self.assertIn("loopback_device_missing", summary["results"][0]["stderr_tail"])
+        self.assertIn("loopback_device_missing", summary["results"][0]["stdout_tail"])
         proof = summary["results"][0]["proof_contract"]
         self.assertFalse(proof["physical_speaker_capture"])
         self.assertFalse(proof["physical_microphone_capture"])
