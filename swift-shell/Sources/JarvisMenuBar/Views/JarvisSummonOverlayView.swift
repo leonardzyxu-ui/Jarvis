@@ -1,9 +1,8 @@
-import AppKit
 import SwiftUI
 
 struct JarvisSummonOverlayView: View {
     @ObservedObject var model: JarvisShellModel
-    static let panelSize = CGSize(width: 300, height: 82)
+    static let panelSize = CGSize(width: 286, height: 76)
     private let panelWidth: CGFloat = Self.panelSize.width
     private let panelHeight: CGFloat = Self.panelSize.height
 
@@ -18,7 +17,7 @@ struct JarvisSummonOverlayView: View {
 
             HStack(spacing: 11) {
                 JarvisSummonCore(phase: surface.phase)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 36, height: 36)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -64,7 +63,7 @@ struct JarvisSummonOverlayView: View {
                 }
             }
             .padding(.horizontal, 13)
-            .padding(.vertical, 11)
+            .padding(.vertical, 10)
         }
         .frame(width: panelWidth, height: panelHeight)
         .clipShape(Capsule(style: .continuous))
@@ -177,9 +176,8 @@ private struct JarvisGlassCapsule: View {
                     .fill(Color.white.opacity(0.001))
                     .glassEffect(.regular.tint(accent.opacity(0.18)), in: Capsule(style: .continuous))
             } else {
-                JarvisVisualEffectBackground()
-                    .background(Color.clear)
-                    .clipShape(Capsule(style: .continuous))
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
             }
 
             Capsule(style: .continuous)
@@ -200,34 +198,15 @@ private struct JarvisGlassCapsule: View {
                 .fill(
                     RadialGradient(
                         colors: [
-                            accent.opacity(0.20),
+                            accent.opacity(0.18),
                             Color.clear,
                         ],
                         center: .bottomTrailing,
-                        startRadius: 12,
-                        endRadius: 220
+                        startRadius: 10,
+                        endRadius: 190
                     )
                 )
         }
-    }
-}
-
-private struct JarvisVisualEffectBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .hudWindow
-        view.blendingMode = .behindWindow
-        view.state = .active
-        view.isEmphasized = true
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.clear.cgColor
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = .hudWindow
-        view.blendingMode = .behindWindow
-        view.state = .active
     }
 }
 

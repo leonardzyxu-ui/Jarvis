@@ -14,7 +14,7 @@ final class JarvisSummonWindowController {
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
         hostingController.view.layer?.isOpaque = false
-        hostingController.view.layer?.masksToBounds = false
+        hostingController.view.layer?.masksToBounds = true
         hostingController.view.layer?.cornerRadius = size.height / 2
         hostingController.view.layer?.cornerCurve = .continuous
         hostingController.view.layer?.contentsFormat = .RGBA8Uint
@@ -28,7 +28,7 @@ final class JarvisSummonWindowController {
         panel.contentView?.wantsLayer = true
         panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView?.layer?.isOpaque = false
-        panel.contentView?.layer?.masksToBounds = false
+        panel.contentView?.layer?.masksToBounds = true
         panel.contentView?.layer?.cornerRadius = size.height / 2
         panel.contentView?.layer?.cornerCurve = .continuous
         panel.backgroundColor = .clear
