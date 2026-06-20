@@ -120,8 +120,17 @@ Status legend:
    - 2026-06-20 proof update: the Teams target prompt no longer counts an
      honest wrong-subject result as a full pass. If Jarvis reads Teams but sees
      a non-Music assignment such as Geography, full-loop proof reports
-     `warning` with `completion_status: wrong_subject`, and the prompt matrix
-     renders the row as `incomplete`.
+   `warning` with `completion_status: wrong_subject`, and the prompt matrix
+   renders the row as `incomplete`.
+   - 2026-06-21 proof update: Teams visible-screen recovery now tries opening
+     a fresh Chrome window after a wrong-Space OCR mismatch. Focused tests pass
+     and duplicate Teams tabs from the live probe were cleaned up, but live
+     Teams remains incomplete: one run captured the real Teams window and found
+     All teams/Search/Assignments navigation targets, while another still fell
+     back to a wrong-Space crop. Chrome extension DOM reads also timed out on
+     Teams, so the next fix should avoid broad Teams DOM snapshots and either
+     use a narrower authenticated Chrome route or a more reliable native window
+     capture/navigation path.
 
 5. Partially fixed/risky: Jarvis must use model/tool choice, not fake keyword
    hacks, except where Leo explicitly allows a primitive tool.
