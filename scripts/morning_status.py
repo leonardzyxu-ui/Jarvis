@@ -348,6 +348,9 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
         parts = [f"Teams assignment is {completion}"]
         if proof.get("chrome_page_read_blocked"):
             parts.append("Chrome page-read is blocked")
+        deeplink_status = teams_deeplink_route_status_text(item)
+        if deeplink_status:
+            parts.append(deeplink_status)
         if proof.get("browser_focus_not_verified"):
             active_title = str(proof.get("browser_open_active_title") or "").strip()
             active_url = str(proof.get("browser_open_active_url") or "").strip()
@@ -410,6 +413,36 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
             parts.append("Assignments OCR target was found")
         return "; ".join(parts) + "."
     return ""
+
+
+def teams_deeplink_route_status_text(item: dict[str, Any]) -> str:
+    voice_report_raw = str(item.get("voice_loop_report") or "").strip()
+    if not voice_report_raw:
+        return ""
+    voice_report = Path(voice_report_raw)
+    if not voice_report.is_absolute():
+        voice_report = PROJECT_ROOT / voice_report
+    try:
+        data = json.loads(voice_report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    result = data.get("result") if isinstance(data.get("result"), dict) else {}
+    summary = result.get("command_response_result") if isinstance(result.get("command_response_result"), dict) else {}
+    route_status = str(summary.get("teams_deeplink_route_status") or "").strip()
+    if not route_status:
+        return ""
+    row_count = summary.get("teams_deeplink_row_count")
+    try:
+        row_count_text = f" across {int(row_count)} Teams history row(s)"
+    except (TypeError, ValueError):
+        row_count_text = ""
+    inspection_status = str(summary.get("teams_page_inspection_status") or "").strip()
+    inspection_text = f"; inspection lane {inspection_status}" if inspection_status else ""
+    if summary.get("uses_teams_deeplink_first"):
+        return f"Teams deep-link route is {route_status}{row_count_text}{inspection_text}"
+    if route_status == "no_prompt_match":
+        return f"Teams deep-link inventory had no prompt match{row_count_text}; Jarvis fell back instead of opening an unrelated class{inspection_text}"
+    return f"Teams deep-link route is {route_status}{row_count_text}{inspection_text}"
 
 
 def coordinate_space_status_text(payload: dict[str, Any]) -> str:

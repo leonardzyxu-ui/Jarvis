@@ -25384,6 +25384,24 @@ class RuntimeSurfaceTests(unittest.TestCase):
     def test_morning_status_pre_build_gate_teams_blocker_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             report_path = Path(temp_dir) / "summary.json"
+            voice_report_path = Path(temp_dir) / "voice-loop-report.json"
+            voice_report_path.write_text(
+                json.dumps(
+                    {
+                        "result": {
+                            "command_response_result": {
+                                "teams_deeplink_route_status": "no_prompt_match",
+                                "teams_deeplink_row_count": 3,
+                                "uses_teams_deeplink_first": False,
+                                "teams_page_inspection_status": "chrome_handoff_then_native_visible_read",
+                                "url": "https://teams.microsoft.com/private",
+                                "selected_teams_deeplink": {"class_id": "private-class"},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
             report_path.write_text(
                 json.dumps(
                     {
@@ -25391,6 +25409,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                             {
                                 "case_id": "teams_music_assignment_honesty",
                                 "status": "warning",
+                                "voice_loop_report": str(voice_report_path),
                                 "action_proof": {
                                     "completion_status": "wrong_subject",
                                     "chrome_page_read_blocked": True,
@@ -25443,6 +25462,11 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertIn("Teams assignment is wrong_subject", blocker)
         self.assertIn("Chrome page-read is blocked", blocker)
+        self.assertIn("Teams deep-link inventory had no prompt match across 3 Teams history row(s)", blocker)
+        self.assertIn("fell back instead of opening an unrelated class", blocker)
+        self.assertIn("inspection lane chrome_handoff_then_native_visible_read", blocker)
+        self.assertNotIn("private-class", blocker)
+        self.assertNotIn("teams.microsoft.com/private", blocker)
         self.assertIn("latest live navigation stopped as browser_back navigation_loop_prevented at (257.0, 322.5) in screenshot pixels", blocker)
         self.assertIn("next no-click sequence: requested class -> Assignments", blocker)
         self.assertIn("Music Class no-click navigation plan is ready at (214.0, 344.0) in screen points", blocker)
