@@ -61,6 +61,11 @@ def physical_audio_preflight() -> dict[str, Any]:
         }
     devices = audio_devices_from_system_profiler(payload)
     loopback_devices = [device for device in devices if is_loopback_candidate(device)]
+    virtual_duplex_devices = [
+        device
+        for device in devices
+        if is_virtual_duplex_candidate(device) and not is_loopback_candidate(device)
+    ]
     input_devices = [device for device in devices if device.get("input_channels", 0) > 0]
     output_devices = [device for device in devices if device.get("output_channels", 0) > 0]
     ready = bool(loopback_devices)
@@ -69,6 +74,7 @@ def physical_audio_preflight() -> dict[str, Any]:
         "status": "loopback_ready" if ready else "loopback_device_missing",
         "ready_for_physical_capture": ready,
         "loopback_devices": loopback_devices,
+        "virtual_duplex_devices": virtual_duplex_devices,
         "input_device_count": len(input_devices),
         "output_device_count": len(output_devices),
         "device_names": [str(device.get("name") or "") for device in devices],
@@ -120,6 +126,15 @@ def is_loopback_candidate(device: dict[str, Any]) -> bool:
     if not any(marker in haystack for marker in LOOPBACK_NAME_MARKERS):
         return False
     return bool(device.get("input_channels", 0) > 0 and device.get("output_channels", 0) > 0)
+
+
+def is_virtual_duplex_candidate(device: dict[str, Any]) -> bool:
+    transport = str(device.get("transport") or "").casefold()
+    return (
+        "virtual" in transport
+        and bool(device.get("input_channels", 0) > 0)
+        and bool(device.get("output_channels", 0) > 0)
+    )
 
 
 def main() -> int:

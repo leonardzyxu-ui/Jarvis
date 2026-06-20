@@ -717,7 +717,13 @@ def print_physical_capture_contract() -> None:
         suffix = f" via {names}" if names else ""
         print(f"Physical audio loop: loopback preflight ready{suffix}; physical capture harness still needs explicit implementation")
     else:
-        print(f"Physical audio loop: {status}; strict speaker/microphone capture proof fails closed without a loopback route")
+        candidates = [
+            str(item.get("name") or "").strip()
+            for item in preflight.get("virtual_duplex_devices", [])
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ]
+        candidate_text = f"; virtual duplex candidate(s): {', '.join(candidates)}" if candidates else ""
+        print(f"Physical audio loop: {status}; strict speaker/microphone capture proof fails closed without a loopback route{candidate_text}")
 
 
 def print_requirement_audit() -> None:

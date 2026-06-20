@@ -27326,12 +27326,14 @@ class RuntimeSurfaceTests(unittest.TestCase):
             "ok": True,
             "status": "loopback_device_missing",
             "ready_for_physical_capture": False,
+            "virtual_duplex_devices": [{"name": "Microsoft Teams Audio"}],
         }), patch("builtins.print") as print_mock:
             print_physical_capture_contract()
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("Physical audio loop: loopback_device_missing", printed)
         self.assertIn("fails closed", printed)
+        self.assertIn("virtual duplex candidate(s): Microsoft Teams Audio", printed)
 
     def test_physical_audio_preflight_detects_loopback_without_capture(self):
         payload = {
@@ -27372,6 +27374,13 @@ class RuntimeSurfaceTests(unittest.TestCase):
                     "_items": [
                         {"_name": "MacBook Pro Microphone", "coreaudio_device_input": 1},
                         {"_name": "MacBook Pro Speakers", "coreaudio_device_output": 2},
+                        {
+                            "_name": "Microsoft Teams Audio",
+                            "coreaudio_device_input": 1,
+                            "coreaudio_device_output": 1,
+                            "coreaudio_device_manufacturer": "Microsoft Corp.",
+                            "coreaudio_device_transport": "coreaudio_device_type_virtual",
+                        },
                     ],
                 }
             ]
@@ -27383,8 +27392,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "loopback_device_missing")
         self.assertFalse(result["ready_for_physical_capture"])
-        self.assertEqual(result["input_device_count"], 1)
-        self.assertEqual(result["output_device_count"], 1)
+        self.assertEqual(result["input_device_count"], 2)
+        self.assertEqual(result["output_device_count"], 2)
+        self.assertEqual(result["virtual_duplex_devices"][0]["name"], "Microsoft Teams Audio")
 
     def test_morning_status_requirement_audit_summary(self):
         summary = requirement_audit_summary(
