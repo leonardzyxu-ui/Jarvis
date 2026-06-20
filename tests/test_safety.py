@@ -1030,8 +1030,18 @@ class VerifySafeScriptTests(unittest.TestCase):
                 "browser_focus_not_verified": True,
                 "capture_status": "captured",
                 "capture_window_title": "Teams and Channels | General | Microsoft Teams",
+                "capture_method": "cg_window_including_window",
             }),
             "Visible-screen OCR captured a Teams-titled Chrome window, but the OCR text did not contain usable Teams assignment content.",
+        )
+        self.assertEqual(
+            full_loop_regression.teams_focus_warning({
+                "browser_focus_not_verified": True,
+                "capture_status": "captured",
+                "capture_window_title": "Teams and Channels | General | Microsoft Teams",
+                "capture_method": "chrome_applescript_display_crop",
+            }),
+            "Chrome reports a Teams window, but native OCR used a screen-bounds crop and saw a different visible Space instead of Teams content.",
         )
         self.assertEqual(
             full_loop_regression.teams_focus_warning({
@@ -1045,6 +1055,28 @@ class VerifySafeScriptTests(unittest.TestCase):
             full_loop_regression.teams_focus_warning({"browser_focus_not_verified": True}),
             "Chrome did not foreground the Teams tab before visible-screen OCR.",
         )
+
+    def test_full_loop_teams_honesty_records_capture_method(self):
+        proof = full_loop_regression.verify_teams_assignment_honesty({
+            "result": {
+                "visible_reply_preview": "Opening your Teams bookmark in signed-in Chrome now.",
+                "visible_screen_follow_up": {
+                    "status": "browser_focus_not_verified",
+                    "capture_status": "captured",
+                    "capture_window_title": "Teams and Channels | General | Microsoft Teams",
+                    "capture_diagnostics": {"capture_method": "chrome_applescript_display_crop"},
+                    "response_status": "checked",
+                    "visible_reply_preview": (
+                        "Teams was opened in Chrome, but the visible screen OCR did not contain Teams content. "
+                        "I have not inspected the newest Music assignment yet."
+                    ),
+                    "browser_page_follow_up": {"status": "browser_permission_blocked"},
+                },
+            }
+        })
+
+        self.assertTrue(proof["passed"])
+        self.assertEqual(proof["capture_method"], "chrome_applescript_display_crop")
 
     def test_full_loop_teams_login_gate_is_honest_not_inspected(self):
         proof = full_loop_regression.verify_teams_assignment_honesty({

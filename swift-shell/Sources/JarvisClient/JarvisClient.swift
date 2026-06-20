@@ -420,6 +420,7 @@ public struct VisibleOutlookTextDiagnostics: Sendable {
     public let captureScaleY: Double
     public let screenAccessPreflight: Bool
     public let captureError: String?
+    public let captureMethod: String
     public let appBundlePath: String
     public let appExecutablePath: String
     public let bundleIdentifier: String
@@ -441,6 +442,7 @@ public struct VisibleOutlookTextDiagnostics: Sendable {
         captureScaleY: Double = 0,
         screenAccessPreflight: Bool = false,
         captureError: String? = nil,
+        captureMethod: String = "",
         appBundlePath: String = "",
         appExecutablePath: String = "",
         bundleIdentifier: String = "",
@@ -461,6 +463,7 @@ public struct VisibleOutlookTextDiagnostics: Sendable {
         self.captureScaleY = captureScaleY
         self.screenAccessPreflight = screenAccessPreflight
         self.captureError = captureError
+        self.captureMethod = captureMethod
         self.appBundlePath = appBundlePath
         self.appExecutablePath = appExecutablePath
         self.bundleIdentifier = bundleIdentifier
@@ -486,6 +489,9 @@ public struct VisibleOutlookTextDiagnostics: Sendable {
         ]
         if let captureError, !captureError.isEmpty {
             value["capture_error"] = captureError
+        }
+        if !captureMethod.isEmpty {
+            value["capture_method"] = captureMethod
         }
         if !appBundlePath.isEmpty {
             value["app_bundle_path"] = appBundlePath

@@ -46,6 +46,7 @@ private struct NativeWindowCapture {
     let bounds: CGRect
     let ownerName: String
     let windowTitle: String
+    let captureMethod: String
 }
 
 public enum JarvisNativeOutlookReader {
@@ -83,6 +84,7 @@ public enum JarvisNativeOutlookReader {
                 captureScaleY: captureScale(imagePixels: image.height, screenPoints: windowCapture?.bounds.height),
                 screenAccessPreflight: hadAccessBeforeRequest,
                 captureError: nil,
+                captureMethod: windowCapture?.captureMethod ?? "main_display",
                 appBundlePath: Bundle.main.bundleURL.path,
                 appExecutablePath: Bundle.main.executableURL?.path ?? "",
                 bundleIdentifier: Bundle.main.bundleIdentifier ?? "",
@@ -160,6 +162,7 @@ public enum JarvisNativeOutlookReader {
                 captureScaleY: captureScale(imagePixels: image.height, screenPoints: windowCapture?.bounds.height),
                 screenAccessPreflight: hadAccessBeforeRequest,
                 captureError: nil,
+                captureMethod: windowCapture?.captureMethod ?? "main_display",
                 appBundlePath: Bundle.main.bundleURL.path,
                 appExecutablePath: Bundle.main.executableURL?.path ?? "",
                 bundleIdentifier: Bundle.main.bundleIdentifier ?? "",
@@ -295,12 +298,21 @@ public enum JarvisNativeOutlookReader {
         }
 
         let imageOptions: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
-        let image = CGWindowListCreateImage(
+        if let image = CGWindowListCreateImage(
             .null,
             .optionIncludingWindow,
             selected.windowID,
             imageOptions
-        ) ?? CGWindowListCreateImage(
+        ) {
+            return NativeWindowCapture(
+                image: image,
+                bounds: selected.bounds,
+                ownerName: selected.ownerName,
+                windowTitle: selected.windowTitle,
+                captureMethod: "cg_window_including_window"
+            )
+        }
+        let image = CGWindowListCreateImage(
             selected.bounds,
             [.optionOnScreenOnly],
             kCGNullWindowID,
@@ -316,7 +328,8 @@ public enum JarvisNativeOutlookReader {
             image: image,
             bounds: selected.bounds,
             ownerName: selected.ownerName,
-            windowTitle: selected.windowTitle
+            windowTitle: selected.windowTitle,
+            captureMethod: "cg_screen_bounds_fallback"
         )
     }
 
@@ -386,7 +399,8 @@ public enum JarvisNativeOutlookReader {
             image: croppedImage,
             bounds: bounds,
             ownerName: "Google Chrome",
-            windowTitle: title
+            windowTitle: title,
+            captureMethod: "chrome_applescript_display_crop"
         )
     }
 

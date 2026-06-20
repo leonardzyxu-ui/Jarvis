@@ -1354,10 +1354,16 @@ def teams_focus_warning(action_proof: dict[str, Any]) -> str:
     capture_status = str(action_proof.get("capture_status") or "").strip()
     capture_response_status = str(action_proof.get("capture_response_status") or "").strip()
     capture_window_title = str(action_proof.get("capture_window_title") or "").strip()
+    capture_method = str(action_proof.get("capture_method") or "").strip()
     if capture_status == "failed" or capture_response_status == "native_capture_failed":
         return "Expected Teams window was not capturable before visible-screen OCR."
     if capture_window_title:
         if "teams" in capture_window_title.casefold() or "microsoft" in capture_window_title.casefold():
+            if capture_method in {"chrome_applescript_display_crop", "cg_screen_bounds_fallback"}:
+                return (
+                    "Chrome reports a Teams window, but native OCR used a screen-bounds crop and saw a different "
+                    "visible Space instead of Teams content."
+                )
             return "Visible-screen OCR captured a Teams-titled Chrome window, but the OCR text did not contain usable Teams assignment content."
         return f"OCR captured a different Chrome window before Teams inspection: {capture_window_title}."
     return "Chrome did not foreground the Teams tab before visible-screen OCR."
@@ -1513,6 +1519,14 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
         "browser_open_verification_source": str(follow_up.get("browser_open_verification_source") or ""),
         "capture_status": str(follow_up.get("capture_status") or ""),
         "capture_window_title": str(follow_up.get("capture_window_title") or ""),
+        "capture_method": str(
+            (
+                follow_up.get("capture_diagnostics")
+                if isinstance(follow_up.get("capture_diagnostics"), dict)
+                else {}
+            ).get("capture_method")
+            or ""
+        ),
         "capture_response_status": str(follow_up.get("response_status") or ""),
         "assignments_target_found": bool(assignments_target.get("found")),
         "assignments_target": assignments_target,
