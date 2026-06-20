@@ -385,6 +385,9 @@ def pre_build_gate_cleanup_warning(data: dict[str, Any]) -> str:
         parts = [error]
         if warmup:
             parts.append(f"warm-up {warmup.get('status') or 'unknown'}")
+            warmup_attempts = warmup.get("attempts") if isinstance(warmup.get("attempts"), list) else []
+            if warmup_attempts:
+                parts.append(f"{len(warmup_attempts)} warm-up attempt(s)")
         parts.append(f"{len(attempts)} cleanup attempt(s)")
         return "; ".join(parts) + "."
     return ""

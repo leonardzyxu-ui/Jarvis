@@ -1321,7 +1321,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         with patch(
             "scripts.cleanup_chrome_test_tabs.subprocess.run",
             side_effect=subprocess.TimeoutExpired(["osascript"], timeout=30),
-        ) as run_mock:
+        ) as run_mock, patch("scripts.cleanup_chrome_test_tabs.time.sleep") as sleep_mock:
             result = cleanup_chrome_test_tabs.cleanup_chrome_test_tabs(execute=True)
 
         self.assertFalse(result["ok"])
@@ -1330,9 +1330,41 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(result["target_count"], 0)
         self.assertIn("warm-up timed out", result["error"])
         self.assertEqual(result["timeout_seconds"], cleanup_chrome_test_tabs.CHROME_CLEANUP_WARMUP_TIMEOUT_SECONDS)
-        self.assertEqual(run_mock.call_count, 1)
+        self.assertEqual(run_mock.call_count, cleanup_chrome_test_tabs.CHROME_CLEANUP_WARMUP_ATTEMPTS)
+        sleep_mock.assert_called_once_with(cleanup_chrome_test_tabs.CHROME_CLEANUP_WARMUP_RETRY_DELAY_SECONDS)
         self.assertEqual(result["warmup"]["status"], "timeout")
+        self.assertEqual(len(result["warmup"]["attempts"]), cleanup_chrome_test_tabs.CHROME_CLEANUP_WARMUP_ATTEMPTS)
         self.assertEqual(result["attempts"], [])
+
+    def test_cleanup_chrome_test_tabs_retries_warmup_after_timeout(self):
+        warmup_completed = subprocess.CompletedProcess(
+            args=["osascript"],
+            returncode=0,
+            stdout="1\n",
+            stderr="",
+        )
+        cleanup_completed = subprocess.CompletedProcess(
+            args=["osascript"],
+            returncode=0,
+            stdout="[]",
+            stderr="",
+        )
+        with patch(
+            "scripts.cleanup_chrome_test_tabs.subprocess.run",
+            side_effect=[
+                subprocess.TimeoutExpired(["osascript"], timeout=8),
+                warmup_completed,
+                cleanup_completed,
+            ],
+        ) as run_mock, patch("scripts.cleanup_chrome_test_tabs.time.sleep") as sleep_mock:
+            result = cleanup_chrome_test_tabs.cleanup_chrome_test_tabs(execute=True)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["warmup"]["status"], "completed")
+        self.assertEqual(result["warmup"]["attempt"], 2)
+        self.assertEqual([attempt["status"] for attempt in result["warmup"]["attempts"]], ["timeout", "completed"])
+        self.assertEqual(run_mock.call_count, 3)
+        sleep_mock.assert_called_once_with(cleanup_chrome_test_tabs.CHROME_CLEANUP_WARMUP_RETRY_DELAY_SECONDS)
 
     def test_cleanup_chrome_test_tabs_scan_timeout_after_warmup_is_reported_cleanly(self):
         warmup_completed = subprocess.CompletedProcess(
@@ -1347,7 +1379,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 subprocess.TimeoutExpired(["osascript"], timeout=8)
                 for _ in range(cleanup_chrome_test_tabs.CHROME_CLEANUP_ATTEMPTS)
             ]],
-        ) as run_mock:
+        ) as run_mock, patch("scripts.cleanup_chrome_test_tabs.time.sleep"):
             result = cleanup_chrome_test_tabs.cleanup_chrome_test_tabs(execute=True)
 
         self.assertFalse(result["ok"])
@@ -1379,7 +1411,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         with patch(
             "scripts.cleanup_chrome_test_tabs.subprocess.run",
             side_effect=[warmup_completed, subprocess.TimeoutExpired(["osascript"], timeout=8), completed],
-        ) as run_mock:
+        ) as run_mock, patch("scripts.cleanup_chrome_test_tabs.time.sleep"):
             result = cleanup_chrome_test_tabs.cleanup_chrome_test_tabs(execute=True)
 
         self.assertTrue(result["ok"])
@@ -24631,7 +24663,14 @@ class RuntimeSurfaceTests(unittest.TestCase):
                         "stdout_tail": json.dumps(
                             {
                                 "error": "Chrome cleanup warm-up timed out after 8s while reading Chrome windows.",
-                                "warmup": {"status": "timeout", "timeout_seconds": 8},
+                                "warmup": {
+                                    "status": "timeout",
+                                    "timeout_seconds": 8,
+                                    "attempts": [
+                                        {"attempt": 1, "status": "timeout"},
+                                        {"attempt": 2, "status": "timeout"},
+                                    ],
+                                },
                                 "attempts": [],
                             }
                         ),
@@ -24642,6 +24681,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertIn("warm-up timed out", warning)
         self.assertIn("warm-up timeout", warning)
+        self.assertIn("2 warm-up attempt(s)", warning)
         self.assertIn("0 cleanup attempt(s)", warning)
 
     def test_render_overnight_status_latest_latency_smoke_accepts_checked_success(self):

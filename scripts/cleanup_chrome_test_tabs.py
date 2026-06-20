@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import time
 from typing import Any
 
 
@@ -23,25 +24,40 @@ JARVIS_FILE_MARKERS = (
 CHROME_CLEANUP_TIMEOUT_SECONDS = 8
 CHROME_CLEANUP_ATTEMPTS = 2
 CHROME_CLEANUP_WARMUP_TIMEOUT_SECONDS = 8
+CHROME_CLEANUP_WARMUP_ATTEMPTS = 2
+CHROME_CLEANUP_WARMUP_RETRY_DELAY_SECONDS = 1.0
 
 
 def _chrome_warmup() -> dict[str, Any]:
     script = 'Application("Google Chrome").windows.length'
-    try:
-        completed = subprocess.run(
-            ["osascript", "-l", "JavaScript", "-e", script],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=CHROME_CLEANUP_WARMUP_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as error:
-        return {"status": "timeout", "timeout_seconds": error.timeout}
+    attempts: list[dict[str, Any]] = []
+    for attempt in range(1, CHROME_CLEANUP_WARMUP_ATTEMPTS + 1):
+        if attempt > 1:
+            time.sleep(CHROME_CLEANUP_WARMUP_RETRY_DELAY_SECONDS)
+        try:
+            completed = subprocess.run(
+                ["osascript", "-l", "JavaScript", "-e", script],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=CHROME_CLEANUP_WARMUP_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as error:
+            attempts.append({"attempt": attempt, "status": "timeout", "timeout_seconds": error.timeout})
+            continue
+        result = {
+            "attempt": attempt,
+            "status": "completed" if completed.returncode == 0 else "failed",
+            "returncode": completed.returncode,
+            "stdout": completed.stdout.strip(),
+            "stderr": completed.stderr.strip(),
+        }
+        attempts.append(result)
+        return {**result, "attempts": attempts}
     return {
-        "status": "completed" if completed.returncode == 0 else "failed",
-        "returncode": completed.returncode,
-        "stdout": completed.stdout.strip(),
-        "stderr": completed.stderr.strip(),
+        "status": "timeout",
+        "timeout_seconds": CHROME_CLEANUP_WARMUP_TIMEOUT_SECONDS,
+        "attempts": attempts,
     }
 
 
@@ -105,8 +121,8 @@ def cleanup_chrome_test_tabs(*, execute: bool) -> dict[str, Any]:
             "attempts": [],
             "warmup": warmup,
             "error": (
-                f"Chrome cleanup warm-up timed out after {CHROME_CLEANUP_WARMUP_TIMEOUT_SECONDS:g}s "
-                "while reading Chrome windows."
+                f"Chrome cleanup warm-up timed out after {CHROME_CLEANUP_WARMUP_ATTEMPTS} "
+                f"attempts of {CHROME_CLEANUP_WARMUP_TIMEOUT_SECONDS:g}s while reading Chrome windows."
             ),
             "timeout_seconds": CHROME_CLEANUP_WARMUP_TIMEOUT_SECONDS,
         }
