@@ -288,13 +288,14 @@ def apply_latency_budgets(results: list[dict[str, Any]], cases: list[dict[str, A
             continue
         try:
             budget = float(case.get("latency_budget_seconds") or 0.0)
-            elapsed = float(result.get("total_seconds") or 0.0)
+            elapsed = float(result.get("latency_measure_seconds") or result.get("total_seconds") or 0.0)
         except (TypeError, ValueError):
             budget = 0.0
             elapsed = 0.0
         if budget <= 0.0:
             continue
         result["latency_budget_seconds"] = round(budget, 3)
+        result["latency_measure_seconds"] = round(elapsed, 3)
         result["latency_budget_status"] = "passed" if elapsed <= budget else "failed"
         if elapsed <= budget:
             continue
@@ -305,6 +306,43 @@ def apply_latency_budgets(results: list[dict[str, Any]], cases: list[dict[str, A
             result["warnings"] = warnings
         warnings.append(warning)
         result["status"] = "failed"
+
+
+def voice_loop_user_latency_seconds(voice_report: dict[str, Any]) -> float | None:
+    """Return the user-facing voice loop time, excluding offline proof generation."""
+    result = voice_report.get("result") if isinstance(voice_report.get("result"), dict) else {}
+    timings = result.get("stage_timings")
+    if not isinstance(timings, list):
+        return _optional_float(result.get("total_seconds"))
+    included_stages = {
+        "command_stt",
+        "wake_route",
+        "jarvis_stream",
+        "native_visible_screen_followup",
+        "live_speech_runtime",
+    }
+    measured = 0.0
+    found = False
+    for item in timings:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("stage") or "") not in included_stages:
+            continue
+        duration = _optional_float(item.get("duration_seconds"))
+        if duration is None:
+            continue
+        measured += max(0.0, duration)
+        found = True
+    if found:
+        return round(measured, 3)
+    return _optional_float(result.get("total_seconds"))
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def run_music_waving_case(
@@ -863,6 +901,8 @@ def run_magic_keyboard_case(
         "action_proof": action_proof,
         "commerce_proof": commerce_proof,
         "cleanup": {"required": False, "reason": "Public web price check does not open browser tabs."},
+        "latency_measure_seconds": voice_loop_user_latency_seconds(voice_report),
+        "latency_measure_source": "voice_loop_user_stages_excluding_synthetic_tts_and_offline_speech_audit",
         "total_seconds": round(time.monotonic() - started, 3),
     }
 

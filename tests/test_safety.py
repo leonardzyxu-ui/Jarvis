@@ -562,6 +562,38 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(results[0]["latency_budget_seconds"], 30.0)
         self.assertIn("Case exceeded latency budget", results[0]["warnings"][0])
 
+    def test_full_loop_latency_budget_uses_user_measure_not_offline_audit_total(self):
+        results = [{
+            "case_id": "magic_keyboard_yuan",
+            "status": "passed",
+            "total_seconds": 79.25,
+            "latency_measure_seconds": 13.25,
+        }]
+
+        full_loop_regression.apply_latency_budgets(results, [full_loop_regression.MAGIC_KEYBOARD_YUAN_CASE])
+
+        self.assertEqual(results[0]["status"], "passed")
+        self.assertEqual(results[0]["latency_budget_status"], "passed")
+        self.assertEqual(results[0]["latency_measure_seconds"], 13.25)
+
+    def test_full_loop_voice_loop_user_latency_excludes_proof_generation(self):
+        voice_report = {
+            "result": {
+                "total_seconds": 79.213,
+                "stage_timings": [
+                    {"stage": "command_tts", "duration_seconds": 1.715},
+                    {"stage": "command_stt", "duration_seconds": 1.344},
+                    {"stage": "wake_route", "duration_seconds": 0.0},
+                    {"stage": "jarvis_stream", "duration_seconds": 11.855},
+                    {"stage": "expectations", "duration_seconds": 0.0},
+                    {"stage": "live_speech_runtime", "duration_seconds": 0.0},
+                    {"stage": "speech_audit", "duration_seconds": 64.299},
+                ],
+            },
+        }
+
+        self.assertEqual(full_loop_regression.voice_loop_user_latency_seconds(voice_report), 13.199)
+
     def test_full_loop_latency_budget_keeps_fast_case_passed(self):
         results = [{"case_id": "music_play_waving_through_window", "status": "passed", "total_seconds": 11.25}]
 
