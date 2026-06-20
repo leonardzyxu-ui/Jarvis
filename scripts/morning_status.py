@@ -106,6 +106,7 @@ def main() -> int:
     print_report_surfaces(base_url)
     print_latest_verification()
     print_latest_pre_build_gate()
+    print_latest_teams_live_navigation_diagnostic()
     print_latest_context_smoke()
     print_latest_wake_threshold()
     print_physical_capture_contract()
@@ -323,6 +324,17 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
             active_url = str(proof.get("browser_open_active_url") or "").strip()
             detail = active_title or active_url
             parts.append(f"Chrome did not foreground Teams before OCR{f' (active: {detail})' if detail else ''}")
+        execution = proof.get("visible_navigation_execution")
+        if isinstance(execution, dict) and execution:
+            status = str(execution.get("status") or "unknown").strip() or "unknown"
+            point = execution.get("point") if isinstance(execution.get("point"), dict) else {}
+            point_text = f" at ({point.get('x')}, {point.get('y')})" if point else ""
+            if execution.get("executed"):
+                parts.append(f"latest live navigation step {status}{point_text}")
+            elif execution.get("attempted"):
+                parts.append(f"latest live navigation step failed as {status}{point_text}")
+            else:
+                parts.append(f"latest live navigation stopped as {status}{point_text}")
         sequence = proof.get("visible_navigation_sequence")
         if isinstance(sequence, list) and sequence:
             labels = [
@@ -396,6 +408,47 @@ def pre_build_gate_cleanup_warning(data: dict[str, Any]) -> str:
         parts.append(f"{len(attempts)} cleanup attempt(s)")
         return "; ".join(parts) + "."
     return ""
+
+
+def latest_teams_live_navigation_diagnostic() -> str:
+    full_loop_root = PROJECT_ROOT / "runtime" / "full_loop_regression"
+    reports = sorted(
+        (path for path in full_loop_root.glob("20*/summary.json") if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for report in reports:
+        try:
+            data = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for item in data.get("results", []) if isinstance(data.get("results"), list) else []:
+            if not isinstance(item, dict) or item.get("case_id") != "teams_music_assignment_honesty":
+                continue
+            proof = item.get("action_proof") if isinstance(item.get("action_proof"), dict) else {}
+            execution = proof.get("visible_navigation_execution")
+            steps = proof.get("visible_navigation_execution_steps")
+            if not isinstance(execution, dict) or not execution:
+                continue
+            status = str(execution.get("status") or "unknown").strip() or "unknown"
+            point = execution.get("point") if isinstance(execution.get("point"), dict) else {}
+            point_text = f" at ({point.get('x')}, {point.get('y')})" if point else ""
+            if execution.get("executed"):
+                action = f"executed {status}{point_text}"
+            elif execution.get("attempted"):
+                action = f"attempted and got {status}{point_text}"
+            else:
+                action = f"stopped as {status}{point_text}"
+            step_count = len(steps) if isinstance(steps, list) else 0
+            age = format_uptime(time_since(report.stat().st_mtime))
+            return f"{action}; {step_count} step(s); {report.relative_to(PROJECT_ROOT)}, age {age}"
+    return ""
+
+
+def print_latest_teams_live_navigation_diagnostic() -> None:
+    diagnostic = latest_teams_live_navigation_diagnostic()
+    if diagnostic:
+        print(f"Latest Teams live navigation: {diagnostic}")
 
 
 def pre_build_gate_full_loop_report_path(data: dict[str, Any]) -> Path | None:

@@ -183,6 +183,7 @@ from scripts.morning_status import (
     display_path,
     format_uptime,
     latency_smoke_summary,
+    latest_teams_live_navigation_diagnostic,
     normalize_base_url,
     pre_build_gate_cleanup_warning,
     pre_build_gate_teams_blocker,
@@ -24945,6 +24946,12 @@ class RuntimeSurfaceTests(unittest.TestCase):
                                     "assignments_navigation_plan": {
                                         "point": {"x": 68.13, "y": 577.17}
                                     },
+                                    "visible_navigation_execution": {
+                                        "attempted": False,
+                                        "executed": False,
+                                        "status": "navigation_loop_prevented",
+                                        "point": {"x": 257.0, "y": 322.5},
+                                    },
                                     "visible_navigation_sequence": [
                                         {"key": "requested_class", "label": "requested class"},
                                         {"key": "assignments", "label": "Assignments"},
@@ -24971,6 +24978,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         self.assertIn("Teams assignment is wrong_subject", blocker)
         self.assertIn("Chrome page-read is blocked", blocker)
+        self.assertIn("latest live navigation stopped as navigation_loop_prevented at (257.0, 322.5)", blocker)
         self.assertIn("next no-click sequence: requested class -> Assignments", blocker)
         self.assertIn("Music Class no-click navigation plan is ready at (214.0, 344.0)", blocker)
         self.assertIn("All teams no-click navigation plan is ready at (257.0, 322.5)", blocker)
@@ -25014,6 +25022,43 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Teams assignment is not_inspected", blocker)
         self.assertIn("Chrome did not foreground Teams before OCR", blocker)
         self.assertIn("active: Codex", blocker)
+
+    def test_morning_status_latest_teams_live_navigation_diagnostic(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_dir = root / "runtime" / "full_loop_regression" / "20260620-095114"
+            report_dir.mkdir(parents=True)
+            (report_dir / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "case_id": "teams_music_assignment_honesty",
+                                "status": "warning",
+                                "action_proof": {
+                                    "visible_navigation_execution": {
+                                        "attempted": False,
+                                        "executed": False,
+                                        "status": "navigation_loop_prevented",
+                                        "point": {"x": 257.13, "y": 323.04},
+                                    },
+                                    "visible_navigation_execution_steps": [
+                                        {"attempted": True, "executed": True, "status": "clicked"}
+                                    ],
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("scripts.morning_status.PROJECT_ROOT", root):
+                diagnostic = latest_teams_live_navigation_diagnostic()
+
+        self.assertIn("stopped as navigation_loop_prevented at (257.13, 323.04)", diagnostic)
+        self.assertIn("1 step(s)", diagnostic)
+        self.assertIn("runtime/full_loop_regression/20260620-095114/summary.json", diagnostic)
 
     def test_morning_status_pre_build_gate_cleanup_warning_summary(self):
         warning = pre_build_gate_cleanup_warning(
