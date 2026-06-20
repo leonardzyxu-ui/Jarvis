@@ -349,6 +349,8 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
         proof = item.get("action_proof") if isinstance(item.get("action_proof"), dict) else {}
         completion = str(proof.get("completion_status") or item.get("status") or "unknown")
         parts = [f"Teams assignment is {completion}"]
+        if proof.get("honest_login_gate") or proof.get("browser_open_login_gate"):
+            parts.append("Microsoft sign-in gate is visible in Chrome")
         if proof.get("chrome_page_read_blocked"):
             parts.append("Chrome page-read is blocked")
         deeplink_status = teams_deeplink_route_status_text(item)

@@ -1263,6 +1263,7 @@ def run_teams_assignment_case(
             warnings.append(
                 "Teams workflow was honest but incomplete: Jarvis did not inspect the requested Music assignment."
             )
+            warnings.extend(teams_incomplete_detail_warnings(action_proof))
             if action_proof.get("chrome_page_read_blocked"):
                 warnings.append("Chrome page-read was blocked before the visible-screen fallback.")
             if action_proof.get("browser_focus_not_verified"):
@@ -1302,6 +1303,13 @@ def run_teams_assignment_case(
         cleanup.update(clean_new_chrome_tabs(before_tabs, after_tabs, hosts=("teams.microsoft.com", "teams.cloud.microsoft")))
         write_json(run_dir / "chrome-tabs-after.json", {"tabs": after_tabs})
         write_json(run_dir / "cleanup.json", cleanup)
+
+
+def teams_incomplete_detail_warnings(action_proof: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    if action_proof.get("honest_login_gate") or action_proof.get("browser_open_login_gate"):
+        warnings.append("Teams is behind a Microsoft sign-in gate in Chrome.")
+    return warnings
 
 
 def teams_focus_warning(action_proof: dict[str, Any]) -> str:

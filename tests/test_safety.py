@@ -1041,6 +1041,14 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(proof["capability_complete"])
         self.assertEqual(proof["completion_status"], "not_inspected")
 
+    def test_full_loop_teams_incomplete_warnings_surface_login_gate(self):
+        warnings = full_loop_regression.teams_incomplete_detail_warnings({
+            "honest_login_gate": True,
+            "browser_open_login_gate": True,
+        })
+
+        self.assertIn("Teams is behind a Microsoft sign-in gate in Chrome.", warnings)
+
     def test_full_loop_teams_unreadable_page_is_honest_permission_block(self):
         proof = full_loop_regression.verify_teams_assignment_honesty({
             "result": {
@@ -26822,6 +26830,45 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Teams assignment is not_inspected", blocker)
         self.assertIn("Chrome did not foreground Teams before OCR", blocker)
         self.assertIn("active: Codex", blocker)
+
+    def test_morning_status_pre_build_gate_teams_blocker_reports_login_gate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "summary.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "case_id": "teams_music_assignment_honesty",
+                                "status": "warning",
+                                "action_proof": {
+                                    "completion_status": "not_inspected",
+                                    "honest_login_gate": True,
+                                    "browser_open_login_gate": True,
+                                    "browser_open_active_title": "Sign in to your account",
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            blocker = pre_build_gate_teams_blocker(
+                {
+                    "results": [
+                        {
+                            "id": "full_loop_regression",
+                            "ok": False,
+                            "stdout_tail": f"Report: {report_path}\nteams_music_assignment_honesty: warning",
+                        }
+                    ]
+                }
+            )
+
+        self.assertIn("Teams assignment is not_inspected", blocker)
+        self.assertIn("Microsoft sign-in gate is visible in Chrome", blocker)
+        self.assertNotIn("Expected Teams window was not capturable", blocker)
 
     def test_morning_status_pre_build_gate_teams_blocker_reports_required_window_capture_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
