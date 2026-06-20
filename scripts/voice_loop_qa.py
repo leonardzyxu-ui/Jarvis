@@ -2109,6 +2109,25 @@ def run_native_visible_screen_follow_up(
                     ),
                     "duration_seconds": round(time.monotonic() - started, 3),
                 }
+            if (
+                browser_open.get("browser_open_target_host_verified") is False
+                and browser_open.get("browser_open_verification_source") != "active_title_url"
+            ):
+                return {
+                    **result,
+                    **attempt_result,
+                    "status": "browser_focus_not_verified",
+                    "used": False,
+                    "attempts": attempt,
+                    "browser_open_active_title": browser_open.get("browser_open_active_title"),
+                    "browser_open_active_url": browser_open.get("browser_open_active_url"),
+                    "browser_open_verification_url": browser_open.get("browser_open_verification_url"),
+                    "browser_open_verification_source": browser_open.get("browser_open_verification_source"),
+                    "visible_reply_preview": (
+                        "Chrome did not foreground Teams, so I have not inspected the newest Music assignment yet."
+                    ),
+                    "duration_seconds": round(time.monotonic() - started, 3),
+                }
         if visible_screen_attempt_mismatches_expected_teams(
             command_text=command_text,
             browser_open=browser_open,
@@ -3038,13 +3057,19 @@ tell application "Google Chrome"
     end if
     set frontURL to ""
     set frontTitle to ""
-    repeat 60 times
+    repeat 25 times
         delay 0.2
         try
             set frontURL to URL of active tab of front window
             set frontTitle to title of active tab of front window
         end try
-        if frontURL is not "" then
+        if frontURL contains targetHost then
+            exit repeat
+        end if
+        if frontTitle contains targetHost then
+            exit repeat
+        end if
+        if frontURL contains "login.microsoftonline.com" or frontURL contains "login.live.com" then
             exit repeat
         end if
     end repeat
