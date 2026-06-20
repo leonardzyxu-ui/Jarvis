@@ -245,9 +245,10 @@ def print_latest_pre_build_gate() -> None:
     report_path = data.get("report_path") or str(latest)
     report_display = display_path(str(report_path))
     step_suffix = f", steps {', '.join(summary['step_ids'])}" if summary["step_ids"] else ""
+    stale_suffix = pre_build_gate_stale_suffix(data)
     print(
         f"Latest pre-build gate: {summary['status']}, {summary['passed']}/{summary['total']} passed "
-        f"{summary['detail']}({report_display}, age {age}{step_suffix})"
+        f"{summary['detail']}({report_display}, age {age}{step_suffix}{stale_suffix})"
     )
     teams_blocker = pre_build_gate_teams_blocker(data)
     if teams_blocker:
@@ -296,6 +297,34 @@ def pre_build_gate_summary(data: dict[str, Any]) -> dict[str, Any]:
         "detail": detail,
         "step_ids": step_ids,
     }
+
+
+def pre_build_gate_stale_suffix(data: dict[str, Any]) -> str:
+    source_commit = str(data.get("source_commit") or "").strip()
+    head_commit = git_commit_short()
+    if source_commit and head_commit and source_commit != head_commit:
+        return f", stale for HEAD {head_commit} (gate ran on {source_commit})"
+    if not source_commit:
+        return ", source commit unknown"
+    return ""
+
+
+def git_commit_short() -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=PROJECT_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
 
 
 def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:

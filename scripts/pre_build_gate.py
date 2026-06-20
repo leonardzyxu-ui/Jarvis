@@ -358,6 +358,7 @@ def make_summary(
     return {
         "schema": "jarvis.pre_build_gate.v1",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "source_commit": git_commit_short(),
         "base_url": base_url,
         "run_dir": str(run_dir),
         "report_path": str(run_dir / "summary.json"),
@@ -380,6 +381,24 @@ def make_summary(
         "require_physical_capture": bool(require_physical_capture),
         "results": results,
     }
+
+
+def git_commit_short() -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=PROJECT_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
 
 
 def write_summary(summary: dict[str, Any], run_dir: Path, output_dir: Path, *, update_latest: bool = True) -> None:

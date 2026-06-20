@@ -186,6 +186,7 @@ from scripts.morning_status import (
     latest_teams_live_navigation_diagnostic,
     normalize_base_url,
     pre_build_gate_cleanup_warning,
+    pre_build_gate_stale_suffix,
     pre_build_gate_teams_blocker,
     pre_build_gate_summary,
     print_report_surfaces,
@@ -1112,6 +1113,22 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(latest["status"], "previous")
         self.assertEqual(latest_md, "previous")
         self.assertTrue(timestamped_report_exists)
+
+    def test_pre_build_gate_summary_records_source_commit(self):
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch("scripts.pre_build_gate.git_commit_short", return_value="abc1234"):
+            summary = pre_build_gate.make_summary(
+                base_url="http://127.0.0.1:8765",
+                run_dir=Path(tmpdir),
+                results=[],
+                started=time.monotonic(),
+                exercise_live_speech=False,
+                require_live_speech=False,
+                require_physical_capture=False,
+                complete=True,
+            )
+
+        self.assertEqual(summary["source_commit"], "abc1234")
 
     def test_pre_build_gate_uses_step_specific_timeout_when_present(self):
         calls = []
@@ -24980,6 +24997,14 @@ class RuntimeSurfaceTests(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("Latest pre-build gate: failed, 0/2 passed (fatal 1, warnings 1)", printed)
         self.assertIn("steps full_loop_regression, cleanup_chrome_test_tabs", printed)
+
+    def test_morning_status_marks_pre_build_gate_stale_for_head(self):
+        with patch("scripts.morning_status.git_commit_short", return_value="newhead"):
+            suffix = pre_build_gate_stale_suffix({"source_commit": "oldgate"})
+
+        self.assertIn("stale for HEAD newhead", suffix)
+        self.assertIn("gate ran on oldgate", suffix)
+        self.assertEqual(pre_build_gate_stale_suffix({"source_commit": ""}), ", source commit unknown")
 
     def test_morning_status_pre_build_gate_teams_blocker_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:
