@@ -2720,6 +2720,38 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertNotIn("Private subject", str(summary))
         self.assertNotIn("Private body", str(summary))
 
+    def test_voice_loop_qa_summarizes_teams_route_without_private_link(self):
+        command_response = {
+            "tool": "teams.assignment",
+            "reply": "Opening the best Teams class or assignment link I found in signed-in Chrome now.",
+            "result": {
+                "status": "planned",
+                "browser_target_available": True,
+                "read_private_browser_metadata": True,
+                "uses_teams_deeplink_first": True,
+                "uses_imported_bookmark_first": False,
+                "teams_deeplink_route_status": "selected",
+                "teams_deeplink_row_count": 2,
+                "automatic_teams_page_inspection_supported": True,
+                "teams_page_inspection_status": "chrome_deeplink_then_native_visible_read",
+                "recommended_next_safe_tool": "screen.visible_text",
+                "url": "https://teams.microsoft.com/l/entity/private",
+                "selected_teams_deeplink": {"class_id": "private-class"},
+            },
+        }
+
+        summary = voice_loop_qa.command_response_result_summary(command_response)
+
+        self.assertTrue(summary["uses_teams_deeplink_first"])
+        self.assertFalse(summary["uses_imported_bookmark_first"])
+        self.assertEqual(summary["teams_deeplink_route_status"], "selected")
+        self.assertEqual(summary["teams_deeplink_row_count"], 2)
+        self.assertEqual(summary["teams_page_inspection_status"], "chrome_deeplink_then_native_visible_read")
+        self.assertEqual(summary["recommended_next_safe_tool"], "screen.visible_text")
+        self.assertNotIn("url", summary)
+        self.assertNotIn("selected_teams_deeplink", summary)
+        self.assertNotIn("private-class", str(summary))
+
     def test_voice_loop_qa_summarizes_commerce_result_for_full_loop_proof(self):
         command_response = {
             "tool": "commerce.price_convert",

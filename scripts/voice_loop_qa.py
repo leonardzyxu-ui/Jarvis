@@ -1314,6 +1314,20 @@ def command_response_result_summary(command_response: dict[str, Any]) -> dict[st
                 "reply": result.get("reply"),
             }
         )
+    elif tool == "teams.assignment":
+        summary.update(
+            {
+                "browser_target_available": bool(result.get("browser_target_available")),
+                "read_private_browser_metadata": bool(result.get("read_private_browser_metadata")),
+                "uses_teams_deeplink_first": bool(result.get("uses_teams_deeplink_first")),
+                "uses_imported_bookmark_first": bool(result.get("uses_imported_bookmark_first")),
+                "teams_deeplink_route_status": result.get("teams_deeplink_route_status"),
+                "teams_deeplink_row_count": result.get("teams_deeplink_row_count"),
+                "automatic_teams_page_inspection_supported": bool(result.get("automatic_teams_page_inspection_supported")),
+                "teams_page_inspection_status": result.get("teams_page_inspection_status"),
+                "recommended_next_safe_tool": result.get("recommended_next_safe_tool"),
+            }
+        )
     return summary
 
 
