@@ -97,6 +97,11 @@ def run_gate(
     base_url = normalize_base_url(base_url)
     run_dir = allocate_run_dir(output_dir)
     started = time.monotonic()
+    update_latest = should_update_latest_gate(
+        require_live_speech=require_live_speech,
+        exercise_live_speech=exercise_live_speech,
+        require_physical_capture=require_physical_capture,
+    )
     steps = build_steps(
         base_url=base_url,
         exercise_live_speech=exercise_live_speech,
@@ -127,6 +132,7 @@ def run_gate(
             ),
             run_dir,
             output_dir,
+            update_latest=update_latest,
         )
         if not result["ok"] and not step.get("always_run_next"):
             break
@@ -148,8 +154,21 @@ def run_gate(
         require_physical_capture=require_physical_capture,
         complete=True,
     )
-    write_summary(summary, run_dir, output_dir)
+    write_summary(summary, run_dir, output_dir, update_latest=update_latest)
     return summary
+
+
+def should_update_latest_gate(
+    *,
+    require_live_speech: bool,
+    exercise_live_speech: bool,
+    require_physical_capture: bool,
+) -> bool:
+    if require_physical_capture:
+        return False
+    if require_live_speech and not exercise_live_speech:
+        return False
+    return True
 
 
 def build_steps(
@@ -350,6 +369,11 @@ def make_summary(
         "warnings": warnings,
         "total": len(results),
         "complete": complete,
+        "canonical_latest": should_update_latest_gate(
+            require_live_speech=require_live_speech,
+            exercise_live_speech=exercise_live_speech,
+            require_physical_capture=require_physical_capture,
+        ),
         "duration_seconds": round(time.monotonic() - started, 3),
         "speech_proof_contract": speech_proof_contract(exercise_live_speech=exercise_live_speech),
         "require_live_speech": bool(require_live_speech),
@@ -358,14 +382,15 @@ def make_summary(
     }
 
 
-def write_summary(summary: dict[str, Any], run_dir: Path, output_dir: Path) -> None:
+def write_summary(summary: dict[str, Any], run_dir: Path, output_dir: Path, *, update_latest: bool = True) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(run_dir / "summary.json", summary)
-    write_json(output_dir / "latest.json", summary)
     markdown = render_markdown(summary)
     (run_dir / "summary.md").write_text(markdown, encoding="utf-8")
-    (output_dir / "latest.md").write_text(markdown, encoding="utf-8")
+    if update_latest:
+        write_json(output_dir / "latest.json", summary)
+        (output_dir / "latest.md").write_text(markdown, encoding="utf-8")
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:

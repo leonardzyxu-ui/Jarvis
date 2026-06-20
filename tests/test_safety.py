@@ -986,6 +986,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         self.assertFalse(summary["ok"])
+        self.assertFalse(summary["canonical_latest"])
         self.assertTrue(summary["require_live_speech"])
         self.assertEqual(summary["speech_proof_contract"]["speech_mode"], "suppressed_for_probe")
         self.assertEqual(summary["results"][0]["id"], "live_speech_requirement")
@@ -1016,6 +1017,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         self.assertFalse(summary["ok"])
+        self.assertFalse(summary["canonical_latest"])
         self.assertTrue(summary["require_physical_capture"])
         self.assertEqual(summary["results"][0]["id"], "physical_capture_requirement")
         self.assertIn("--require-physical-capture", summary["results"][0]["stderr_tail"])
@@ -1026,6 +1028,39 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(proof["physical_microphone_capture"])
         self.assertFalse(any("full_loop_regression.py" in str(part) for command in calls for part in command))
         self.assertTrue(any("cleanup_chrome_test_tabs.py" in str(part) for command in calls for part in command))
+
+    def test_pre_build_gate_diagnostic_failures_do_not_replace_latest(self):
+        calls = []
+
+        def fake_runner(command, timeout):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("scripts.pre_build_gate.physical_audio_preflight", return_value={
+            "ok": True,
+            "status": "loopback_device_missing",
+            "ready_for_physical_capture": False,
+        }):
+            root = Path(tmpdir)
+            (root / "latest.json").write_text(json.dumps({"status": "previous", "canonical_latest": True}), encoding="utf-8")
+            (root / "latest.md").write_text("previous", encoding="utf-8")
+            summary = pre_build_gate.run_gate(
+                base_url="http://127.0.0.1:8765",
+                output_dir=root,
+                require_physical_capture=True,
+                exercise_live_speech=True,
+                runner=fake_runner,
+            )
+
+            latest = json.loads((root / "latest.json").read_text(encoding="utf-8"))
+            latest_md = (root / "latest.md").read_text(encoding="utf-8")
+            timestamped_report_exists = Path(summary["report_path"]).exists()
+
+        self.assertFalse(summary["ok"])
+        self.assertFalse(summary["canonical_latest"])
+        self.assertEqual(latest["status"], "previous")
+        self.assertEqual(latest_md, "previous")
+        self.assertTrue(timestamped_report_exists)
 
     def test_pre_build_gate_uses_step_specific_timeout_when_present(self):
         calls = []
