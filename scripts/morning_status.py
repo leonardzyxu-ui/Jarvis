@@ -458,7 +458,23 @@ def print_latest_wake_threshold() -> None:
 
 
 def print_physical_capture_contract() -> None:
-    print("Physical audio loop: not implemented; strict speaker/microphone capture proof fails closed by design")
+    try:
+        project_root_text = str(PROJECT_ROOT)
+        if project_root_text not in sys.path:
+            sys.path.insert(0, project_root_text)
+        from scripts.physical_audio_preflight import physical_audio_preflight
+
+        preflight = physical_audio_preflight()
+    except Exception as error:  # pragma: no cover - defensive status helper path.
+        print(f"Physical audio loop: preflight unavailable ({type(error).__name__}: {error}); strict speaker/microphone capture proof fails closed")
+        return
+    status = str(preflight.get("status") or "unknown")
+    if preflight.get("ready_for_physical_capture"):
+        names = ", ".join(str(item.get("name") or "") for item in preflight.get("loopback_devices", []) if isinstance(item, dict))
+        suffix = f" via {names}" if names else ""
+        print(f"Physical audio loop: loopback preflight ready{suffix}; physical capture harness still needs explicit implementation")
+    else:
+        print(f"Physical audio loop: {status}; strict speaker/microphone capture proof fails closed without a loopback route")
 
 
 def print_requirement_audit() -> None:

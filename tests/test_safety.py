@@ -158,6 +158,7 @@ from scripts import (
     generate_tts_audition,
     full_loop_regression,
     pre_build_gate,
+    physical_audio_preflight,
     probe_stop_speaking,
     probe_gemma3n_audio,
     render_overnight_status,
@@ -24924,12 +24925,69 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("runtime/wake_threshold/latest.json", printed)
 
     def test_morning_status_prints_physical_capture_contract(self):
-        with patch("builtins.print") as print_mock:
+        with patch("scripts.physical_audio_preflight.physical_audio_preflight", return_value={
+            "ok": True,
+            "status": "loopback_device_missing",
+            "ready_for_physical_capture": False,
+        }), patch("builtins.print") as print_mock:
             print_physical_capture_contract()
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
-        self.assertIn("Physical audio loop: not implemented", printed)
+        self.assertIn("Physical audio loop: loopback_device_missing", printed)
         self.assertIn("fails closed", printed)
+
+    def test_physical_audio_preflight_detects_loopback_without_capture(self):
+        payload = {
+            "SPAudioDataType": [
+                {
+                    "_items": [
+                        {
+                            "_name": "BlackHole 2ch",
+                            "coreaudio_device_input": 2,
+                            "coreaudio_device_output": 2,
+                            "coreaudio_device_manufacturer": "Existential Audio Inc.",
+                            "coreaudio_device_transport": "coreaudio_device_type_virtual",
+                        },
+                        {
+                            "_name": "MacBook Pro Microphone",
+                            "coreaudio_device_input": 1,
+                            "coreaudio_device_manufacturer": "Apple Inc.",
+                        },
+                    ],
+                }
+            ]
+        }
+        completed = subprocess.CompletedProcess(["system_profiler"], 0, stdout=json.dumps(payload), stderr="")
+        with patch("scripts.physical_audio_preflight.subprocess.run", return_value=completed):
+            result = physical_audio_preflight.physical_audio_preflight()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "loopback_ready")
+        self.assertTrue(result["ready_for_physical_capture"])
+        self.assertFalse(result["requests_microphone"])
+        self.assertFalse(result["captures_audio"])
+        self.assertEqual(result["loopback_devices"][0]["name"], "BlackHole 2ch")
+
+    def test_physical_audio_preflight_fails_closed_without_loopback(self):
+        payload = {
+            "SPAudioDataType": [
+                {
+                    "_items": [
+                        {"_name": "MacBook Pro Microphone", "coreaudio_device_input": 1},
+                        {"_name": "MacBook Pro Speakers", "coreaudio_device_output": 2},
+                    ],
+                }
+            ]
+        }
+        completed = subprocess.CompletedProcess(["system_profiler"], 0, stdout=json.dumps(payload), stderr="")
+        with patch("scripts.physical_audio_preflight.subprocess.run", return_value=completed):
+            result = physical_audio_preflight.physical_audio_preflight()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "loopback_device_missing")
+        self.assertFalse(result["ready_for_physical_capture"])
+        self.assertEqual(result["input_device_count"], 1)
+        self.assertEqual(result["output_device_count"], 1)
 
     def test_morning_status_requirement_audit_summary(self):
         summary = requirement_audit_summary(
