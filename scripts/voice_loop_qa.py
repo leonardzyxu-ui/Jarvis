@@ -3360,6 +3360,8 @@ def compact_direct_follow_up(follow_up: dict[str, Any]) -> dict[str, Any]:
 def merge_follow_up_failures(browser_page_follow_up: dict[str, Any], latest_failure: dict[str, Any] | None) -> dict[str, Any]:
     if latest_failure and latest_failure.get("status") in {"assignment_subject_mismatch", "login_gate_visible"}:
         return latest_failure
+    if latest_failure and visible_screen_attempt_is_native_capture_failed(latest_failure):
+        return latest_failure
     if browser_page_follow_up.get("status") == "browser_permission_blocked":
         merged = dict(latest_failure or {})
         merged.update(

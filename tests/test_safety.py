@@ -4498,6 +4498,31 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(merged["tool"], "browser.read_page")
         self.assertEqual(merged["response_status"], "automation_not_allowed")
 
+    def test_voice_loop_qa_merge_follow_up_failures_prefers_native_capture_failure(self):
+        merged = voice_loop_qa.merge_follow_up_failures(
+            {
+                "status": "browser_permission_blocked",
+                "tool": "browser.read_page",
+                "response_status": "teams_page_text_unavailable",
+                "visible_reply_preview": "Teams is open in Chrome, but Jarvis cannot reliably read the Teams page text yet.",
+            },
+            {
+                "status": "browser_focus_not_verified",
+                "tool": "screen.visible_text",
+                "capture_status": "failed",
+                "response_status": "native_capture_failed",
+                "visible_reply_preview": (
+                    "Teams is open in Chrome, but Jarvis could not capture the Teams window for OCR yet. "
+                    "I have not inspected the newest Music assignment yet."
+                ),
+            },
+        )
+
+        self.assertEqual(merged["status"], "browser_focus_not_verified")
+        self.assertEqual(merged["tool"], "screen.visible_text")
+        self.assertEqual(merged["response_status"], "native_capture_failed")
+        self.assertIn("could not capture the Teams window", merged["visible_reply_preview"])
+
     def test_voice_loop_qa_run_speech_audit_uses_blocked_browser_followup_as_effective_reply(self):
         final_events = [
             {
