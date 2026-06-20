@@ -2077,6 +2077,7 @@ def run_native_visible_screen_follow_up(
             timeout=timeout,
             target_app_name=target["target_app_name"],
             target_bundle_identifier=target["target_bundle_identifier"],
+            preferred_window_title_contains=str(browser_open.get("browser_open_active_title") or ""),
             attempt=attempt,
         )
         if visible_screen_attempt_mismatches_expected_teams(
@@ -2168,6 +2169,7 @@ def run_native_visible_screen_follow_up(
                 timeout=timeout,
                 target_app_name=target["target_app_name"],
                 target_bundle_identifier=target["target_bundle_identifier"],
+                preferred_window_title_contains=str(browser_open.get("browser_open_active_title") or ""),
                 attempt=max_attempts + navigation_attempt,
             )
             if visible_screen_attempt_mismatches_expected_teams(
@@ -2288,6 +2290,7 @@ def run_native_visible_screen_follow_up_attempt(
     target_app_name: str,
     target_bundle_identifier: str,
     attempt: int,
+    preferred_window_title_contains: str = "",
 ) -> dict[str, Any]:
     capture_path = follow_up_dir / f"capture-{attempt:02d}.json"
     response_path = follow_up_dir / f"response-{attempt:02d}.json"
@@ -2298,6 +2301,9 @@ def run_native_visible_screen_follow_up_attempt(
         "--target-bundle-id",
         target_bundle_identifier,
     ]
+    preferred_title = str(preferred_window_title_contains or "").strip()
+    if preferred_title:
+        probe_command.extend(["--preferred-window-title-contains", preferred_title])
     try:
         completed = subprocess.run(
             probe_command,

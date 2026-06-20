@@ -12,7 +12,8 @@ struct JarvisVisibleScreenProbe {
         do {
             let capture = try await JarvisNativeOutlookReader.readVisibleScreenText(
                 targetAppName: arguments.targetAppName,
-                targetBundleIdentifier: arguments.targetBundleIdentifier
+                targetBundleIdentifier: arguments.targetBundleIdentifier,
+                preferredWindowTitleContains: arguments.preferredWindowTitleContains
             )
             let payload: [String: Any] = [
                 "status": "captured",
@@ -38,9 +39,14 @@ struct JarvisVisibleScreenProbe {
         }
     }
 
-    private static func parseArguments(_ arguments: [String]) -> (targetAppName: String?, targetBundleIdentifier: String?) {
+    private static func parseArguments(_ arguments: [String]) -> (
+        targetAppName: String?,
+        targetBundleIdentifier: String?,
+        preferredWindowTitleContains: String?
+    ) {
         var targetAppName: String?
         var targetBundleIdentifier: String?
+        var preferredWindowTitleContains: String?
         var iterator = arguments.makeIterator()
         while let argument = iterator.next() {
             switch argument {
@@ -48,11 +54,13 @@ struct JarvisVisibleScreenProbe {
                 targetAppName = iterator.next()
             case "--target-bundle-id":
                 targetBundleIdentifier = iterator.next()
+            case "--preferred-window-title-contains":
+                preferredWindowTitleContains = iterator.next()
             default:
                 continue
             }
         }
-        return (targetAppName, targetBundleIdentifier)
+        return (targetAppName, targetBundleIdentifier, preferredWindowTitleContains)
     }
 
     private static func writeJSON(_ payload: [String: Any], using encoder: JSONEncoder) {

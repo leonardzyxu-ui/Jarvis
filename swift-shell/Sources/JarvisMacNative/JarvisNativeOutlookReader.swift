@@ -94,10 +94,12 @@ public enum JarvisNativeOutlookReader {
 
     public static func readVisibleScreenText(
         targetAppName: String? = nil,
-        targetBundleIdentifier: String? = nil
+        targetBundleIdentifier: String? = nil,
+        preferredWindowTitleContains: String? = nil
     ) async throws -> NativeOutlookOCRResult {
         let cleanTargetName = targetAppName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanBundleIdentifier = targetBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanPreferredWindowTitle = preferredWindowTitleContains?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let cleanBundleIdentifier, !cleanBundleIdentifier.isEmpty {
             try await focusApplication(
                 bundleIdentifier: cleanBundleIdentifier,
@@ -116,7 +118,13 @@ public enum JarvisNativeOutlookReader {
         }
 
         let ownerNames = cleanTargetName?.isEmpty == false ? Set([cleanTargetName!]) : nil
-        let initialWindowCapture = captureVisibleWindow(ownerNames: ownerNames)
+        let initialWindowCapture = captureVisibleWindow(
+            ownerNames: ownerNames,
+            preferredWindowTitleContains: cleanPreferredWindowTitle?.isEmpty == false ? cleanPreferredWindowTitle : nil
+        )
+        if initialWindowCapture == nil, cleanPreferredWindowTitle?.isEmpty == false {
+            throw NativeOutlookReadError.captureFailed
+        }
         guard let initialImage = initialWindowCapture?.image ?? CGDisplayCreateImage(CGMainDisplayID()) else {
             throw NativeOutlookReadError.captureFailed
         }
@@ -232,13 +240,17 @@ public enum JarvisNativeOutlookReader {
         captureVisibleWindow(ownerNames: Set(["Microsoft Outlook"]))
     }
 
-    private static func captureVisibleWindow(ownerNames: Set<String>? = nil) -> NativeWindowCapture? {
+    private static func captureVisibleWindow(
+        ownerNames: Set<String>? = nil,
+        preferredWindowTitleContains: String? = nil
+    ) -> NativeWindowCapture? {
         guard let windowInfo = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
         ) as? [[String: Any]] else {
             return nil
         }
+        let preferredTitle = preferredWindowTitleContains?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let candidates: [(windowID: CGWindowID, bounds: CGRect, ownerName: String, windowTitle: String)] = windowInfo.compactMap { window in
             let ownerName = window[kCGWindowOwnerName as String] as? String ?? ""
@@ -267,7 +279,17 @@ public enum JarvisNativeOutlookReader {
             return (CGWindowID(number.uint32Value), bounds, ownerName, windowTitle)
         }
 
-        let selected = candidates.first
+        let selected: (windowID: CGWindowID, bounds: CGRect, ownerName: String, windowTitle: String)?
+        if let preferredTitle, !preferredTitle.isEmpty,
+           let matchingCandidate = candidates.first(where: { candidate in
+               candidate.windowTitle.localizedCaseInsensitiveContains(preferredTitle)
+           }) {
+            selected = matchingCandidate
+        } else if preferredTitle?.isEmpty == false {
+            selected = nil
+        } else {
+            selected = candidates.first
+        }
         guard let selected else {
             return nil
         }

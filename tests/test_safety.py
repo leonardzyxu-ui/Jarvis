@@ -2936,6 +2936,45 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(result["capture_diagnostics"]["window_title"], "Microsoft Teams")
         self.assertEqual(result["capture_window_title"], "Microsoft Teams")
         self.assertEqual(result["capture_status"], "captured")
+        self.assertNotIn("--preferred-window-title-contains", run_mock.call_args.args[0])
+
+    def test_voice_loop_qa_passes_preferred_window_title_to_visible_probe(self):
+        fake_capture = {
+            "status": "captured",
+            "text": "Microsoft Teams\nMusic Assignments",
+            "diagnostics": {
+                "target_app_name": "Google Chrome",
+                "window_title": "Microsoft Teams",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch("scripts.voice_loop_qa.subprocess.run") as run_mock, \
+             patch("scripts.voice_loop_qa.post_loopback_json", return_value={
+                 "tool": "screen.visible_text",
+                 "result": {"status": "checked", "reply": "Teams assignment text."},
+                 "reply": "Teams assignment text.",
+             }):
+            run_mock.return_value = subprocess.CompletedProcess(
+                args=["jarvis-visible-screen-probe"],
+                returncode=0,
+                stdout=json.dumps(fake_capture),
+                stderr="",
+            )
+            voice_loop_qa.run_native_visible_screen_follow_up_attempt(
+                command_text="Look in Teams for my newest Music assignment.",
+                base_url="http://127.0.0.1:8765",
+                follow_up_dir=Path(temp_dir),
+                timeout=1,
+                target_app_name="Google Chrome",
+                target_bundle_identifier="com.google.Chrome",
+                preferred_window_title_contains="Microsoft Teams",
+                attempt=1,
+            )
+
+        command = run_mock.call_args.args[0]
+        self.assertIn("--preferred-window-title-contains", command)
+        self.assertIn("Microsoft Teams", command)
 
     def test_voice_loop_qa_allocates_unique_parallel_report_dirs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -10858,9 +10897,11 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("readVisibleScreenText", probe_source)
         self.assertIn("targetAppName: arguments.targetAppName", probe_source)
         self.assertIn("targetBundleIdentifier: arguments.targetBundleIdentifier", probe_source)
+        self.assertIn("preferredWindowTitleContains: arguments.preferredWindowTitleContains", probe_source)
         self.assertIn('"ocr_lines": capture.lines.map(\\.jsonObject)', probe_source)
         self.assertIn('"--target-app-name"', probe_source)
         self.assertIn('"--target-bundle-id"', probe_source)
+        self.assertIn('"--preferred-window-title-contains"', probe_source)
         permission_probe_source = (
             PROJECT_ROOT
             / "swift-shell"
@@ -10929,8 +10970,12 @@ class PlannerTests(unittest.TestCase):
             / "JarvisNativeOutlookReader.swift"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("let selected = candidates.first", native_source)
+        self.assertIn("selected = candidates.first", native_source)
         self.assertNotIn("candidates.max(by:", native_source)
+        self.assertIn("preferredWindowTitleContains", native_source)
+        self.assertIn("candidate.windowTitle.localizedCaseInsensitiveContains(preferredTitle)", native_source)
+        self.assertIn("else if preferredTitle?.isEmpty == false", native_source)
+        self.assertIn("if initialWindowCapture == nil, cleanPreferredWindowTitle?.isEmpty == false", native_source)
         self.assertIn("let windowTitle = window[kCGWindowName as String] as? String ?? \"\"", native_source)
         self.assertIn("windowTitle: selected.windowTitle", native_source)
         self.assertIn("windowTitle: windowCapture?.windowTitle ?? \"\"", native_source)
