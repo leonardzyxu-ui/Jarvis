@@ -113,6 +113,24 @@ def run_command(
     )
 
 
+def git_short_commit() -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=PROJECT_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    if completed.returncode != 0:
+        return "unknown"
+    return completed.stdout.strip() or "unknown"
+
+
 def run_temp_app_command(
     name: str,
     args: list[str],
@@ -1894,14 +1912,18 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     report = run_checks()
+    passed = sum(1 for result in report["results"] if result["passed"])
+    total = len(report["results"])
+    report["passed"] = passed
+    report["total"] = total
+    report["source_commit"] = git_short_commit()
+
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     report_path = REPORT_DIR / f"verify-safe-{time.strftime('%Y%m%d-%H%M%S')}.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     latest_path = REPORT_DIR / "latest.json"
     latest_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    passed = sum(1 for result in report["results"] if result["passed"])
-    total = len(report["results"])
     print(f"Jarvis safe verification: {passed}/{total} passed")
     print(f"Report: {report_path}")
     for result in report["results"]:

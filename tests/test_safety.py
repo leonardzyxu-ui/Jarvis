@@ -2259,6 +2259,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir, \
              patch.object(verify_safe, "REPORT_DIR", Path(tmpdir)), \
              patch("scripts.verify_safe.run_checks", return_value=fake_report), \
+             patch("scripts.verify_safe.git_short_commit", return_value="abc1234"), \
              patch("sys.stdout", new_callable=io.StringIO):
             code = verify_safe.main([])
             report_dir = Path(tmpdir)
@@ -2270,7 +2271,10 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(len(timestamped), 1)
         self.assertTrue(latest_exists)
-        self.assertEqual(latest_payload, fake_report)
+        self.assertEqual(latest_payload["passed"], 1)
+        self.assertEqual(latest_payload["total"], 1)
+        self.assertEqual(latest_payload["source_commit"], "abc1234")
+        self.assertEqual(latest_payload["results"], fake_report["results"])
 
     def test_verify_safe_post_json_suppresses_command_speech_by_default(self):
         captured_payloads = []

@@ -47,6 +47,7 @@
 
 ## Completed This Turn
 
+- [x] Added top-level `passed`, `total`, and `source_commit` fields to safe-verification reports. Focused verifier tests passed, full `tests.test_safety` passed `1073/1073`, and live `runtime/verification/latest.json` now shows `source_commit: 64ab4a8`, `106/106`, and `ok: true`.
 - [x] Made `scripts/verify_safe.py` publish `runtime/verification/latest.json` beside timestamped verifier reports. Focused verifier tests passed, full `tests.test_safety` passed `1073/1073`, and a live verifier run passed `106/106` with `runtime/verification/latest.json` now present.
 - [x] Shipped Jarvis `0.1.483` Teams browser-fallback honesty: if Teams OCR only sees Chrome/Teams shell text with no assignment context, Jarvis now returns `teams_page_text_unavailable` instead of summarizing tab-strip junk. Focused browser tests passed, full `tests.test_safety` passed `1072/1072`, live Jarvis `0.1.483` launched, and Teams-only proof `runtime/full_loop_regression/20260621-005113/summary.json` now says `Teams is open in Chrome, but Jarvis cannot reliably read the Teams page text yet.`
 - [x] Rebuilt and launched the canonical app as Jarvis `0.1.482` build `482` from bundled worker resources, with the new Music fallback guard present inside `output/Jarvis.app/Contents/Resources/JarvisWorker/jarvis/tools.py`. Focused version/music tests passed, and live `scripts/verify_safe.py` passed `106/106` at `runtime/verification/verify-safe-20260621-004006.json`.
