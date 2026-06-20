@@ -2011,8 +2011,13 @@ def run_native_visible_screen_follow_up(
     navigation_steps: list[dict[str, Any]] = []
     if exercise_visible_navigation and isinstance(latest_failure, dict):
         seen_navigation_points: set[tuple[float, float]] = set()
+        seen_navigation_keys: set[str] = set()
         for navigation_attempt in range(1, 4):
-            plan = next_visible_navigation_plan(latest_failure, seen_navigation_points=seen_navigation_points)
+            plan = next_visible_navigation_plan(
+                latest_failure,
+                seen_navigation_points=seen_navigation_points,
+                seen_navigation_keys=seen_navigation_keys,
+            )
             if not isinstance(plan, dict) or not plan.get("planned"):
                 if navigation_steps:
                     latest_failure["visible_navigation_execution"] = {
@@ -2028,6 +2033,7 @@ def run_native_visible_screen_follow_up(
                 point_key = (round(float(point.get("x")), 2), round(float(point.get("y")), 2))
             except (TypeError, ValueError):
                 point_key = (float(navigation_attempt), -1.0)
+            navigation_key = str(plan.get("navigation_key") or "").strip()
             if point_key in seen_navigation_points:
                 latest_failure["visible_navigation_execution"] = {
                     "attempted": False,
@@ -2040,6 +2046,8 @@ def run_native_visible_screen_follow_up(
                 latest_failure["visible_navigation_execution_steps"] = list(navigation_steps)
                 break
             seen_navigation_points.add(point_key)
+            if navigation_key:
+                seen_navigation_keys.add(navigation_key)
             navigation_result = execute_visible_navigation_plan(
                 plan,
                 target_app_name=target["target_app_name"],
@@ -2488,6 +2496,7 @@ def next_visible_navigation_plan(
     follow_up: dict[str, Any],
     *,
     seen_navigation_points: set[tuple[float, float]] | None = None,
+    seen_navigation_keys: set[str] | None = None,
 ) -> dict[str, Any] | None:
     targets = follow_up.get("visible_navigation_targets")
     if not isinstance(targets, dict):
@@ -2500,17 +2509,41 @@ def next_visible_navigation_plan(
             if isinstance(step, dict)
             and isinstance(step.get("plan"), dict)
             and step["plan"].get("planned")
+            and str(step.get("key") or "") not in (seen_navigation_keys or set())
             and not visible_navigation_plan_point_seen(step["plan"], seen_navigation_points)
         ),
         None,
     )
     if isinstance(plan, dict):
-        return plan
+        selected_step = next(
+            (
+                step
+                for step in sequence
+                if isinstance(step, dict)
+                and isinstance(step.get("plan"), dict)
+                and step.get("plan") is plan
+            ),
+            {},
+        )
+        return visible_navigation_plan_with_key(plan, str(selected_step.get("key") or ""))
     for key in ("requested_class_plan", "all_teams_plan", "teams_search_plan"):
         plan = targets.get(key)
-        if isinstance(plan, dict) and plan.get("planned") and not visible_navigation_plan_point_seen(plan, seen_navigation_points):
-            return plan
+        if (
+            isinstance(plan, dict)
+            and plan.get("planned")
+            and key not in (seen_navigation_keys or set())
+            and not visible_navigation_plan_point_seen(plan, seen_navigation_points)
+        ):
+            return visible_navigation_plan_with_key(plan, key)
     return None
+
+
+def visible_navigation_plan_with_key(plan: dict[str, Any], key: str) -> dict[str, Any]:
+    if not key:
+        return plan
+    enriched = dict(plan)
+    enriched["navigation_key"] = key
+    return enriched
 
 
 def visible_navigation_plan_point_seen(

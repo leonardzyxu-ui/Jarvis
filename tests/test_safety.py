@@ -3315,11 +3315,54 @@ class VerifySafeScriptTests(unittest.TestCase):
         )
         self.assertEqual(next_plan["action"], "type_search")
         self.assertEqual(next_plan["query"], "Music")
+        self.assertEqual(next_plan["navigation_key"], "teams_search")
         exhausted_plan = voice_loop_qa.next_visible_navigation_plan(
             {"visible_navigation_targets": {"sequence": sequence, **targets}},
             seen_navigation_points={(257.0, 322.5), (474.0, 255.0)},
+            seen_navigation_keys={"all_teams", "teams_search"},
         )
         self.assertIsNone(exhausted_plan)
+
+    def test_voice_loop_qa_next_navigation_skips_seen_semantic_key(self):
+        targets = {
+            "all_teams_plan": {
+                "planned": True,
+                "will_click": False,
+                "point": {"x": 134.06, "y": 194.52},
+            },
+            "teams_search_plan": {
+                "planned": True,
+                "action": "type_search",
+                "will_click": False,
+                "point": {"x": 531.84, "y": 145.07},
+                "query": "Music",
+            },
+            "sequence": [
+                {
+                    "key": "all_teams",
+                    "plan": {"planned": True, "will_click": False, "point": {"x": 134.06, "y": 194.52}},
+                },
+                {
+                    "key": "teams_search",
+                    "plan": {
+                        "planned": True,
+                        "action": "type_search",
+                        "will_click": False,
+                        "point": {"x": 531.84, "y": 145.07},
+                        "query": "Music",
+                    },
+                },
+            ],
+        }
+
+        plan = voice_loop_qa.next_visible_navigation_plan(
+            {"visible_navigation_targets": targets},
+            seen_navigation_points={(94.63, 194.52)},
+            seen_navigation_keys={"all_teams"},
+        )
+
+        self.assertEqual(plan["navigation_key"], "teams_search")
+        self.assertEqual(plan["action"], "type_search")
 
     def test_voice_loop_qa_chevron_all_teams_uses_leading_screen_click_point(self):
         capture_payload = {
