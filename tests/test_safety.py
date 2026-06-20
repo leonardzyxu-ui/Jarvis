@@ -4060,6 +4060,31 @@ class VerifySafeScriptTests(unittest.TestCase):
         )
         self.assertIsNone(exhausted_plan)
 
+    def test_voice_loop_qa_next_navigation_does_not_repeat_raw_fallback_key(self):
+        follow_up = {
+            "visible_navigation_targets": {
+                "all_teams_plan": {
+                    "planned": True,
+                    "will_click": False,
+                    "point": {"x": 116.63, "y": 222.52},
+                },
+                "teams_search_plan": {
+                    "planned": True,
+                    "action": "type_search",
+                    "will_click": False,
+                    "point": {"x": 553.84, "y": 173.07},
+                    "query": "Music",
+                },
+            }
+        }
+
+        plan = voice_loop_qa.next_visible_navigation_plan(
+            follow_up,
+            seen_navigation_keys={"all_teams", "teams_search"},
+        )
+
+        self.assertIsNone(plan)
+
     def test_voice_loop_qa_visible_navigation_sequence_can_search_without_all_teams(self):
         targets = {
             "requested_class_plan": {"planned": False, "will_click": False},
@@ -4160,6 +4185,8 @@ class VerifySafeScriptTests(unittest.TestCase):
             "action": "browser_back",
             "point": {"x": 107.39, "y": 274.0},
             "coordinate_space": "screen_points",
+            "navigation_key": "all_teams",
+            "target_text": "‹ All teams",
         }
 
         with patch.dict(os.environ, {"JARVIS_ALLOW_LIVE_UI_NAVIGATION": "1"}), \
@@ -4173,6 +4200,9 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(result["attempted"])
         self.assertTrue(result["executed"])
         self.assertEqual(result["status"], "browser_back")
+        self.assertEqual(result["navigation_key"], "all_teams")
+        self.assertEqual(result["action"], "browser_back")
+        self.assertEqual(result["target_text"], "‹ All teams")
         self.assertIn("keystroke \"[\" using command down", run_mock.call_args.args[0][2])
 
     def test_voice_loop_qa_execute_visible_navigation_can_type_teams_search(self):
@@ -4183,6 +4213,8 @@ class VerifySafeScriptTests(unittest.TestCase):
             "point": {"x": 474.0, "y": 255.0},
             "coordinate_space": "screen_points",
             "query": "Music",
+            "navigation_key": "teams_search",
+            "target_text": "Search",
         }
 
         with patch.dict(os.environ, {"JARVIS_ALLOW_LIVE_UI_NAVIGATION": "1"}), \
@@ -4197,6 +4229,9 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(result["executed"])
         self.assertEqual(result["status"], "type_search")
         self.assertEqual(result["query"], "Music")
+        self.assertEqual(result["navigation_key"], "teams_search")
+        self.assertEqual(result["action"], "type_search")
+        self.assertEqual(result["target_text"], "Search")
         script = run_mock.call_args.args[0][2]
         self.assertIn("click at {474.0, 255.0}", script)
         self.assertIn('keystroke "Music"', script)

@@ -2913,15 +2913,24 @@ def next_visible_navigation_plan(
         )
         return visible_navigation_plan_with_key(plan, str(selected_step.get("key") or ""))
     for key in ("requested_class_plan", "all_teams_plan", "teams_search_plan"):
+        navigation_key = fallback_visible_navigation_key(key)
         plan = targets.get(key)
         if (
             isinstance(plan, dict)
             and plan.get("planned")
-            and key not in (seen_navigation_keys or set())
+            and navigation_key not in (seen_navigation_keys or set())
             and not visible_navigation_plan_point_seen(plan, seen_navigation_points)
         ):
-            return visible_navigation_plan_with_key(plan, key)
+            return visible_navigation_plan_with_key(plan, navigation_key)
     return None
+
+
+def fallback_visible_navigation_key(plan_key: str) -> str:
+    return {
+        "requested_class_plan": "requested_class",
+        "all_teams_plan": "all_teams",
+        "teams_search_plan": "teams_search",
+    }.get(plan_key, plan_key)
 
 
 def visible_navigation_plan_with_key(plan: dict[str, Any], key: str) -> dict[str, Any]:
@@ -2984,17 +2993,19 @@ def execute_visible_navigation_plan(
     timeout: float,
 ) -> dict[str, Any]:
     """Execute a previously generated visible navigation plan only under a double opt-in."""
+    metadata = visible_navigation_execution_metadata(plan)
     if os.environ.get("JARVIS_ALLOW_LIVE_UI_NAVIGATION") != "1":
         return {
             "attempted": False,
             "executed": False,
             "status": "live_navigation_not_unlocked",
             "requires": ["--exercise-visible-navigation", "JARVIS_ALLOW_LIVE_UI_NAVIGATION=1"],
+            **metadata,
         }
     if not isinstance(plan, dict) or not plan.get("planned"):
-        return {"attempted": False, "executed": False, "status": "plan_not_ready"}
+        return {"attempted": False, "executed": False, "status": "plan_not_ready", **metadata}
     if plan.get("will_click") is not False:
-        return {"attempted": False, "executed": False, "status": "plan_not_fail_closed"}
+        return {"attempted": False, "executed": False, "status": "plan_not_fail_closed", **metadata}
     action = str(plan.get("action") or "click")
     if action == "browser_back":
         applescript = f'''
@@ -3024,6 +3035,7 @@ end tell
                 "stdout_tail": str(error.stdout or "")[-500:],
                 "stderr_tail": str(error.stderr or "")[-500:],
                 "target_app_name": target_app_name,
+                **metadata,
             }
         return {
             "attempted": True,
@@ -3033,6 +3045,7 @@ end tell
             "stdout_tail": str(completed.stdout or "")[-500:],
             "stderr_tail": str(completed.stderr or "")[-500:],
             "target_app_name": target_app_name,
+            **metadata,
         }
     if plan.get("coordinate_space") != "screen_points":
         return {
@@ -3040,13 +3053,14 @@ end tell
             "executed": False,
             "status": "screen_coordinates_missing",
             "coordinate_space": str(plan.get("coordinate_space") or "unknown"),
+            **metadata,
         }
     point = plan.get("point") if isinstance(plan.get("point"), dict) else {}
     try:
         x = float(point.get("x"))
         y = float(point.get("y"))
     except (TypeError, ValueError):
-        return {"attempted": False, "executed": False, "status": "point_missing"}
+        return {"attempted": False, "executed": False, "status": "point_missing", **metadata}
     if action == "type_search":
         query = str(plan.get("query") or "").strip()
         if not query:
@@ -3083,6 +3097,7 @@ end tell
                 "point": {"x": round(x, 2), "y": round(y, 2)},
                 "timeout_seconds": round(search_timeout, 3),
                 "stderr_tail": str(exc)[-500:],
+                **metadata,
             }
         return {
             "attempted": True,
@@ -3093,6 +3108,7 @@ end tell
             "query": query,
             "returncode": completed.returncode,
             "stderr_tail": completed.stderr.strip()[-500:],
+            **metadata,
         }
     applescript = f'''
 tell application "{escape_applescript_string(target_app_name)}" to activate
@@ -3122,6 +3138,7 @@ end tell
             "point": {"x": round(x, 2), "y": round(y, 2)},
             "timeout_seconds": round(click_timeout, 3),
             "stderr_tail": str(exc)[-500:],
+            **metadata,
         }
     return {
         "attempted": True,
@@ -3131,7 +3148,19 @@ end tell
         "point": {"x": round(x, 2), "y": round(y, 2)},
         "returncode": completed.returncode,
         "stderr_tail": completed.stderr.strip()[-500:],
+        **metadata,
     }
+
+
+def visible_navigation_execution_metadata(plan: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(plan, dict):
+        return {}
+    result: dict[str, Any] = {}
+    for key in ("navigation_key", "action", "target_text", "purpose", "coordinate_space"):
+        value = plan.get(key)
+        if isinstance(value, str) and value.strip():
+            result[key] = value.strip()
+    return result
 
 
 def open_visible_screen_follow_up_url(command_response: dict[str, Any], *, timeout: float) -> dict[str, Any]:
