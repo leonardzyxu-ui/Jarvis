@@ -1420,6 +1420,7 @@ def teams_live_navigation_diagnostic(data: dict[str, Any], report_path: Path | N
         point_text = ""
         if "x" in point and "y" in point:
             point_text = f" at ({point.get('x')}, {point.get('y')})"
+        coordinate_text = coordinate_space_status_text(execution)
         steps = action_proof.get("visible_navigation_execution_steps")
         step_count = len(steps) if isinstance(steps, list) else 0
         step_text = f"; {step_count} step(s)" if step_count else ""
@@ -1428,8 +1429,19 @@ def teams_live_navigation_diagnostic(data: dict[str, Any], report_path: Path | N
             path = str(report_path.relative_to(PROJECT_ROOT)) if report_path.is_relative_to(PROJECT_ROOT) else str(report_path)
             path_text = f"; {path}"
         verb = "clicked" if status == "clicked" else f"stopped as {status}"
-        return f"latest live Teams navigation {verb}{point_text}{step_text}{path_text}"
+        return f"latest live Teams navigation {verb}{point_text}{coordinate_text}{step_text}{path_text}"
     return ""
+
+
+def coordinate_space_status_text(payload: dict[str, Any]) -> str:
+    coordinate_space = str(payload.get("coordinate_space") or "").strip()
+    if coordinate_space == "screen_points":
+        return " in screen points"
+    if coordinate_space == "image_pixels":
+        return " in screenshot pixels"
+    if coordinate_space:
+        return f" in {coordinate_space}"
+    return " in legacy coordinate space"
 
 
 def shorten(value: str, limit: int) -> str:

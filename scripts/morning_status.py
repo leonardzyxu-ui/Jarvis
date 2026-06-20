@@ -445,12 +445,13 @@ def latest_teams_live_navigation_diagnostic() -> str:
             status = str(execution.get("status") or "unknown").strip() or "unknown"
             point = execution.get("point") if isinstance(execution.get("point"), dict) else {}
             point_text = f" at ({point.get('x')}, {point.get('y')})" if point else ""
+            coordinate_text = coordinate_space_status_text(execution)
             if execution.get("executed"):
-                action = f"executed {status}{point_text}"
+                action = f"executed {status}{point_text}{coordinate_text}"
             elif execution.get("attempted"):
-                action = f"attempted and got {status}{point_text}"
+                action = f"attempted and got {status}{point_text}{coordinate_text}"
             else:
-                action = f"stopped as {status}{point_text}"
+                action = f"stopped as {status}{point_text}{coordinate_text}"
             step_count = len(steps) if isinstance(steps, list) else 0
             age = format_uptime(time_since(report.stat().st_mtime))
             return f"{action}; {step_count} step(s); {report.relative_to(PROJECT_ROOT)}, age {age}"

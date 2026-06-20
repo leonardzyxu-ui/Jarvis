@@ -4529,7 +4529,7 @@ class VerifySafeScriptTests(unittest.TestCase):
                 "duration_seconds": 132.456,
                 "teams_live_navigation_diagnostic": (
                     "latest live Teams navigation stopped as navigation_loop_prevented "
-                    "at (257.13, 323.04); 1 step(s); "
+                    "at (257.13, 323.04) in screen points; 1 step(s); "
                     "runtime/full_loop_regression/20260620-095114/summary.json"
                 ),
             },
@@ -4545,7 +4545,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertTrue(any("total 132.456s" in item for item in full_loop_proof))
         self.assertTrue(any(
             "Teams live navigation diagnostic: latest live Teams navigation stopped as "
-            "navigation_loop_prevented at (257.13, 323.04); 1 step(s); "
+            "navigation_loop_prevented at (257.13, 323.04) in screen points; 1 step(s); "
             "runtime/full_loop_regression/20260620-095114/summary.json." in item
             for item in full_loop_proof
         ))
@@ -25105,6 +25105,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                                         "executed": False,
                                         "status": "navigation_loop_prevented",
                                         "point": {"x": 257.13, "y": 323.04},
+                                        "coordinate_space": "screen_points",
                                     },
                                     "visible_navigation_execution_steps": [
                                         {"attempted": True, "executed": True, "status": "clicked"}
@@ -25120,7 +25121,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
             with patch("scripts.morning_status.PROJECT_ROOT", root):
                 diagnostic = latest_teams_live_navigation_diagnostic()
 
-        self.assertIn("stopped as navigation_loop_prevented at (257.13, 323.04)", diagnostic)
+        self.assertIn("stopped as navigation_loop_prevented at (257.13, 323.04) in screen points", diagnostic)
         self.assertIn("1 step(s)", diagnostic)
         self.assertIn("runtime/full_loop_regression/20260620-095114/summary.json", diagnostic)
 
