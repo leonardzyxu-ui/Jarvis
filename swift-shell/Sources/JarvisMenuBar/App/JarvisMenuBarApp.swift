@@ -427,6 +427,7 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "Run Status", action: #selector(runStatus), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Open Overnight Report", action: #selector(openOvernightReport), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Open Questions", action: #selector(openCapabilityQuestions), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Wake Test", action: #selector(openWakeTest), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Shortcut: Command+Option+J", action: #selector(showHotKeyStatus), keyEquivalent: ""))
         let wakeItem = NSMenuItem(title: Self.wakeListenerMenuTitle(listening: model.isWakeListening), action: #selector(toggleWakeListener), keyEquivalent: "")
@@ -590,6 +591,10 @@ final class JarvisAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openOvernightReport() {
         NSWorkspace.shared.open(model.overnightReportURL)
+    }
+
+    @objc private func openCapabilityQuestions() {
+        NSWorkspace.shared.open(model.capabilityQuestionsURL)
     }
 
     @objc private func openWakeTest() {

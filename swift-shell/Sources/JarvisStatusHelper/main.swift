@@ -170,6 +170,7 @@ final class JarvisStatusHelperDelegate: NSObject, NSApplicationDelegate, NSMenuD
         menu.addItem(NSMenuItem(title: "Run Status", action: #selector(runStatus), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(openDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Open Overnight Report", action: #selector(openOvernightReport), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Open Questions", action: #selector(openCapabilityQuestions), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Wake Test", action: #selector(openWakeTest), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Toggle Hey Jarvis", action: #selector(toggleWakeListener), keyEquivalent: ""))
         menu.addItem(.separator())
@@ -278,6 +279,11 @@ final class JarvisStatusHelperDelegate: NSObject, NSApplicationDelegate, NSMenuD
     @objc private func openOvernightReport() {
         openMainApp()
         NSWorkspace.shared.open(client.baseURL.appendingPathComponent("overnight-report/"))
+    }
+
+    @objc private func openCapabilityQuestions() {
+        openMainApp()
+        NSWorkspace.shared.open(client.baseURL.appendingPathComponent("capability-questions/"))
     }
 
     @objc private func openWakeTest() {
