@@ -2,7 +2,7 @@ import SwiftUI
 
 struct JarvisSummonOverlayView: View {
     @ObservedObject var model: JarvisShellModel
-    static let panelSize = CGSize(width: 286, height: 76)
+    static let panelSize = CGSize(width: 268, height: 68)
     private let panelWidth: CGFloat = Self.panelSize.width
     private let panelHeight: CGFloat = Self.panelSize.height
 
@@ -15,9 +15,9 @@ struct JarvisSummonOverlayView: View {
                         .strokeBorder(borderGradient(for: surface.phase), lineWidth: 0.7)
                 )
 
-            HStack(spacing: 11) {
+            HStack(spacing: 10) {
                 JarvisSummonCore(phase: surface.phase)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 34, height: 34)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -35,8 +35,8 @@ struct JarvisSummonOverlayView: View {
                             .tracking(0.7)
                             .foregroundStyle(accentColor(for: surface.phase))
                             .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.black.opacity(0.22), in: Capsule(style: .continuous))
+                            .padding(.vertical, 2.5)
+                            .background(.black.opacity(0.18), in: Capsule(style: .continuous))
                     }
 
                     if !surface.transcript.isEmpty {
@@ -62,15 +62,14 @@ struct JarvisSummonOverlayView: View {
                     }
                 }
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
         .frame(width: panelWidth, height: panelHeight)
         .clipShape(Capsule(style: .continuous))
         .contentShape(Capsule(style: .continuous))
         .compositingGroup()
-        .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 9)
-        .shadow(color: accentColor(for: surface.phase).opacity(0.16), radius: 18, x: 0, y: 5)
+        .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 5)
         .background(Color.clear)
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: surface)
     }
@@ -170,43 +169,63 @@ private struct JarvisGlassCapsule: View {
     let accent: Color
 
     var body: some View {
-        ZStack {
-            if #available(macOS 26.0, *) {
-                Capsule(style: .continuous)
-                    .fill(Color.white.opacity(0.001))
-                    .glassEffect(.regular.tint(accent.opacity(0.18)), in: Capsule(style: .continuous))
-            } else {
-                Capsule(style: .continuous)
-                    .fill(.ultraThinMaterial)
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 0) {
+                glassCapsuleLayers
             }
-
-            Capsule(style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.22),
-                            Color.white.opacity(0.07),
-                            accent.opacity(0.10),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .blendMode(.plusLighter)
-
-            Capsule(style: .continuous)
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            accent.opacity(0.18),
-                            Color.clear,
-                        ],
-                        center: .bottomTrailing,
-                        startRadius: 10,
-                        endRadius: 190
-                    )
-                )
+        } else {
+            fallbackCapsuleLayers
         }
+    }
+
+    @available(macOS 26.0, *)
+    @ViewBuilder
+    private var glassCapsuleLayers: some View {
+        ZStack {
+            Capsule(style: .continuous)
+                .fill(Color.white.opacity(0.001))
+                .glassEffect(.regular.tint(accent.opacity(0.12)), in: Capsule(style: .continuous))
+            sharedCapsuleHighlights
+        }
+    }
+
+    @ViewBuilder
+    private var fallbackCapsuleLayers: some View {
+        ZStack {
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+            sharedCapsuleHighlights
+        }
+    }
+
+    @ViewBuilder
+    private var sharedCapsuleHighlights: some View {
+        Capsule(style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.18),
+                        Color.white.opacity(0.045),
+                        accent.opacity(0.08),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .blendMode(.plusLighter)
+
+        Capsule(style: .continuous)
+            .fill(
+                RadialGradient(
+                    colors: [
+                        accent.opacity(0.12),
+                        Color.clear,
+                    ],
+                    center: .bottomTrailing,
+                    startRadius: 8,
+                    endRadius: 150
+                )
+            )
     }
 }
 
