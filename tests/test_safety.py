@@ -3255,6 +3255,16 @@ class VerifySafeScriptTests(unittest.TestCase):
              patch("pathlib.Path.exists", return_value=True), \
              patch("scripts.voice_loop_qa.run_browser_page_follow_up", return_value=blocked_browser), \
              patch(
+                 "scripts.voice_loop_qa.open_visible_screen_follow_up_url",
+                 return_value={
+                     "browser_open_attempted": True,
+                     "browser_open_returncode": 0,
+                     "browser_open_active_url": "https://teams.microsoft.com/v2/",
+                     "browser_open_active_title": "Microsoft Teams",
+                     "browser_open_target_host_verified": True,
+                 },
+             ), \
+             patch(
                  "scripts.voice_loop_qa.run_native_visible_screen_follow_up_attempt",
                  side_effect=[current_class_attempt, all_teams_attempt, completed_attempt],
              ), \
@@ -3509,7 +3519,13 @@ class VerifySafeScriptTests(unittest.TestCase):
              ), \
              patch(
                  "scripts.voice_loop_qa.open_visible_screen_follow_up_url",
-                 return_value={"browser_open_attempted": True, "browser_url": "https://teams.microsoft.com/v2/"},
+                 return_value={
+                     "browser_open_attempted": True,
+                     "browser_open_returncode": 0,
+                     "browser_open_active_url": "https://teams.microsoft.com/v2/",
+                     "browser_open_active_title": "Microsoft Teams",
+                     "browser_open_target_host_verified": True,
+                 },
              ) as open_mock, \
              patch(
                  "scripts.voice_loop_qa.run_native_visible_screen_follow_up_attempt",
@@ -3529,13 +3545,14 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         self.assertEqual(attempt_mock.call_count, 1)
-        open_mock.assert_not_called()
+        open_mock.assert_called_once()
         self.assertEqual(result["status"], "browser_permission_blocked")
         self.assertEqual(result["tool"], "browser.read_page")
         self.assertEqual(result["attempts"], 1)
-        self.assertFalse(result["browser_open_attempted"])
+        self.assertTrue(result["browser_open_attempted"])
+        self.assertEqual(result["browser_open_active_url"], "https://teams.microsoft.com/v2/")
 
-    def test_voice_loop_qa_visible_screen_followup_skips_open_when_chrome_javascript_blocked(self):
+    def test_voice_loop_qa_visible_screen_followup_opens_before_ocr_when_chrome_javascript_blocked(self):
         with tempfile.TemporaryDirectory() as temp_dir, \
              patch(
                  "scripts.voice_loop_qa.run_browser_page_follow_up",
@@ -3547,7 +3564,16 @@ class VerifySafeScriptTests(unittest.TestCase):
                      "visible_reply_preview": "Chrome allowed tab metadata, but did not allow page text.",
                  },
              ), \
-             patch("scripts.voice_loop_qa.open_visible_screen_follow_up_url") as open_mock, \
+             patch(
+                 "scripts.voice_loop_qa.open_visible_screen_follow_up_url",
+                 return_value={
+                     "browser_open_attempted": True,
+                     "browser_open_returncode": 0,
+                     "browser_open_active_url": "https://teams.microsoft.com/v2/",
+                     "browser_open_active_title": "Microsoft Teams",
+                     "browser_open_target_host_verified": True,
+                 },
+             ) as open_mock, \
              patch(
                  "scripts.voice_loop_qa.run_native_visible_screen_follow_up_attempt",
                  return_value={
@@ -3566,10 +3592,11 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         self.assertEqual(attempt_mock.call_count, 1)
-        open_mock.assert_not_called()
+        open_mock.assert_called_once()
         self.assertEqual(result["status"], "assignment_subject_mismatch")
         self.assertEqual(result["attempts"], 1)
-        self.assertFalse(result["browser_open_attempted"])
+        self.assertTrue(result["browser_open_attempted"])
+        self.assertEqual(result["browser_open_active_url"], "https://teams.microsoft.com/v2/")
 
     def test_voice_loop_qa_visible_screen_followup_stops_immediately_when_browser_page_read_sees_login_gate(self):
         with tempfile.TemporaryDirectory() as temp_dir, \
@@ -3583,7 +3610,16 @@ class VerifySafeScriptTests(unittest.TestCase):
                      "visible_reply_preview": "I read Google Chrome, but it is showing a password or sign-in gate.",
                  },
              ), \
-             patch("scripts.voice_loop_qa.open_visible_screen_follow_up_url") as open_mock, \
+             patch(
+                 "scripts.voice_loop_qa.open_visible_screen_follow_up_url",
+                 return_value={
+                     "browser_open_attempted": True,
+                     "browser_open_returncode": 0,
+                     "browser_open_active_url": "https://teams.microsoft.com/v2/",
+                     "browser_open_active_title": "Microsoft Teams",
+                     "browser_open_target_host_verified": True,
+                 },
+             ) as open_mock, \
              patch("scripts.voice_loop_qa.run_native_visible_screen_follow_up_attempt") as attempt_mock:
             result = voice_loop_qa.run_native_visible_screen_follow_up(
                 command_text="Look in Teams for my newest Music assignment.",
@@ -3708,7 +3744,16 @@ class VerifySafeScriptTests(unittest.TestCase):
                      "visible_reply_preview": "Chrome is blocking Jarvis from controlling the current page.",
                  },
              ), \
-             patch("scripts.voice_loop_qa.open_visible_screen_follow_up_url") as open_mock, \
+             patch(
+                 "scripts.voice_loop_qa.open_visible_screen_follow_up_url",
+                 return_value={
+                     "browser_open_attempted": True,
+                     "browser_open_returncode": 0,
+                     "browser_open_active_url": "https://teams.microsoft.com/v2/",
+                     "browser_open_active_title": "Microsoft Teams",
+                     "browser_open_target_host_verified": True,
+                 },
+             ) as open_mock, \
              patch(
                  "scripts.voice_loop_qa.run_native_visible_screen_follow_up_attempt",
                  return_value={
@@ -3730,11 +3775,12 @@ class VerifySafeScriptTests(unittest.TestCase):
                 timeout=5.0,
             )
 
-        open_mock.assert_not_called()
+        open_mock.assert_called_once()
         self.assertEqual(attempt_mock.call_count, 1)
         self.assertEqual(result["status"], "assignment_subject_mismatch")
         self.assertEqual(result["tool"], "screen.visible_text")
         self.assertEqual(result["attempts"], 1)
+        self.assertEqual(result["browser_open_active_url"], "https://teams.microsoft.com/v2/")
 
     def test_voice_loop_qa_expectations_check_tool_visible_and_routed_text(self):
         passed = voice_loop_qa.evaluate_expectations(

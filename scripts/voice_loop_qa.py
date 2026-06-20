@@ -1929,45 +1929,44 @@ def run_native_visible_screen_follow_up(
         }
 
     browser_page_follow_up = initial_browser_page_follow_up
-    if initial_browser_page_follow_up.get("status") != "browser_permission_blocked":
-        browser_open = open_visible_screen_follow_up_url(command_response, timeout=timeout)
-        result.update(browser_open)
-        if (
-            browser_open.get("browser_open_attempted")
-            and browser_open.get("browser_open_returncode") == 0
-            and browser_open.get("browser_open_target_host_verified") is False
-        ):
-            return {
-                **result,
-                "status": "browser_focus_not_verified",
-                "used": False,
-                "attempts": 0,
-                "duration_seconds": round(time.monotonic() - started, 3),
-            }
-        if browser_open.get("browser_open_attempted"):
-            time.sleep(VISIBLE_SCREEN_FOLLOW_UP_INITIAL_OPEN_DELAY_SECONDS)
+    browser_open = open_visible_screen_follow_up_url(command_response, timeout=timeout)
+    result.update(browser_open)
+    if (
+        browser_open.get("browser_open_attempted")
+        and browser_open.get("browser_open_returncode") == 0
+        and browser_open.get("browser_open_target_host_verified") is False
+    ):
+        return {
+            **result,
+            "status": "browser_focus_not_verified",
+            "used": False,
+            "attempts": 0,
+            "duration_seconds": round(time.monotonic() - started, 3),
+        }
+    if browser_open.get("browser_open_attempted"):
+        time.sleep(VISIBLE_SCREEN_FOLLOW_UP_INITIAL_OPEN_DELAY_SECONDS)
 
-        browser_page_follow_up = run_browser_page_follow_up(
-            command_text=command_text,
-            base_url=base_url,
-            follow_up_dir=follow_up_dir,
-            timeout=timeout,
-        )
-        result["browser_page_follow_up"] = compact_direct_follow_up(browser_page_follow_up)
-        if browser_page_follow_up.get("status") == "completed":
-            return {
-                **result,
-                **browser_page_follow_up,
-                "attempts": 1,
-                "duration_seconds": round(time.monotonic() - started, 3),
-            }
-        if browser_page_follow_up.get("status") == "login_gate_visible":
-            return {
-                **result,
-                **browser_page_follow_up,
-                "attempts": 0,
-                "duration_seconds": round(time.monotonic() - started, 3),
-            }
+    browser_page_follow_up = run_browser_page_follow_up(
+        command_text=command_text,
+        base_url=base_url,
+        follow_up_dir=follow_up_dir,
+        timeout=timeout,
+    )
+    result["browser_page_follow_up"] = compact_direct_follow_up(browser_page_follow_up)
+    if browser_page_follow_up.get("status") == "completed":
+        return {
+            **result,
+            **browser_page_follow_up,
+            "attempts": 1,
+            "duration_seconds": round(time.monotonic() - started, 3),
+        }
+    if browser_page_follow_up.get("status") == "login_gate_visible":
+        return {
+            **result,
+            **browser_page_follow_up,
+            "attempts": 0,
+            "duration_seconds": round(time.monotonic() - started, 3),
+        }
 
     latest_failure: dict[str, Any] | None = None
     max_attempts = max(
