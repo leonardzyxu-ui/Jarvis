@@ -28355,7 +28355,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("Latest pre-build gate (stale; not current HEAD): failed, 0/2 passed (fatal 1, warnings 1)", printed)
         self.assertIn("steps full_loop_regression, cleanup_chrome_test_tabs", printed)
-        self.assertIn("Chrome cleanup warning from stale gate:", printed)
+        self.assertIn("Last known Chrome cleanup warning from stale gate:", printed)
         self.assertNotIn("\nChrome cleanup warning: cleanup", printed)
 
     def test_morning_status_marks_pre_build_gate_stale_for_head(self):
@@ -28426,7 +28426,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 print_latest_pre_build_gate()
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
-        self.assertIn("Teams blocker from stale gate: Teams assignment is wrong_subject.", printed)
+        self.assertIn("Last known Teams blocker from stale gate: Teams assignment is wrong_subject.", printed)
 
     def test_morning_status_pre_build_gate_music_blocker_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:

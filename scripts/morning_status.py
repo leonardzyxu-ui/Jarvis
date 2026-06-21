@@ -257,19 +257,19 @@ def print_latest_pre_build_gate() -> None:
     )
     teams_blocker = pre_build_gate_teams_blocker(data)
     if teams_blocker:
-        prefix = "Teams blocker from stale gate" if stale_suffix else "Teams blocker"
+        prefix = "Last known Teams blocker from stale gate" if stale_suffix else "Teams blocker"
         print(f"{prefix}: {teams_blocker}")
     music_blocker = pre_build_gate_music_blocker(data)
     if music_blocker:
         standalone_music = newer_standalone_music_blocker(data)
         if standalone_music:
-            print(f"Music blocker from newer standalone proof: {standalone_music}")
+            print(f"Latest standalone Music blocker: {standalone_music}")
         else:
-            prefix = "Music blocker from stale gate" if stale_suffix else "Music blocker"
+            prefix = "Last known Music blocker from stale gate" if stale_suffix else "Music blocker"
             print(f"{prefix}: {music_blocker}")
     cleanup_warning = pre_build_gate_cleanup_warning(data)
     if cleanup_warning:
-        prefix = "Chrome cleanup warning from stale gate" if stale_suffix else "Chrome cleanup warning"
+        prefix = "Last known Chrome cleanup warning from stale gate" if stale_suffix else "Chrome cleanup warning"
         print(f"{prefix}: {cleanup_warning}")
 
 
