@@ -7200,6 +7200,16 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("status helper as the required Shut Up control", shipped)
         self.assertIn("app process alone no longer counts", shipped)
 
+    def test_project_memory_current_live_state_is_not_stale(self):
+        memory = (PROJECT_ROOT / ".memory.md").read_text(encoding="utf-8")
+        section = memory.split("## Current Live State", 1)[1].split("\n## ", 1)[0]
+
+        self.assertIn("Jarvis 0.1.494 build 494", section)
+        self.assertIn("verify-safe-20260621-151346.json", section)
+        self.assertIn("Music warning", section)
+        self.assertNotIn("Jarvis 0.1.444 build 444 is live", section)
+        self.assertNotIn("verify-safe-20260618-001149.json", section)
+
     def test_render_status_pre_build_gate_label_marks_stale_head(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

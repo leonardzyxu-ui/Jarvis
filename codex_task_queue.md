@@ -72,6 +72,12 @@
 
 ## Completed This Turn
 
+- [x] Updated `.memory.md` so its `Current Live State` no longer claims the old
+  Jarvis 0.1.444 build 444 is live. It now records Jarvis 0.1.494 build 494,
+  the current safe verifier artifact, the Music-warning wording, and the
+  current Teams/Chrome safety boundary. Added a regression guarding this memory
+  block against stale live-version/proof text; focused tests passed and full
+  `tests.test_safety` passed `1140/1140`.
 - [x] Made `scripts/morning_status.py` distinguish Music warnings from Music
   blockers. Warning-level Music proof, such as native Music playback/cleanup
   succeeding while Chrome media inspection is blocked, now prints `Music warning`
