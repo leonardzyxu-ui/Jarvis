@@ -17445,6 +17445,34 @@ Pages occupied by compressor:             10.
         audit = {item["id"]: item for item in result["requirement_audit"]}
         self.assertEqual(audit["master_report"]["status"], "prepared_live_verified")
         self.assertEqual(audit["rebuilt_bundle"]["status"], "available_live_verified")
+        self.assertEqual(audit["stronger_layered_tool_loop"]["remaining"], "")
+        self.assertEqual(audit["app_opening_groundwork"]["remaining"], "")
+        self.assertEqual(audit["master_report"]["remaining"], "")
+        self.assertEqual(audit["rebuilt_bundle"]["remaining"], "")
+        self.assertIn("Live verifier evidence is present.", audit["stronger_layered_tool_loop"]["done"])
+        self.assertIn("Live app launch/focus QA is complete.", audit["app_opening_groundwork"]["done"])
+
+    def test_morning_status_requirement_audit_summary_omits_done_rows_from_remaining(self):
+        summary = requirement_audit_summary(
+            [
+                {
+                    "id": "stronger_layered_tool_loop",
+                    "status": "implemented_live_verified",
+                    "done": "Live verifier evidence is present.",
+                    "remaining": "",
+                },
+                {
+                    "id": "safe_terminal_groundwork",
+                    "status": "implemented_terminal_verified",
+                    "remaining": "Write/destructive terminal automation remains blocked or confirmation-gated.",
+                },
+            ]
+        )
+
+        self.assertIn("implemented live-verified 1", summary)
+        self.assertIn("implemented terminal-verified 1", summary)
+        self.assertIn("Write/destructive terminal automation remains blocked", summary)
+        self.assertNotIn("Live verifier evidence is present", summary)
 
     def test_live_final_qa_prefers_latest_playwright_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:

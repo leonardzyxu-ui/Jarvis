@@ -10953,13 +10953,15 @@ def _overnight_requirement_audit(
                 "low-confidence clarification",
                 "diagnostics.model_context trace",
             ],
-            "remaining": "Live verifier evidence is present." if verifier_verified else "Foreground live-app QA is deferred.",
+            "done": "Live verifier evidence is present." if verifier_verified else "",
+            "remaining": "" if verifier_verified else "Foreground live-app QA is deferred.",
         },
         {
             "id": "app_opening_groundwork",
             "status": "implemented_live_verified" if app_live_verified else "implemented_terminal_verified",
             "evidence": ["app.open", "app.focus", "app.list", "app.status", "app.running", "app.quit confirmation plan"],
-            "remaining": "Live app launch/focus QA is complete." if app_live_verified else "Live app launch/focus QA is deferred.",
+            "done": "Live app launch/focus QA is complete." if app_live_verified else "",
+            "remaining": "" if app_live_verified else "Live app launch/focus QA is deferred.",
         },
         {
             "id": "safe_terminal_groundwork",
@@ -10977,13 +10979,15 @@ def _overnight_requirement_audit(
             "id": "master_report",
             "status": "prepared_live_verified" if html_visual_verified else ("prepared" if html_ready else "partial"),
             "evidence": ["runtime/overnight_status/index.html", "runtime/overnight_status/report.html", "loopback HTML checks"],
-            "remaining": "Visual HTML QA is complete." if html_visual_verified else "Foreground visual QA is deferred.",
+            "done": "Visual HTML QA is complete." if html_visual_verified else "",
+            "remaining": "" if html_visual_verified else "Foreground visual QA is deferred.",
         },
         {
             "id": "rebuilt_bundle",
             "status": "available_live_verified" if app_live_verified else ("available" if bundle_exists else "missing"),
             "evidence": [f"version {version}", f"build {build}"],
-            "remaining": "Live app relaunch is complete." if app_live_verified else "Live app relaunch is deferred.",
+            "done": "Live app relaunch is complete." if app_live_verified else "",
+            "remaining": "" if app_live_verified else "Live app relaunch is deferred.",
         },
     ]
 

@@ -8,6 +8,7 @@
 - [x] Strip inline `Technical details:` / `Actions:` / `Debug:` clauses from spoken and visible replies while preserving public summaries, with regression coverage.
 - [x] Add local Jarvis memory review/delete controls: review is read-only, deletion is confirmation-gated, no raw chat history is read, and nothing syncs remotely.
 - [x] Update memory-status wording so Jarvis no longer says review/delete is missing after local review/delete controls shipped.
+- [x] Fix requirement-audit summary so completed proof notes are not listed as remaining work.
 - [x] Mirror stale/non-canonical pre-build gate wording in the master HTML report so stale release proof is not presented as current.
 - [x] Mirror stale safe-verifier wording in morning status and the master HTML report so green verifier proof cannot be mistaken for current HEAD proof.
 - [ ] Overnight protocol active from 2026-06-20 22:02 CST with unknown wake-up time: keep working until Leo explicitly says he woke up; do not ask questions, do not request secret code, skip approval-gated/risky work, and keep safe non-interactive progress moving.
