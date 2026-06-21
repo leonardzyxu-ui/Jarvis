@@ -400,6 +400,8 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
             active_title = str(proof.get("browser_open_active_title") or "").strip()
             active_url = str(proof.get("browser_open_active_url") or "").strip()
             detail = active_title or active_url
+            expected_host = str(proof.get("browser_focus_expected_host") or "").strip()
+            attempted_url = str(proof.get("browser_focus_attempted_url") or "").strip()
             capture_status = str(proof.get("capture_status") or "").strip()
             capture_response_status = str(proof.get("capture_response_status") or "").strip()
             capture_window_title = str(proof.get("capture_window_title") or "").strip()
@@ -420,7 +422,12 @@ def pre_build_gate_teams_blocker(data: dict[str, Any]) -> str:
                     f" (captured: {capture_window_title}; active: {detail})"
                 )
             else:
-                parts.append(f"Chrome did not foreground Teams before OCR{f' (active: {detail})' if detail else ''}")
+                focus_detail = f"active: {detail}" if detail else ""
+                if expected_host:
+                    focus_detail = f"{focus_detail}; expected: {expected_host}" if focus_detail else f"expected: {expected_host}"
+                if attempted_url:
+                    focus_detail = f"{focus_detail}; attempted: {attempted_url}" if focus_detail else f"attempted: {attempted_url}"
+                parts.append(f"Chrome did not foreground Teams before OCR{f' ({focus_detail})' if focus_detail else ''}")
         execution = proof.get("visible_navigation_execution")
         if isinstance(execution, dict) and execution:
             status = str(execution.get("status") or "unknown").strip() or "unknown"

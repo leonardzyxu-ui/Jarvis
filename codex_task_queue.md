@@ -72,6 +72,12 @@
 
 ## Completed This Turn
 
+- [x] Made Teams focus-failure proof more actionable. When Chrome does not
+  foreground Teams before OCR and active-tab details are blank, the voice-loop
+  artifact now records `browser_focus_expected_host`,
+  `browser_focus_attempted_url`, and a human-readable focus detail; full-loop
+  proof and morning status carry those fields forward. Focused tests passed and
+  full `tests.test_safety` passed `1142/1142`.
 - [x] Made the workboard Current subtask dynamic. When the pre-build gate has a
   derived Teams blocker, the Operator Checkpoint now says to resolve or prove
   that exact blocker instead of showing a generic backlog instruction. Focused

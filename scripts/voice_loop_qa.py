@@ -2022,26 +2022,14 @@ def run_native_visible_screen_follow_up(
             "duration_seconds": round(time.monotonic() - started, 3),
         }
     if browser_open.get("browser_open_error"):
-        return {
-            **result,
-            "status": "browser_focus_not_verified",
-            "used": False,
-            "attempts": 0,
-            "duration_seconds": round(time.monotonic() - started, 3),
-        }
+        return browser_focus_not_verified_result(result, browser_open, attempts=0, started=started)
     if (
         browser_open.get("browser_open_attempted")
         and browser_open.get("browser_open_returncode") == 0
         and browser_open.get("browser_open_target_host_verified") is False
         and browser_open.get("browser_open_verification_source") != "active_title_url"
     ):
-        return {
-            **result,
-            "status": "browser_focus_not_verified",
-            "used": False,
-            "attempts": 0,
-            "duration_seconds": round(time.monotonic() - started, 3),
-        }
+        return browser_focus_not_verified_result(result, browser_open, attempts=0, started=started)
     if browser_open.get("browser_open_attempted"):
         time.sleep(VISIBLE_SCREEN_FOLLOW_UP_INITIAL_OPEN_DELAY_SECONDS)
 
@@ -2151,21 +2139,15 @@ def run_native_visible_screen_follow_up(
                 browser_open.get("browser_open_target_host_verified") is False
                 and browser_open.get("browser_open_verification_source") != "active_title_url"
             ):
-                return {
-                    **result,
-                    **attempt_result,
-                    "status": "browser_focus_not_verified",
-                    "used": False,
-                    "attempts": attempt,
-                    "browser_open_active_title": browser_open.get("browser_open_active_title"),
-                    "browser_open_active_url": browser_open.get("browser_open_active_url"),
-                    "browser_open_verification_url": browser_open.get("browser_open_verification_url"),
-                    "browser_open_verification_source": browser_open.get("browser_open_verification_source"),
-                    "visible_reply_preview": (
+                return browser_focus_not_verified_result(
+                    {**result, **attempt_result},
+                    browser_open,
+                    attempts=attempt,
+                    started=started,
+                    visible_reply_preview=(
                         "Chrome did not foreground Teams, so I have not inspected the newest Music assignment yet."
                     ),
-                    "duration_seconds": round(time.monotonic() - started, 3),
-                }
+                )
         if visible_screen_attempt_mismatches_expected_teams(
             command_text=command_text,
             browser_open=browser_open,
@@ -2311,19 +2293,18 @@ def run_native_visible_screen_follow_up(
                         "I have not inspected the newest Music assignment yet."
                     )
                 )
-                after_navigation = {
-                    **after_navigation,
-                    "used": False,
-                    "status": "browser_focus_not_verified",
-                    "browser_focus_mismatch": True,
-                    "browser_open_active_title": browser_open.get("browser_open_active_title"),
-                    "browser_open_active_url": browser_open.get("browser_open_active_url"),
-                    "browser_open_verification_url": browser_open.get("browser_open_verification_url"),
-                    "browser_open_verification_source": browser_open.get("browser_open_verification_source"),
-                    "visible_reply_preview": visible_reply,
-                    "visible_navigation_targets": wrong_surface_visible_navigation_targets(),
-                    "response": None,
-                }
+                after_navigation = browser_focus_not_verified_result(
+                    {
+                        **after_navigation,
+                        "browser_focus_mismatch": True,
+                        "visible_navigation_targets": wrong_surface_visible_navigation_targets(),
+                        "response": None,
+                    },
+                    browser_open,
+                    attempts=attempts_made,
+                    started=started,
+                    visible_reply_preview=visible_reply,
+                )
             visible_state_changed = visible_screen_text_changed(latest_failure, after_navigation)
             navigation_result["visible_state_changed"] = visible_state_changed
             if not visible_state_changed:
@@ -3407,6 +3388,38 @@ return frontTitle & linefeed & frontURL
             "browser_url": url,
             "browser_open_error": f"{type(error).__name__}: {error}",
         }
+
+
+def browser_focus_not_verified_result(
+    result: dict[str, Any],
+    browser_open: dict[str, Any],
+    *,
+    attempts: int,
+    started: float,
+    visible_reply_preview: str | None = None,
+) -> dict[str, Any]:
+    browser_url = str(browser_open.get("browser_url") or result.get("browser_url") or "").strip()
+    expected_host = (urlparse(browser_url).hostname or "").lower()
+    payload: dict[str, Any] = {
+        **result,
+        "status": "browser_focus_not_verified",
+        "used": False,
+        "attempts": attempts,
+        "browser_open_active_title": browser_open.get("browser_open_active_title") or "",
+        "browser_open_active_url": browser_open.get("browser_open_active_url") or "",
+        "browser_open_verification_url": browser_open.get("browser_open_verification_url") or "",
+        "browser_open_verification_source": browser_open.get("browser_open_verification_source") or "",
+        "browser_focus_expected_host": expected_host,
+        "browser_focus_attempted_url": browser_url,
+        "browser_focus_detail": (
+            f"Expected Chrome to foreground {expected_host or 'the requested site'}"
+            " before OCR, but the active Teams tab could not be verified."
+        ),
+        "duration_seconds": round(time.monotonic() - started, 3),
+    }
+    if visible_reply_preview is not None:
+        payload["visible_reply_preview"] = visible_reply_preview
+    return payload
 
 
 def open_chrome_follow_up_url_in_new_visible_window(*, url: str, timeout: float) -> dict[str, Any]:

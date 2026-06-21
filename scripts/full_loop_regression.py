@@ -1578,6 +1578,9 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
         "browser_open_active_title": str(follow_up.get("browser_open_active_title") or ""),
         "browser_open_verification_url": str(follow_up.get("browser_open_verification_url") or ""),
         "browser_open_verification_source": str(follow_up.get("browser_open_verification_source") or ""),
+        "browser_focus_expected_host": str(follow_up.get("browser_focus_expected_host") or ""),
+        "browser_focus_attempted_url": str(follow_up.get("browser_focus_attempted_url") or ""),
+        "browser_focus_detail": str(follow_up.get("browser_focus_detail") or ""),
         "capture_status": str(follow_up.get("capture_status") or ""),
         "capture_window_title": str(follow_up.get("capture_window_title") or ""),
         "capture_method": str(

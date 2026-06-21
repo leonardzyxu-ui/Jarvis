@@ -4743,6 +4743,41 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(execute_mock.call_args.args[0]["point"], {"x": 257.0, "y": 322.5})
         self.assertEqual(result["visible_navigation_execution"]["status"], "live_navigation_not_unlocked")
 
+    def test_voice_loop_qa_browser_focus_failure_records_expected_host_when_active_tab_blank(self):
+        command_response = {
+            "tool": "teams.assignment",
+            "result": {"url": "https://teams.microsoft.com/v2/?clientexperience=t3"},
+        }
+        blocked_browser = {"status": "browser_permission_blocked", "tool": "browser.read_page"}
+        browser_open = {
+            "browser_open_attempted": True,
+            "browser_url": "https://teams.microsoft.com/v2/?clientexperience=t3",
+            "browser_open_returncode": 0,
+            "browser_open_target_host_verified": False,
+            "browser_open_verification_source": "",
+            "browser_open_active_title": "",
+            "browser_open_active_url": "",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch("scripts.voice_loop_qa.VISIBLE_SCREEN_PROBE", Path("/tmp/fake-probe")), \
+             patch("pathlib.Path.exists", return_value=True), \
+             patch("scripts.voice_loop_qa.run_browser_page_follow_up", return_value=blocked_browser), \
+             patch("scripts.voice_loop_qa.open_visible_screen_follow_up_url", return_value=browser_open):
+            result = voice_loop_qa.run_native_visible_screen_follow_up(
+                command_text="Look in Teams for my newest Music assignment.",
+                command_response=command_response,
+                base_url="http://127.0.0.1:8765",
+                run_dir=Path(temp_dir),
+                timeout=5.0,
+                exercise_visible_navigation=False,
+            )
+
+        self.assertEqual(result["status"], "browser_focus_not_verified")
+        self.assertEqual(result["browser_focus_expected_host"], "teams.microsoft.com")
+        self.assertEqual(result["browser_focus_attempted_url"], "https://teams.microsoft.com/v2/?clientexperience=t3")
+        self.assertIn("Expected Chrome to foreground teams.microsoft.com", result["browser_focus_detail"])
+        self.assertEqual(result["browser_open_active_title"], "")
+
     def test_voice_loop_qa_navigation_loop_prevented_preserves_action_metadata(self):
         command_response = {"tool": "teams.assignment", "result": {}}
         blocked_browser = {"status": "browser_permission_blocked", "tool": "browser.read_page"}
@@ -28902,6 +28937,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
                                     "browser_focus_not_verified": True,
                                     "browser_open_active_title": "Codex",
                                     "browser_open_active_url": "https://chatgpt.com/codex",
+                                    "browser_focus_expected_host": "teams.microsoft.com",
+                                    "browser_focus_attempted_url": "https://teams.microsoft.com/v2/",
                                 },
                             }
                         ]
@@ -28925,6 +28962,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("Teams assignment is not_inspected", blocker)
         self.assertIn("Chrome did not foreground Teams before OCR", blocker)
         self.assertIn("active: Codex", blocker)
+        self.assertIn("expected: teams.microsoft.com", blocker)
+        self.assertIn("attempted: https://teams.microsoft.com/v2/", blocker)
 
     def test_morning_status_pre_build_gate_teams_blocker_reports_login_gate(self):
         with tempfile.TemporaryDirectory() as temp_dir:
