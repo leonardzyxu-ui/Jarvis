@@ -25,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from jarvis.config import MAX_REQUEST_BYTES  # noqa: E402
+from scripts import render_overnight_status  # noqa: E402
 
 PYTHON = sys.executable or "python3"
 BASE_URL = os.environ.get("JARVIS_URL") or os.environ.get("JARVIS_BASE_URL") or "http://127.0.0.1:8765"
@@ -36,6 +37,16 @@ USAGE = """Usage: python3 scripts/verify_safe.py [--help]
 Run Jarvis checks that should not require user approval, then write a JSON
 report under runtime/verification/.
 """
+
+
+def refresh_report_surfaces() -> str:
+    try:
+        code = render_overnight_status.main()
+    except Exception as exc:  # pragma: no cover - defensive report hook
+        return f"report refresh failed: {exc}"
+    if code == 0:
+        return "report surfaces refreshed"
+    return f"report refresh exited {code}"
 
 
 @dataclass
@@ -2051,9 +2062,11 @@ def main(argv: list[str] | None = None) -> int:
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     latest_path = REPORT_DIR / "latest.json"
     latest_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    refresh_summary = refresh_report_surfaces()
 
     print(f"Jarvis safe verification: {passed}/{total} passed")
     print(f"Report: {report_path}")
+    print(f"Report surfaces: {refresh_summary}")
     for result in report["results"]:
         marker = "PASS" if result["passed"] else "FAIL"
         print(f"[{marker}] {result['name']}: {result['summary']}")

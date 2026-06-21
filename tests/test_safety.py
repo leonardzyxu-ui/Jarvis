@@ -2587,6 +2587,7 @@ class VerifySafeScriptTests(unittest.TestCase):
              patch.object(verify_safe, "REPORT_DIR", Path(tmpdir)), \
              patch("scripts.verify_safe.run_checks", return_value=fake_report), \
              patch("scripts.verify_safe.git_short_commit", return_value="abc1234"), \
+             patch("scripts.verify_safe.refresh_report_surfaces", return_value="report surfaces refreshed") as refresh, \
              patch("sys.stdout", new_callable=io.StringIO):
             code = verify_safe.main([])
             report_dir = Path(tmpdir)
@@ -2602,6 +2603,28 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(latest_payload["total"], 1)
         self.assertEqual(latest_payload["source_commit"], "abc1234")
         self.assertEqual(latest_payload["results"], fake_report["results"])
+        refresh.assert_called_once_with()
+
+    def test_verify_safe_report_refresh_failure_is_nonfatal(self):
+        fake_report = {
+            "ok": True,
+            "base_url": "http://127.0.0.1:8765",
+            "project_root": str(PROJECT_ROOT),
+            "generated_at": 1,
+            "completed_at": 2,
+            "duration_seconds": 1.0,
+            "results": [],
+        }
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch.object(verify_safe, "REPORT_DIR", Path(tmpdir)), \
+             patch("scripts.verify_safe.run_checks", return_value=fake_report), \
+             patch("scripts.verify_safe.git_short_commit", return_value="abc1234"), \
+             patch("scripts.verify_safe.refresh_report_surfaces", return_value="report refresh failed: boom"), \
+             patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            code = verify_safe.main([])
+
+        self.assertEqual(code, 0)
+        self.assertIn("Report surfaces: report refresh failed: boom", stdout.getvalue())
 
     def test_verify_safe_post_json_suppresses_command_speech_by_default(self):
         captured_payloads = []
