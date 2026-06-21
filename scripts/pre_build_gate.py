@@ -118,6 +118,9 @@ def run_gate(
         require_visible_navigation=require_visible_navigation,
         exercise_visible_navigation=exercise_visible_navigation,
         require_physical_capture=require_physical_capture,
+        skip_python_tests=skip_python_tests,
+        skip_full_loop=skip_full_loop,
+        skip_cleanup=skip_cleanup,
     )
     steps = build_steps(
         base_url=base_url,
@@ -150,6 +153,9 @@ def run_gate(
                 require_live_speech=require_live_speech,
                 require_visible_navigation=require_visible_navigation,
                 require_physical_capture=require_physical_capture,
+                skip_python_tests=skip_python_tests,
+                skip_full_loop=skip_full_loop,
+                skip_cleanup=skip_cleanup,
                 complete=False,
             ),
             run_dir,
@@ -176,6 +182,9 @@ def run_gate(
         require_live_speech=require_live_speech,
         require_visible_navigation=require_visible_navigation,
         require_physical_capture=require_physical_capture,
+        skip_python_tests=skip_python_tests,
+        skip_full_loop=skip_full_loop,
+        skip_cleanup=skip_cleanup,
         complete=True,
     )
     write_summary(summary, run_dir, output_dir, update_latest=update_latest)
@@ -195,7 +204,12 @@ def should_update_latest_gate(
     require_visible_navigation: bool,
     exercise_visible_navigation: bool,
     require_physical_capture: bool,
+    skip_python_tests: bool = False,
+    skip_full_loop: bool = False,
+    skip_cleanup: bool = False,
 ) -> bool:
+    if skip_python_tests or skip_full_loop or skip_cleanup:
+        return False
     if require_physical_capture:
         return False
     if require_live_speech and not exercise_live_speech:
@@ -437,6 +451,9 @@ def make_summary(
     require_live_speech: bool,
     require_visible_navigation: bool,
     require_physical_capture: bool,
+    skip_python_tests: bool = False,
+    skip_full_loop: bool = False,
+    skip_cleanup: bool = False,
     complete: bool,
 ) -> dict[str, Any]:
     passed = sum(1 for item in results if item.get("ok"))
@@ -467,6 +484,15 @@ def make_summary(
             require_visible_navigation=require_visible_navigation,
             exercise_visible_navigation=exercise_visible_navigation,
             require_physical_capture=require_physical_capture,
+            skip_python_tests=skip_python_tests,
+            skip_full_loop=skip_full_loop,
+            skip_cleanup=skip_cleanup,
+        ),
+        "partial_gate": bool(skip_python_tests or skip_full_loop or skip_cleanup),
+        "skipped_steps": skipped_steps(
+            skip_python_tests=skip_python_tests,
+            skip_full_loop=skip_full_loop,
+            skip_cleanup=skip_cleanup,
         ),
         "duration_seconds": round(time.monotonic() - started, 3),
         "speech_proof_contract": speech_proof_contract(
@@ -479,6 +505,17 @@ def make_summary(
         "require_physical_capture": bool(require_physical_capture),
         "results": results,
     }
+
+
+def skipped_steps(*, skip_python_tests: bool, skip_full_loop: bool, skip_cleanup: bool) -> list[str]:
+    skipped: list[str] = []
+    if skip_python_tests:
+        skipped.append("python_safety_suite")
+    if skip_full_loop:
+        skipped.append("full_loop_regression")
+    if skip_cleanup:
+        skipped.append("cleanup_chrome_test_tabs")
+    return skipped
 
 
 def git_commit_short() -> str:
@@ -526,7 +563,12 @@ def render_markdown(summary: dict[str, Any]) -> str:
         f"- Visible navigation required: {summary.get('require_visible_navigation')}",
         f"- Visible navigation exercised: {summary.get('exercise_visible_navigation')}",
         f"- Physical capture required: {summary.get('require_physical_capture')}",
+        f"- Canonical latest: {summary.get('canonical_latest')}",
+        f"- Partial gate: {summary.get('partial_gate')}",
     ]
+    skipped = summary.get("skipped_steps")
+    if skipped:
+        lines.append(f"- Skipped steps: {', '.join(str(item) for item in skipped)}")
     for result in summary.get("results", []):
         if not isinstance(result, dict):
             continue

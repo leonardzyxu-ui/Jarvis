@@ -1707,6 +1707,45 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(latest_md, "previous")
         self.assertTrue(timestamped_report_exists)
 
+    def test_pre_build_gate_partial_runs_do_not_replace_latest(self):
+        calls = []
+
+        def fake_runner(command, timeout):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "latest.json").write_text(json.dumps({"status": "previous", "canonical_latest": True}), encoding="utf-8")
+            (root / "latest.md").write_text("previous", encoding="utf-8")
+            summary = pre_build_gate.run_gate(
+                base_url="http://127.0.0.1:8765",
+                output_dir=root,
+                skip_python_tests=True,
+                skip_full_loop=True,
+                skip_cleanup=True,
+                runner=fake_runner,
+            )
+
+            latest = json.loads((root / "latest.json").read_text(encoding="utf-8"))
+            latest_md = (root / "latest.md").read_text(encoding="utf-8")
+            timestamped_report_exists = Path(summary["report_path"]).exists()
+            timestamped_markdown = Path(summary["report_path"]).with_suffix(".md").read_text(encoding="utf-8")
+
+        self.assertTrue(summary["ok"])
+        self.assertFalse(summary["canonical_latest"])
+        self.assertTrue(summary["partial_gate"])
+        self.assertEqual(
+            summary["skipped_steps"],
+            ["python_safety_suite", "full_loop_regression", "cleanup_chrome_test_tabs"],
+        )
+        self.assertEqual(latest["status"], "previous")
+        self.assertEqual(latest_md, "previous")
+        self.assertTrue(timestamped_report_exists)
+        self.assertIn("- Canonical latest: False", timestamped_markdown)
+        self.assertIn("- Partial gate: True", timestamped_markdown)
+        self.assertFalse(any("full_loop_regression.py" in str(part) for command in calls for part in command))
+
     def test_pre_build_gate_summary_records_source_commit(self):
         with tempfile.TemporaryDirectory() as tmpdir, \
              patch("scripts.pre_build_gate.git_commit_short", return_value="abc1234"):
@@ -1938,7 +1977,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             summary = pre_build_gate.run_gate(
                 base_url="http://127.0.0.1:8765",
                 output_dir=Path(temp_dir),
-                skip_python_tests=True,
+                skip_python_tests=False,
                 skip_full_loop=False,
                 skip_cleanup=False,
                 runner=fake_runner,
@@ -1983,9 +2022,9 @@ class VerifySafeScriptTests(unittest.TestCase):
             summary = pre_build_gate.run_gate(
                 base_url="http://127.0.0.1:8765",
                 output_dir=output_dir,
-                skip_python_tests=True,
-                skip_full_loop=True,
-                skip_cleanup=True,
+                skip_python_tests=False,
+                skip_full_loop=False,
+                skip_cleanup=False,
                 runner=fake_runner,
                 timeout=1,
             )
@@ -1997,7 +2036,13 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(report_refresh_snapshots[-1]["status"], "passed")
         self.assertEqual(
             [item["id"] for item in report_refresh_snapshots[-1]["results"]],
-            ["stop_speaking_probe", "report_refresh"],
+            [
+                "python_safety_suite",
+                "full_loop_regression",
+                "stop_speaking_probe",
+                "cleanup_chrome_test_tabs",
+                "report_refresh",
+            ],
         )
 
     def test_full_loop_focused_summary_does_not_update_global_latest(self):
