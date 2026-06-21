@@ -27867,6 +27867,8 @@ class RuntimeSurfaceTests(unittest.TestCase):
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("Latest pre-build gate (stale; not current HEAD): failed, 0/2 passed (fatal 1, warnings 1)", printed)
         self.assertIn("steps full_loop_regression, cleanup_chrome_test_tabs", printed)
+        self.assertIn("Chrome cleanup warning from stale gate:", printed)
+        self.assertNotIn("\nChrome cleanup warning: cleanup", printed)
 
     def test_morning_status_marks_pre_build_gate_stale_for_head(self):
         with patch("scripts.morning_status.git_commit_short", return_value="newhead"):

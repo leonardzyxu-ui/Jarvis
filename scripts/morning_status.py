@@ -263,7 +263,8 @@ def print_latest_pre_build_gate() -> None:
         print(f"{prefix}: {music_blocker}")
     cleanup_warning = pre_build_gate_cleanup_warning(data)
     if cleanup_warning:
-        print(f"Chrome cleanup warning: {cleanup_warning}")
+        prefix = "Chrome cleanup warning from stale gate" if stale_suffix else "Chrome cleanup warning"
+        print(f"{prefix}: {cleanup_warning}")
 
 
 def pre_build_gate_status_label(data: dict[str, Any], *, stale_suffix: str | None = None) -> str:
