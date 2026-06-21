@@ -131,6 +131,14 @@ Status legend:
      Teams, so the next fix should avoid broad Teams DOM snapshots and either
      use a narrower authenticated Chrome route or a more reliable native window
      capture/navigation path.
+   - 2026-06-21 safety update: after the live probe created a dangerous pile of
+     Chrome/Teams windows and macOS showed memory pressure, fresh Chrome-window
+     recovery is disabled by default. It now requires
+     `JARVIS_ALLOW_CHROME_WINDOW_CREATION=1`, cleanup targets only newly-created
+     Teams windows/tabs by IDs, and cleanup/snapshot helpers return a clean
+     no-op if Chrome is closed instead of launching Chrome for inspection.
+     Teams assignment completion is still incomplete; the safety fix prevents
+     the test harness from making the machine unstable while that remains true.
 
 5. Partially fixed/risky: Jarvis must use model/tool choice, not fake keyword
    hacks, except where Leo explicitly allows a primitive tool.
