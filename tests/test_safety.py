@@ -95,6 +95,7 @@ from jarvis.tools import (
     contact_data_remember,
     contact_data_status,
     daily_memory_summary,
+    daily_memory_review,
     deep_tool_catalog_status,
     device_status,
     email_backend_status,
@@ -15792,6 +15793,89 @@ Pages occupied by compressor:             10.
         self.assertIn("reviewable before sync", result["jarvis_compiled_summary"])
         self.assertIn("Jarvis-to-Codex", result["reply"])
         self.assertNotIn(session_id, serialized)
+
+    def test_daily_memory_review_is_local_review_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            jarvis_memory = Path(temp_dir) / "jarvis_daily_memory.json"
+            jarvis_memory.write_text(
+                json.dumps(
+                    {
+                        "schema": "jarvis.daily_memory.v1",
+                        "date": time.strftime("%Y-%m-%d"),
+                        "entries": [
+                            {"kind": "preference", "summary": "Leo wants concise spoken summaries.", "source": "test"},
+                            {"kind": "project", "summary": "Jarvis should keep memory reviewable.", "source": "test"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.JARVIS_DAILY_MEMORY_PATH", jarvis_memory):
+                result = daily_memory_review("review")
+
+        self.assertEqual(result["tool"], "memory.review")
+        self.assertEqual(result["status"], "reviewed")
+        self.assertFalse(result["read_chat_history"])
+        self.assertFalse(result["raw_chat_history_read"])
+        self.assertFalse(result["synced_remote"])
+        self.assertFalse(result["called_model"])
+        self.assertFalse(result["changed_state"])
+        self.assertEqual(result["entry_count"], 2)
+        self.assertIn("concise spoken summaries", json.dumps(result["recent_entries"]))
+
+    def test_daily_memory_delete_requires_confirmation_then_deletes_compact_entry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            jarvis_memory = Path(temp_dir) / "jarvis_daily_memory.json"
+            jarvis_memory.write_text(
+                json.dumps(
+                    {
+                        "schema": "jarvis.daily_memory.v1",
+                        "date": time.strftime("%Y-%m-%d"),
+                        "entries": [
+                            {"kind": "preference", "summary": "Keep this memory.", "source": "test"},
+                            {"kind": "project", "summary": "Delete this memory.", "source": "test"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.JARVIS_DAILY_MEMORY_PATH", jarvis_memory):
+                blocked = daily_memory_review("delete", entry_index=2)
+                after_blocked = json.loads(jarvis_memory.read_text(encoding="utf-8"))
+                deleted = daily_memory_review("delete", entry_index=2, confirm_delete=True)
+                after_delete = json.loads(jarvis_memory.read_text(encoding="utf-8"))
+
+        self.assertEqual(blocked["status"], "delete_confirmation_required")
+        self.assertTrue(blocked["requires_confirmation"])
+        self.assertFalse(blocked["changed_state"])
+        self.assertEqual(len(after_blocked["entries"]), 2)
+        self.assertEqual(deleted["status"], "deleted")
+        self.assertTrue(deleted["changed_state"])
+        self.assertFalse(deleted["synced_remote"])
+        self.assertEqual(len(after_delete["entries"]), 1)
+        self.assertEqual(after_delete["entries"][0]["summary"], "Keep this memory.")
+
+    def test_planner_routes_memory_review_and_confirmation_gated_delete(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            jarvis_memory = Path(temp_dir) / "jarvis_daily_memory.json"
+            jarvis_memory.write_text(
+                json.dumps(
+                    {
+                        "schema": "jarvis.daily_memory.v1",
+                        "date": time.strftime("%Y-%m-%d"),
+                        "entries": [{"kind": "note", "summary": "Reviewable memory.", "source": "test"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("jarvis.tools.JARVIS_DAILY_MEMORY_PATH", jarvis_memory):
+                review = Planner().preview("show my Jarvis memory entries")
+                delete = Planner().handle("delete memory entry 1")
+
+        self.assertEqual(review.tool, "memory.review")
+        self.assertEqual(delete.tool, "memory.review")
+        self.assertEqual(delete.result["status"], "delete_confirmation_required")
+        self.assertFalse(delete.result["changed_state"])
 
     def test_tts_status_does_not_play_audio(self):
         voices = "Alex en_US # sample voice\nSamantha en_US # sample voice\n"

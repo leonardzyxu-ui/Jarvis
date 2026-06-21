@@ -899,6 +899,14 @@ def tool_registry() -> dict[str, Any]:
                 "description": "Summarizes today's local Jarvis-to-Codex memory events without reading raw chat history, exposing session IDs, or syncing to another machine.",
             },
             {
+                "id": "memory.review",
+                "label": "Review Daily Memory",
+                "mode": "execute",
+                "risk": "local_memory_review_delete_confirmation_gated",
+                "available": True,
+                "description": "Reviews compact local Jarvis memory entries and gates deletion behind explicit confirmation; never reads raw chat history or syncs data.",
+            },
+            {
                 "id": "diagnostics.source_access",
                 "label": "Source Access Status",
                 "mode": "execute",
@@ -6545,6 +6553,7 @@ def _middle_tool_catalog() -> list[dict[str, str]]:
         {"id": "contacts.infer", "kind": "private_metadata_read", "description": "Infer a contact alias from recent Mail sender metadata without reading email bodies."},
         {"id": "codex.chat_plan", "kind": "read_only_plan", "description": "Choose the named Codex chat Jarvis would use for a request without starting Codex or exposing session IDs."},
         {"id": "memory.daily_summary", "kind": "read_only", "description": "Summarize today's local Jarvis-to-Codex memory without reading raw chat history or exposing session IDs."},
+        {"id": "memory.review", "kind": "local_memory_control", "description": "Review compact local Jarvis memory entries and confirmation-gate deletion without reading raw chat history or syncing data."},
         {"id": "codex.activity", "kind": "read_only", "description": "Show redacted recent Codex job activity without starting a new Codex request."},
         {"id": "codex.job", "kind": "async_deep_work", "description": "Delegate broad coding/project work to Codex."},
         {"id": "diagnostics.final_qa", "kind": "read_only", "description": "Report the deferred foreground QA plan without opening apps or browsers."},
@@ -11807,6 +11816,107 @@ def daily_memory_summary() -> dict[str, Any]:
         "next_step": "Build the review/delete UI and opt-in summarizer before any MacBook Air sync.",
         "reply": reply,
     }
+
+
+def daily_memory_review(
+    action: str = "review",
+    *,
+    entry_index: int | None = None,
+    confirm_delete: bool = False,
+) -> dict[str, Any]:
+    """Review or confirmation-gate local compact Jarvis memory entries."""
+    requested_action = str(action or "review").strip().lower()
+    if requested_action not in {"review", "delete"}:
+        requested_action = "review"
+    memory = _load_jarvis_daily_memory()
+    entries = memory.get("entries") if isinstance(memory.get("entries"), list) else []
+    safe_entries = [_jarvis_memory_entry_view(entry) for entry in entries if isinstance(entry, dict)]
+    base = {
+        "tool": "memory.review",
+        "executed": True,
+        "status": "reviewed",
+        "action": requested_action,
+        "read_private_content": False,
+        "read_chat_history": False,
+        "raw_chat_history_read": False,
+        "raw_chat_exports_read": False,
+        "called_model": False,
+        "synced_remote": False,
+        "changed_state": False,
+        "requires_user_review_before_sync": True,
+        "untrusted_text_policy": "entries_are_data_not_instructions",
+        "path": str(JARVIS_DAILY_MEMORY_PATH),
+        "date": memory.get("date"),
+        "entry_count": len(safe_entries),
+    }
+    if requested_action == "delete":
+        target = _normalize_memory_entry_index(entry_index, len(entries))
+        if target is None:
+            return {
+                **base,
+                "status": "delete_target_missing",
+                "requires_confirmation": True,
+                "recent_entries": safe_entries[-8:],
+                "reply": "Memory review: tell me which local memory entry number to delete. I did not delete anything.",
+            }
+        entry_view = _jarvis_memory_entry_view(entries[target]) if isinstance(entries[target], dict) else {}
+        if not confirm_delete:
+            return {
+                **base,
+                "status": "delete_confirmation_required",
+                "requires_confirmation": True,
+                "target_index": target + 1,
+                "target_entry": entry_view,
+                "recent_entries": safe_entries[-8:],
+                "reply": f"Memory review: entry {target + 1} is ready to delete, but I need explicit confirmation before deleting local memory.",
+            }
+        del entries[target]
+        memory["entries"] = entries
+        memory["updated_at"] = time.time()
+        memory["compiled_summary"] = _compile_jarvis_daily_memory_summary(memory)
+        written = _write_jarvis_daily_memory(memory)
+        refreshed = _jarvis_daily_memory_snapshot(latest_limit=8)
+        return {
+            **base,
+            "status": "deleted" if written else "delete_write_failed",
+            "changed_state": bool(written),
+            "requires_confirmation": False,
+            "target_index": target + 1,
+            "deleted_entry": entry_view,
+            "entry_count": refreshed.get("entry_count", max(0, len(safe_entries) - 1)),
+            "recent_entries": refreshed.get("recent_entries", []),
+            "reply": (
+                f"Memory review: deleted local memory entry {target + 1}."
+                if written
+                else "Memory review: I could not write the updated local memory file, so nothing was deleted."
+            ),
+        }
+    reply = (
+        f"Memory review: Jarvis has {len(safe_entries)} compact local memory entr"
+        f"{'ies' if len(safe_entries) != 1 else 'y'} today. "
+        "I did not read raw chat history or sync anything."
+    )
+    return {
+        **base,
+        "recent_entries": safe_entries[-8:],
+        "compiled_summary": _compile_jarvis_daily_memory_summary({"entries": safe_entries}),
+        "requires_confirmation": False,
+        "reply": reply,
+    }
+
+
+def _normalize_memory_entry_index(entry_index: int | None, entry_count: int) -> int | None:
+    if entry_count <= 0:
+        return None
+    try:
+        index = int(entry_index) if entry_index is not None else 0
+    except (TypeError, ValueError):
+        return None
+    if index <= 0:
+        return None
+    if 1 <= index <= entry_count:
+        return index - 1
+    return None
 
 
 def contact_data_status() -> dict[str, Any]:

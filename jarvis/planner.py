@@ -63,6 +63,7 @@ from .tools import (
     localos_music_recommendations,
     localos_music_search,
     localos_music_stop,
+    daily_memory_review,
     memory_status,
     memory_usage_status,
     model_test_plan,
@@ -616,6 +617,11 @@ NATURAL_LANGUAGE_TOOL_SPECS = [
         "entities": [],
     },
     {
+        "tool": "memory.review",
+        "description": "Review compact local Jarvis memory entries, or prepare a confirmation-gated deletion of a specific entry. This does not read raw chat history, call a model, or sync to another machine.",
+        "entities": ["action", "entry_index", "confirm_delete"],
+    },
+    {
         "tool": "codex.activity",
         "description": "Read redacted recent async Codex job activity so Jarvis can show that Codex is working without starting a new Codex request.",
         "entities": [],
@@ -735,6 +741,20 @@ class Planner:
             return self._result(text, "codex.activity", "Read Codex activity snapshot.", assessment, result, False)
         if _looks_like_codex_speed_status(lower):
             return self._result(text, "diagnostics.codex_speed", "Read local Codex speed status.", assessment, codex_speed_status(), True)
+        if _looks_like_memory_review(lower):
+            action = "delete" if any(cue in lower for cue in ("delete", "erase", "remove")) else "review"
+            return self._result(
+                text,
+                "memory.review",
+                "Reviewed local Jarvis memory.",
+                assessment,
+                daily_memory_review(
+                    action,
+                    entry_index=_extract_memory_entry_index(text),
+                    confirm_delete=_looks_like_confirmed_memory_delete(lower),
+                ),
+                True,
+            )
         if _looks_like_daily_memory_summary(lower):
             return self._result(text, "memory.daily_summary", "Read local daily memory summary.", assessment, daily_memory_summary(), True)
         if _looks_like_overnight_work_status(lower):
@@ -1258,6 +1278,19 @@ class Planner:
             return self._preview_result(text, "diagnostics.codex_chats", assessment, True)
         if _looks_like_codex_activity_status(lower):
             return self._preview_result(text, "codex.activity", assessment, True)
+        if _looks_like_memory_review(lower):
+            action = "delete" if any(cue in lower for cue in ("delete", "erase", "remove")) else "review"
+            return self._preview_result(
+                text,
+                "memory.review",
+                assessment,
+                True,
+                plan={
+                    "action": action,
+                    "entry_index": _extract_memory_entry_index(text),
+                    "confirm_delete": _looks_like_confirmed_memory_delete(lower),
+                },
+            )
         if _looks_like_daily_memory_summary(lower):
             return self._preview_result(text, "memory.daily_summary", assessment, True)
         if _looks_like_same_codex_reference(text):
@@ -2195,6 +2228,26 @@ class Planner:
             if not execute:
                 return self._preview_result(text, "memory.daily_summary", assessment, True, plan={"intent": intent})
             return self._result(text, "memory.daily_summary", "Read local daily memory summary.", assessment, daily_memory_summary(), True)
+        if selected_tool == "memory.review":
+            action = _clean_optional_entity(entities.get("action")) or ("delete" if "delete" in lower or "erase" in lower else "review")
+            entry_index = _extract_memory_entry_index(text)
+            confirm_delete = _looks_like_confirmed_memory_delete(lower)
+            if not execute:
+                return self._preview_result(
+                    text,
+                    "memory.review",
+                    assessment,
+                    True,
+                    plan={"intent": intent, "action": action, "entry_index": entry_index, "confirm_delete": confirm_delete},
+                )
+            return self._result(
+                text,
+                "memory.review",
+                "Reviewed local Jarvis memory.",
+                assessment,
+                daily_memory_review(action, entry_index=entry_index, confirm_delete=confirm_delete),
+                True,
+            )
         if selected_tool == "contacts.status":
             if not execute:
                 return self._preview_result(text, "contacts.status", assessment, True, plan={"intent": intent})
@@ -4789,6 +4842,39 @@ def _looks_like_daily_memory_summary(lower: str) -> bool:
         and any(cue in lower for cue in summary_cues)
         and not any(cue in lower for cue in mutation_cues)
     )
+
+
+def _looks_like_memory_review(lower: str) -> bool:
+    memory_cues = (
+        "jarvis memory",
+        "daily memory",
+        "local memory",
+        "memory entry",
+        "memory entries",
+    )
+    review_cues = ("review", "show", "list", "delete", "erase", "remove")
+    sync_cues = ("sync", "upload", "export", "send to", "macbook air")
+    return any(cue in lower for cue in memory_cues) and any(cue in lower for cue in review_cues) and not any(
+        cue in lower for cue in sync_cues
+    )
+
+
+def _extract_memory_entry_index(text: str) -> int | None:
+    match = re.search(r"(?i)\b(?:entry|memory)\s*(?:number|#|no\.?)?\s*(\d{1,3})\b", str(text or ""))
+    if not match:
+        match = re.search(r"(?i)\bdelete\s+(\d{1,3})\b", str(text or ""))
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _looks_like_confirmed_memory_delete(lower: str) -> bool:
+    if not any(cue in lower for cue in ("delete", "erase", "remove")):
+        return False
+    return any(cue in lower for cue in ("confirm delete", "yes delete", "approved delete", "really delete"))
 
 
 def _looks_like_memory_status(lower: str) -> bool:
