@@ -72,6 +72,11 @@
 
 ## Completed This Turn
 
+- [x] Made `.memory.md` stop pinning the current safe verifier to a
+  stale-prone timestamped filename. It now points future work to
+  `runtime/verification/latest.json` / `scripts/morning_status.py`, and the
+  regression test guards against the old pinned artifact coming back. Focused
+  memory test passed; full `tests.test_safety` passed `1140/1140`.
 - [x] Updated `.memory.md` so its `Current Live State` no longer claims the old
   Jarvis 0.1.444 build 444 is live. It now records Jarvis 0.1.494 build 494,
   the current safe verifier artifact, the Music-warning wording, and the

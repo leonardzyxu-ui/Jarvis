@@ -7205,7 +7205,9 @@ class VerifySafeScriptTests(unittest.TestCase):
         section = memory.split("## Current Live State", 1)[1].split("\n## ", 1)[0]
 
         self.assertIn("Jarvis 0.1.494 build 494", section)
-        self.assertIn("verify-safe-20260621-151346.json", section)
+        self.assertIn("runtime/verification/latest.json", section)
+        self.assertIn("passed 106/106", section)
+        self.assertNotIn("verify-safe-20260621-151346.json", section)
         self.assertIn("Music warning", section)
         self.assertNotIn("Jarvis 0.1.444 build 444 is live", section)
         self.assertNotIn("verify-safe-20260618-001149.json", section)
