@@ -4,6 +4,7 @@
 
 - [x] Halt active overnight implementation on Leo's instruction, preserve the checkpoint, and prepare a concise HTML status report before pausing work.
 - [ ] Continue the active Jarvis hardening goal until all known user-reported bugs are fixed or captured by reliable regression tests.
+- [x] Refresh safe verification on current HEAD `b1c6a13` after the inline diagnostics sanitizer commit, then refresh the status/report surfaces if it passes.
 - [x] Mirror stale/non-canonical pre-build gate wording in the master HTML report so stale release proof is not presented as current.
 - [x] Mirror stale safe-verifier wording in morning status and the master HTML report so green verifier proof cannot be mistaken for current HEAD proof.
 - [ ] Overnight protocol active from 2026-06-20 22:02 CST with unknown wake-up time: keep working until Leo explicitly says he woke up; do not ask questions, do not request secret code, skip approval-gated/risky work, and keep safe non-interactive progress moving.
