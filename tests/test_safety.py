@@ -15086,6 +15086,8 @@ class PlannerTests(unittest.TestCase):
         self.assertFalse(result["synced_remote"])
         self.assertFalse(result["read_chat_history"])
         self.assertIn("local review surface", result["reply"])
+        self.assertIn("confirmation-deleted locally", result["reply"])
+        self.assertNotIn("still need the review/delete flow", result["reply"])
         self.assertIn("MEMORY.md", result["design"]["profile_memory_file"])
         self.assertIn("codex_daily_memory", result)
         self.assertTrue(result["codex_daily_memory"]["session_ids_hidden"])
@@ -15792,6 +15794,8 @@ Pages occupied by compressor:             10.
         self.assertIn("tightened Piper speech interruption", result["compiled_summary"])
         self.assertIn("reviewable before sync", result["jarvis_compiled_summary"])
         self.assertIn("Jarvis-to-Codex", result["reply"])
+        self.assertIn("opt-in raw-chat summarizer", result["next_step"])
+        self.assertNotIn("review/delete UI", result["next_step"])
         self.assertNotIn(session_id, serialized)
 
     def test_daily_memory_review_is_local_review_only(self):

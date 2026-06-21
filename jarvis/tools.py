@@ -11729,8 +11729,8 @@ def memory_status() -> dict[str, Any]:
     phases = [
         "Keep active Jarvis-to-Codex daily memory local and compact so Codex gets useful same-day context.",
         "Maintain a reviewable local Jarvis daily memory surface that can accept compact entries without raw chat exports.",
+        "Let Leo review compact entries and confirmation-gate deletion before any sync.",
         "Add local daily summary export from Jarvis chat history with private-content redaction options.",
-        "Let Leo review or delete a daily summary before any remote sync.",
         "Sync approved summaries to the MacBook Air over Tailscale SSH.",
         "Run a remote summarizer that updates a growing MEMORY.md-style profile plus dated evidence summaries.",
         "Use the profile as retrieval context for Jarvis responses, with a visible memory status/delete flow.",
@@ -11740,8 +11740,9 @@ def memory_status() -> dict[str, Any]:
     reply = (
         f"Memory status: Jarvis-Codex daily memory is active locally with {event_count} event"
         f"{'s' if event_count != 1 else ''} today. Jarvis daily memory has a local review surface with {entry_count} compact entr"
-        f"{'ies' if entry_count != 1 else 'y'} today. Broader daily local summaries for Jarvis chat history, "
-        "optional approved sync to the MacBook Air, and the long-term MEMORY.md-style profile still need the review/delete flow. "
+        f"{'ies' if entry_count != 1 else 'y'} today, and compact entries can be reviewed or confirmation-deleted locally. "
+        "Broader daily local summaries for Jarvis chat history, optional approved sync to the MacBook Air, "
+        "and the long-term MEMORY.md-style profile are still unfinished. "
         "I did not read or sync chat history in this diagnostic."
     )
     return {
@@ -11781,7 +11782,7 @@ def daily_memory_summary() -> dict[str, Any]:
     else:
         reply = (
             "Daily memory summary: no Jarvis-to-Codex events or Jarvis daily memory entries have been recorded today yet. "
-            "The reviewable local memory surface is ready, but the broader all-chat summarizer still needs a review/delete flow; "
+            "The reviewable local memory surface and confirmation-gated delete flow are ready, but the broader all-chat summarizer is still unfinished; "
             "I did not read raw chat history or sync anything."
         )
     return {
@@ -11813,7 +11814,7 @@ def daily_memory_summary() -> dict[str, Any]:
             "Does not sync to the MacBook Air.",
             "Only compact Jarvis-to-Codex routing/job events and explicitly recorded local Jarvis memory entries are included.",
         ],
-        "next_step": "Build the review/delete UI and opt-in summarizer before any MacBook Air sync.",
+        "next_step": "Build the opt-in raw-chat summarizer and MEMORY.md-style profile synthesis before any MacBook Air sync.",
         "reply": reply,
     }
 
