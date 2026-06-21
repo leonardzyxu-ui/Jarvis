@@ -267,3 +267,4 @@
 - [x] Made morning status label stale or diagnostic pre-build gates in the headline so old/partial proof cannot be mistaken for current release proof. Focused status tests passed and full `tests.test_safety` passed `1109/1109`.
 - [x] Labeled Chrome cleanup warnings from stale pre-build gates as stale too, matching Teams/Music blocker wording. Focused status test passed and full `tests.test_safety` passed `1109/1109`.
 - [x] Marked latest Teams live-navigation diagnostics as stale when their full-loop artifact source commit differs from current `HEAD`. Focused diagnostics tests passed and full `tests.test_safety` passed `1111/1111`.
+- [x] Mirrored Teams live-navigation stale-artifact wording in the master HTML report/workboard renderer, not just `morning_status.py`. Focused renderer tests passed and full `tests.test_safety` passed `1113/1113`.

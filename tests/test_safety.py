@@ -28561,6 +28561,45 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("not exercised in latest artifact", diagnostic)
         self.assertIn("All teams -> requested class -> Assignments", diagnostic)
 
+    def test_render_status_latest_teams_diagnostic_marks_stale_source_commit(self):
+        data = {
+            "source_commit": "oldgate",
+            "results": [
+                {
+                    "case_id": "teams_music_assignment_honesty",
+                    "action_proof": {
+                        "visible_navigation_execution": {
+                            "attempted": False,
+                            "executed": False,
+                            "action": "browser_back",
+                            "status": "navigation_loop_prevented",
+                            "point": {"x": 257.13, "y": 323.04},
+                            "coordinate_space": "screen_points",
+                        },
+                        "visible_navigation_execution_steps": [
+                            {"attempted": True, "executed": True, "status": "clicked"},
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with patch("scripts.render_overnight_status.git", return_value="newhead"):
+            diagnostic = render_overnight_status.teams_live_navigation_diagnostic(data)
+
+        self.assertIn("latest live Teams navigation stopped as browser_back navigation_loop_prevented", diagnostic)
+        self.assertIn("stale for HEAD newhead", diagnostic)
+        self.assertIn("artifact ran on oldgate", diagnostic)
+
+    def test_render_status_full_loop_artifact_stale_text_ignores_missing_or_current_commit(self):
+        with patch("scripts.render_overnight_status.git", return_value="head"):
+            self.assertEqual(render_overnight_status.full_loop_artifact_stale_text({}), "")
+            self.assertEqual(render_overnight_status.full_loop_artifact_stale_text({"source_commit": "head"}), "")
+            self.assertIn(
+                "stale for HEAD head",
+                render_overnight_status.full_loop_artifact_stale_text({"source_commit": "old"}),
+            )
+
     def test_morning_status_pre_build_gate_cleanup_warning_summary(self):
         warning = pre_build_gate_cleanup_warning(
             {

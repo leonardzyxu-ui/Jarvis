@@ -1583,6 +1583,7 @@ def latest_teams_live_navigation_diagnostic() -> str:
 
 def teams_live_navigation_diagnostic(data: dict[str, Any], report_path: Path | None = None) -> str:
     results = data.get("results") if isinstance(data.get("results"), list) else []
+    stale_text = full_loop_artifact_stale_text(data)
     for result in results:
         if not isinstance(result, dict) or result.get("case_id") != "teams_music_assignment_honesty":
             continue
@@ -1602,7 +1603,7 @@ def teams_live_navigation_diagnostic(data: dict[str, Any], report_path: Path | N
             if report_path is not None:
                 path = str(report_path.relative_to(PROJECT_ROOT)) if report_path.is_relative_to(PROJECT_ROOT) else str(report_path)
                 path_text = f"; {path}"
-            return f"latest Teams navigation not exercised in latest artifact{label_text}{path_text}"
+            return f"latest Teams navigation not exercised in latest artifact{label_text}{path_text}{stale_text}"
         status = str(execution.get("status") or "").strip()
         if not status:
             continue
@@ -1621,7 +1622,15 @@ def teams_live_navigation_diagnostic(data: dict[str, Any], report_path: Path | N
         action_name = str(execution.get("action") or "").strip()
         action_prefix = f"{action_name} " if action_name else ""
         verb = f"{action_prefix}clicked" if status == "clicked" else f"stopped as {action_prefix}{status}"
-        return f"latest live Teams navigation {verb}{point_text}{coordinate_text}{step_text}{path_text}"
+        return f"latest live Teams navigation {verb}{point_text}{coordinate_text}{step_text}{path_text}{stale_text}"
+    return ""
+
+
+def full_loop_artifact_stale_text(data: dict[str, Any]) -> str:
+    source_commit = str(data.get("source_commit") or "").strip()
+    head_commit = git(["rev-parse", "--short", "HEAD"])
+    if source_commit and head_commit and source_commit != head_commit:
+        return f"; stale for HEAD {head_commit} (artifact ran on {source_commit})"
     return ""
 
 
