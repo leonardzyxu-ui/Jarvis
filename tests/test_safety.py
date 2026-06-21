@@ -7360,11 +7360,21 @@ class VerifySafeScriptTests(unittest.TestCase):
         current_focus = memory.split("## Current Focus", 1)[1].split("\n## ", 1)[0]
         section = memory.split("## Current Live State", 1)[1].split("\n## ", 1)[0]
 
+        self.assertIn("Last updated: 2026-06-21 17:37 CST", memory)
+        self.assertIn("b0589ed", current_focus)
+        self.assertIn("0386eaf", current_focus)
+        self.assertIn("298e14a", current_focus)
         self.assertIn("runtime/verification/latest.json", current_focus)
         self.assertNotIn("verify-safe-20260621-132210.json", current_focus)
         self.assertIn("Jarvis 0.1.494 build 494", section)
         self.assertIn("runtime/verification/latest.json", section)
         self.assertIn("passed 106/106", section)
+        self.assertIn("distinguish stale", section)
+        self.assertIn("pre-build gates from current HEAD blockers", section)
+        self.assertIn("private Teams URLs/classes", section)
+        self.assertIn("Physical audio proof", section)
+        self.assertIn("loopback_device_missing", section)
+        self.assertIn("strict physical speaker/microphone", section)
         self.assertNotIn("verify-safe-20260621-151346.json", section)
         self.assertIn("Music warning", section)
         self.assertNotIn("Jarvis 0.1.444 build 444 is live", section)
