@@ -190,6 +190,7 @@ from scripts.morning_status import (
     pre_build_gate_cleanup_warning,
     pre_build_gate_music_blocker,
     pre_build_gate_stale_suffix,
+    pre_build_gate_status_label,
     pre_build_gate_teams_blocker,
     pre_build_gate_summary,
     print_report_surfaces,
@@ -27864,7 +27865,7 @@ class RuntimeSurfaceTests(unittest.TestCase):
                 print_latest_pre_build_gate()
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
-        self.assertIn("Latest pre-build gate: failed, 0/2 passed (fatal 1, warnings 1)", printed)
+        self.assertIn("Latest pre-build gate (stale; not current HEAD): failed, 0/2 passed (fatal 1, warnings 1)", printed)
         self.assertIn("steps full_loop_regression, cleanup_chrome_test_tabs", printed)
 
     def test_morning_status_marks_pre_build_gate_stale_for_head(self):
@@ -27874,6 +27875,20 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("stale for HEAD newhead", suffix)
         self.assertIn("gate ran on oldgate", suffix)
         self.assertEqual(pre_build_gate_stale_suffix({"source_commit": ""}), ", source commit unknown")
+
+    def test_morning_status_labels_stale_and_noncanonical_pre_build_gates(self):
+        self.assertEqual(
+            pre_build_gate_status_label({"source_commit": "oldgate"}, stale_suffix=", stale for HEAD newhead (gate ran on oldgate)"),
+            "Latest pre-build gate (stale; not current HEAD)",
+        )
+        self.assertEqual(
+            pre_build_gate_status_label({"canonical_latest": False, "partial_gate": True}, stale_suffix=""),
+            "Latest pre-build gate (non-canonical diagnostic)",
+        )
+        self.assertEqual(
+            pre_build_gate_status_label({"canonical_latest": True}, stale_suffix=""),
+            "Latest pre-build gate",
+        )
 
     def test_morning_status_labels_teams_blocker_from_stale_gate(self):
         with tempfile.TemporaryDirectory() as temp_dir:

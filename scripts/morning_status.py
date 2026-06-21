@@ -248,8 +248,9 @@ def print_latest_pre_build_gate() -> None:
     report_display = display_path(str(report_path))
     step_suffix = f", steps {', '.join(summary['step_ids'])}" if summary["step_ids"] else ""
     stale_suffix = pre_build_gate_stale_suffix(data)
+    label = pre_build_gate_status_label(data, stale_suffix=stale_suffix)
     print(
-        f"Latest pre-build gate: {summary['status']}, {summary['passed']}/{summary['total']} passed "
+        f"{label}: {summary['status']}, {summary['passed']}/{summary['total']} passed "
         f"{summary['detail']}({report_display}, age {age}{step_suffix}{stale_suffix})"
     )
     teams_blocker = pre_build_gate_teams_blocker(data)
@@ -263,6 +264,15 @@ def print_latest_pre_build_gate() -> None:
     cleanup_warning = pre_build_gate_cleanup_warning(data)
     if cleanup_warning:
         print(f"Chrome cleanup warning: {cleanup_warning}")
+
+
+def pre_build_gate_status_label(data: dict[str, Any], *, stale_suffix: str | None = None) -> str:
+    suffix = pre_build_gate_stale_suffix(data) if stale_suffix is None else stale_suffix
+    if suffix:
+        return "Latest pre-build gate (stale; not current HEAD)"
+    if data.get("canonical_latest") is False or data.get("partial_gate"):
+        return "Latest pre-build gate (non-canonical diagnostic)"
+    return "Latest pre-build gate"
 
 
 def pre_build_gate_summary(data: dict[str, Any]) -> dict[str, Any]:
