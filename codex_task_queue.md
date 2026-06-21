@@ -72,6 +72,12 @@
 
 ## Completed This Turn
 
+- [x] Added the current pre-build gate state to the workboard Operator
+  Checkpoint. The quick workboard now shows stale/red gate status and the
+  derived Teams blocker instead of requiring Leo to open the longer report.
+  Focused render contract passed, full `tests.test_safety` passed `1141/1141`,
+  and the rendered workboard contains `Pre-build gate`,
+  `stale for HEAD`, and `Teams assignment is not_inspected`.
 - [x] Fixed stale master-report/workboard proof after `scripts/verify_safe.py`.
   The safe verifier now refreshes `runtime/overnight_status/report.html`,
   `index.html`, and `capability_questions.html` after writing its timestamped

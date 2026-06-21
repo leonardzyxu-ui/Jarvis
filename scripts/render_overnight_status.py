@@ -2113,6 +2113,12 @@ def render_workboard(context: dict[str, Any]) -> str:
 
 
 def workboard_operator_checkpoint(context: dict[str, Any]) -> str:
+    pre_build = context.get("pre_build_gate") if isinstance(context.get("pre_build_gate"), dict) else {}
+    gate_detail = str(pre_build.get("label") or "").strip()
+    if not gate_detail:
+        gate_detail = "not generated"
+    if pre_build.get("teams_blocker"):
+        gate_detail = f"{gate_detail}; {pre_build.get('teams_blocker')}"
     checkpoints = [
         (
             "Current goal",
@@ -2125,6 +2131,10 @@ def workboard_operator_checkpoint(context: dict[str, Any]) -> str:
         (
             "Proof needed",
             "Focused regression tests, the full Python safety suite or pre-build gate when appropriate, and refreshed report/workboard surfaces.",
+        ),
+        (
+            "Pre-build gate",
+            gate_detail,
         ),
         (
             "Time checkpoint",
