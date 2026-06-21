@@ -424,6 +424,7 @@ def run_music_waving_case(
         status = "passed"
         warnings: list[str] = []
         voice_status = str(voice_report.get("result", {}).get("status") or "failed")
+        music_voice_summary = music_voice_loop_result_summary(voice_report)
         if voice_status == "failed":
             status = "failed"
             warnings.append("Voice loop failed.")
@@ -431,6 +432,9 @@ def run_music_waving_case(
             if not action_proof.get("honest_permission_blocked"):
                 status = "warning"
                 warnings.append(f"Voice loop returned {voice_status}.")
+        music_voice_warning = music_voice_loop_warning(music_voice_summary)
+        if music_voice_warning:
+            warnings.append(music_voice_warning)
         if not action_proof["passed"]:
             status = "failed"
             warnings.extend(action_proof["failures"])
@@ -441,6 +445,7 @@ def run_music_waving_case(
             "command": case["command"],
             "voice_loop_status": voice_status,
             "voice_loop_report": str(run_dir / "voice-loop-report.json"),
+            "voice_loop_music_summary": music_voice_summary,
             "action_proof": action_proof,
             "preflight": preflight,
             "playback_state": playback,
@@ -502,6 +507,53 @@ def run_music_waving_case(
                     result["warnings"] = warnings
                 warnings.append("Chrome media-surface inspection was blocked, so this proof could not rule out hidden Chrome audio.")
         write_json(run_dir / "cleanup.json", cleanup)
+
+
+def music_voice_loop_result_summary(voice_report: dict[str, Any]) -> dict[str, Any]:
+    result = voice_report.get("result") if isinstance(voice_report.get("result"), dict) else {}
+    summary = result.get("command_response_result") if isinstance(result.get("command_response_result"), dict) else {}
+    if not summary:
+        return {}
+    return {
+        key: summary.get(key)
+        for key in (
+            "tool",
+            "played_by",
+            "preferred_playback_owner",
+            "playback_confirmation",
+            "permission_issue",
+            "requires_user_action",
+            "jarvis_played_audio",
+            "native_music_bridge_enabled",
+            "legacy_localos_fallback_allowed",
+            "spoken_summary",
+            "reply",
+            "music_app_attempt_status",
+            "music_app_song_count",
+            "music_app_library_source",
+        )
+        if key in summary
+    }
+
+
+def music_voice_loop_warning(summary: dict[str, Any]) -> str:
+    if not summary:
+        return ""
+    confirmation = str(summary.get("playback_confirmation") or "").strip()
+    permission_issue = str(summary.get("permission_issue") or "").strip()
+    if confirmation == "music_app_library_empty" or permission_issue == "music_app_library_empty":
+        song_count = summary.get("music_app_song_count")
+        count_text = ""
+        if song_count is not None:
+            count_text = f" Music app bridge reports {song_count} songs."
+        return (
+            "Jarvis diagnosed the Music app library as empty and did not start hidden fallback audio."
+            + count_text
+        )
+    reply = str(summary.get("reply") or summary.get("spoken_summary") or "").strip()
+    if reply:
+        return f"Jarvis Music reply: {reply}"
+    return ""
 
 
 def afplay_process_snapshot() -> list[dict[str, Any]]:

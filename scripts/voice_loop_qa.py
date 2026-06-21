@@ -1316,6 +1316,33 @@ def command_response_result_summary(command_response: dict[str, Any]) -> dict[st
                 "reply": result.get("reply"),
             }
         )
+    elif tool == "localos.music_play":
+        music_attempt = result.get("music_app_attempt") if isinstance(result.get("music_app_attempt"), dict) else {}
+        music_status = music_attempt.get("status") if isinstance(music_attempt, dict) else None
+        music_bridge = music_attempt.get("music_app_bridge") if isinstance(music_attempt.get("music_app_bridge"), dict) else {}
+        app_status = music_bridge.get("status") if isinstance(music_bridge.get("status"), dict) else {}
+        summary.update(
+            {
+                "tool": result.get("tool"),
+                "played_by": result.get("played_by"),
+                "preferred_playback_owner": result.get("preferred_playback_owner"),
+                "playback_confirmation": result.get("playback_confirmation"),
+                "permission_issue": result.get("permission_issue"),
+                "requires_user_action": bool(result.get("requires_user_action")),
+                "jarvis_played_audio": bool(result.get("jarvis_played_audio")),
+                "native_music_bridge_enabled": bool(result.get("native_music_bridge_enabled")),
+                "legacy_localos_fallback_allowed": bool(result.get("legacy_localos_fallback_allowed")),
+                "spoken_summary": result.get("spoken_summary"),
+                "reply": result.get("reply"),
+                "music_app_attempt_status": music_status,
+                "music_app_song_count": app_status.get("songCount") if isinstance(app_status, dict) else None,
+                "music_app_library_source": (
+                    app_status.get("librarySource") if isinstance(app_status.get("librarySource"), dict) else {}
+                )
+                if isinstance(app_status, dict)
+                else {},
+            }
+        )
     elif tool == "teams.assignment":
         summary.update(
             {

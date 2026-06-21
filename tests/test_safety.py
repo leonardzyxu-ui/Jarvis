@@ -453,6 +453,45 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(result["cleanup"]["verified_stopped"])
         self.assertIn("Music cleanup did not verify playback stopped.", result["warnings"])
 
+    def test_full_loop_music_case_preserves_empty_library_diagnosis(self):
+        voice_report = {
+            "result": {
+                "status": "passed",
+                "command_response_result": {
+                    "tool": "localos.music_play",
+                    "played_by": "none",
+                    "playback_confirmation": "music_app_library_empty",
+                    "permission_issue": "music_app_library_empty",
+                    "jarvis_played_audio": False,
+                    "music_app_song_count": 0,
+                    "reply": "Music is connected, but its library appears empty. I did not start another hidden music player.",
+                },
+            }
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir, \
+             patch("scripts.full_loop_regression.music_bridge_request", return_value={"ok": True, "playing": False}), \
+             patch("scripts.full_loop_regression.afplay_process_snapshot", return_value=[]), \
+             patch("scripts.full_loop_regression.media_playback_surface_snapshot", return_value={"surfaces": [], "blocked": []}), \
+             patch("scripts.full_loop_regression.voice_loop_qa.run_voice_loop", return_value=voice_report), \
+             patch(
+                 "scripts.full_loop_regression.wait_for_music_playback",
+                 return_value={"ok": True, "playing": False, "currentTime": 0, "nowPlaying": None},
+             ):
+            result = full_loop_regression.run_music_waving_case(
+                full_loop_regression.MUSIC_WAVING_CASE,
+                base_url="http://127.0.0.1:8765",
+                music_bridge_url="http://127.0.0.1:47879",
+                run_dir=Path(tmpdir) / "music",
+                timeout=1.0,
+                exercise_live_speech=False,
+            )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["voice_loop_music_summary"]["permission_issue"], "music_app_library_empty")
+        self.assertIn("Music app bridge reports 0 songs", " ".join(result["warnings"]))
+        self.assertIn("did not start hidden fallback audio", " ".join(result["warnings"]))
+
     def test_full_loop_music_case_fails_when_new_afplay_survives_cleanup(self):
         def fake_music_bridge_request(_base_url, method, path, **_kwargs):
             if method == "GET" and path == "/health":
@@ -3621,6 +3660,49 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(route["model"], "llama-3.3-70b-versatile")
         self.assertTrue(route["fallback_used"])
         self.assertTrue(route["tool_catalog_compacted"])
+
+    def test_voice_loop_qa_summarizes_music_empty_library_diagnosis(self):
+        command_response = {
+            "tool": "localos.music_play",
+            "reply": "Music is connected, but its library appears empty. I did not start another hidden music player.",
+            "result": {
+                "tool": "localos.music_play",
+                "status": "not_queued",
+                "played_by": "none",
+                "preferred_playback_owner": "music_app",
+                "playback_confirmation": "music_app_library_empty",
+                "permission_issue": "music_app_library_empty",
+                "requires_user_action": False,
+                "jarvis_played_audio": False,
+                "native_music_bridge_enabled": True,
+                "legacy_localos_fallback_allowed": False,
+                "spoken_summary": "Music is connected, but its library appears empty.",
+                "reply": "Music is connected, but its library appears empty. I did not start another hidden music player.",
+                "music_app_attempt": {
+                    "status": "music_app_not_playing",
+                    "music_app_bridge": {
+                        "status": {
+                            "songCount": 0,
+                            "librarySource": {"kind": "appOwned", "title": "Music Library"},
+                        }
+                    },
+                },
+                "routing": {"source": "user_approved_primitive_exception"},
+            },
+        }
+
+        summary = voice_loop_qa.command_response_result_summary(command_response)
+
+        self.assertEqual(summary["tool"], "localos.music_play")
+        self.assertEqual(summary["playback_confirmation"], "music_app_library_empty")
+        self.assertEqual(summary["permission_issue"], "music_app_library_empty")
+        self.assertEqual(summary["played_by"], "none")
+        self.assertFalse(summary["jarvis_played_audio"])
+        self.assertFalse(summary["legacy_localos_fallback_allowed"])
+        self.assertEqual(summary["music_app_attempt_status"], "music_app_not_playing")
+        self.assertEqual(summary["music_app_song_count"], 0)
+        self.assertEqual(summary["music_app_library_source"]["kind"], "appOwned")
+        self.assertIn("library appears empty", summary["reply"])
 
     def test_voice_loop_qa_summarizes_email_result_without_private_body_text(self):
         command_response = {
