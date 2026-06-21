@@ -365,6 +365,11 @@ Status legend:
      `/api/speech/mute`. If speech is unmuted/available while no emergency menu
      process exists, it prints `Speech emergency: missing menu helper while
      speech is unmuted` and points to `scripts/open_jarvis.sh`.
+   - 2026-06-21 proof update: morning status now treats the dedicated
+     `jarvis-status-helper` as the required emergency speech control. If the
+     main app is running but the helper is missing while speech is unmuted or
+     active, it warns instead of reporting the emergency path ready. Focused
+     regressions cover app-only, helper-present, and no-process states.
 
 10. Partially fixed/risky: Hey Jarvis crashed or flickered.
     - Leo reported crashes after Start Hey Jarvis.

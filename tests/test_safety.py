@@ -7197,7 +7197,8 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("--require-live-speech", shipped)
         self.assertIn("Chrome cleanup helper now targets Jarvis report", shipped)
         self.assertIn("speech emergency status visible", shipped)
-        self.assertIn("no Shut Up menu control is reachable", shipped)
+        self.assertIn("status helper as the required Shut Up control", shipped)
+        self.assertIn("app process alone no longer counts", shipped)
 
     def test_render_status_pre_build_gate_label_marks_stale_head(self):
         with tempfile.TemporaryDirectory() as temp_dir:
