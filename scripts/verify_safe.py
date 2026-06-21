@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import plistlib
+import signal
 import socket
 import subprocess
 import sys
@@ -53,6 +54,14 @@ def tail(text: str, max_chars: int = 1600) -> str:
     if len(text) <= max_chars:
         return text
     return text[-max_chars:]
+
+
+def ensure_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
 
 
 def run_command(
@@ -113,6 +122,73 @@ def run_command(
     )
 
 
+def run_process_group_command(
+    name: str,
+    args: list[str],
+    *,
+    timeout: int,
+    env: dict[str, str] | None = None,
+    expect: str | None = None,
+    expected_returncode: int = 0,
+) -> CheckResult:
+    """Run a command with a hard timeout for app self-tests that spawn children."""
+
+    started = time.monotonic()
+    merged_env = os.environ.copy()
+    if env:
+        merged_env.update(env)
+
+    process = subprocess.Popen(
+        args,
+        cwd=PROJECT_ROOT,
+        env=merged_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        stdout, stderr = process.communicate()
+        return CheckResult(
+            name=name,
+            passed=False,
+            summary=f"Timed out after {timeout}s; killed process group",
+            returncode=process.returncode,
+            stdout_tail=tail(ensure_text(error.stdout) + ensure_text(stdout)),
+            stderr_tail=tail(ensure_text(error.stderr) + ensure_text(stderr)),
+            duration_seconds=round(time.monotonic() - started, 3),
+        )
+
+    output = f"{stdout}\n{stderr}"
+    output_matches = expect is None or expect in output
+    passed = process.returncode == expected_returncode and output_matches
+    if passed:
+        summary = "passed"
+    else:
+        problems: list[str] = []
+        if process.returncode != expected_returncode:
+            problems.append(f"failed with exit code {process.returncode}")
+        if expect and not output_matches:
+            problems.append(f"missing expected text: {expect}")
+        summary = "; ".join(problems) if problems else "failed"
+
+    return CheckResult(
+        name=name,
+        passed=passed,
+        summary=summary,
+        returncode=process.returncode,
+        stdout_tail=tail(stdout),
+        stderr_tail=tail(stderr),
+        duration_seconds=round(time.monotonic() - started, 3),
+    )
+
+
 def git_short_commit() -> str:
     try:
         completed = subprocess.run(
@@ -145,7 +221,7 @@ def run_temp_app_command(
         if delay:
             time.sleep(delay)
             total_duration += delay
-        result = run_command(name, args, timeout=timeout, env=env, expect=expect)
+        result = run_process_group_command(name, args, timeout=timeout, env=env, expect=expect)
         attempts.append(result)
         total_duration += result.duration_seconds
         if result.passed:
@@ -332,9 +408,20 @@ def post_json(
         return json.loads(response.read().decode("utf-8"))
 
 
-def endpoint_check(name: str, func) -> CheckResult:
+class EndpointCheckTimeout(TimeoutError):
+    pass
+
+
+def endpoint_check(name: str, func, *, timeout: int = 30) -> CheckResult:
     started = time.monotonic()
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def handle_timeout(_signum: int, _frame: Any) -> None:
+        raise EndpointCheckTimeout(f"Timed out after {timeout}s")
+
     try:
+        signal.signal(signal.SIGALRM, handle_timeout)
+        signal.alarm(timeout)
         summary = func()
         return CheckResult(
             name=name,
@@ -349,6 +436,9 @@ def endpoint_check(name: str, func) -> CheckResult:
             summary=str(error),
             duration_seconds=round(time.monotonic() - started, 3),
         )
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def require(condition: bool, message: str) -> None:
@@ -611,7 +701,7 @@ def run_isolated_worker_hardening_checks(results: list[CheckResult]) -> None:
         )
 
         results.append(
-            run_command(
+            run_process_group_command(
                 "isolated_swift_host_probe_health",
                 ["swift", "run", "--package-path", "swift-shell", "jarvis-host-probe", "--health"],
                 env={"JARVIS_BASE_URL": base_url},
@@ -620,7 +710,7 @@ def run_isolated_worker_hardening_checks(results: list[CheckResult]) -> None:
             )
         )
         results.append(
-            run_command(
+            run_process_group_command(
                 "isolated_swift_host_probe_mode",
                 ["swift", "run", "--package-path", "swift-shell", "jarvis-host-probe", "--mode"],
                 env={"JARVIS_BASE_URL": base_url},
@@ -629,7 +719,7 @@ def run_isolated_worker_hardening_checks(results: list[CheckResult]) -> None:
             )
         )
         results.append(
-            run_command(
+            run_process_group_command(
                 "isolated_swift_host_probe_readiness",
                 ["swift", "run", "--package-path", "swift-shell", "jarvis-host-probe", "--readiness"],
                 env={"JARVIS_BASE_URL": base_url},

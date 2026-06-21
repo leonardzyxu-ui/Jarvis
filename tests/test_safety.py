@@ -8327,7 +8327,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         sleeps = []
-        with patch("scripts.verify_safe.run_command", side_effect=fake_run_command), patch(
+        with patch("scripts.verify_safe.run_process_group_command", side_effect=fake_run_command), patch(
             "scripts.verify_safe.time.sleep", side_effect=sleeps.append
         ):
             result = verify_safe.run_temp_app_command(
@@ -8371,7 +8371,7 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         sleeps = []
-        with patch("scripts.verify_safe.run_command", side_effect=fake_run_command), patch(
+        with patch("scripts.verify_safe.run_process_group_command", side_effect=fake_run_command), patch(
             "scripts.verify_safe.time.sleep", side_effect=sleeps.append
         ):
             result = verify_safe.run_temp_app_command(
@@ -8385,6 +8385,49 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("transient temp-app retry 1", result.summary)
         self.assertEqual(len(calls), 2)
         self.assertEqual(sleeps, [0.5])
+
+    def test_verify_safe_process_group_command_times_out_pipe_holding_child(self):
+        result = verify_safe.run_process_group_command(
+            "temporary_app_self_test",
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import subprocess, sys; "
+                    "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+                    "print('parent exited')"
+                ),
+            ],
+            timeout=1,
+            expect="never printed",
+        )
+
+        self.assertFalse(result.passed)
+        self.assertIn("Timed out after 1s; killed process group", result.summary)
+        self.assertLess(result.duration_seconds, 5)
+
+    def test_verify_safe_swift_host_probes_use_hard_process_group_timeout(self):
+        source = (PROJECT_ROOT / "scripts" / "verify_safe.py").read_text(encoding="utf-8")
+
+        for probe_name in (
+            "isolated_swift_host_probe_health",
+            "isolated_swift_host_probe_mode",
+            "isolated_swift_host_probe_readiness",
+        ):
+            index = source.index(f'"{probe_name}"')
+            window = source[index - 80 : index + 260]
+            self.assertIn("run_process_group_command(", window)
+
+    def test_verify_safe_endpoint_check_times_out_stuck_endpoint(self):
+        result = verify_safe.endpoint_check(
+            "endpoint_audit_status",
+            lambda: time.sleep(5),
+            timeout=1,
+        )
+
+        self.assertFalse(result.passed)
+        self.assertEqual(result.summary, "Timed out after 1s")
+        self.assertLess(result.duration_seconds, 3)
 
     def test_verify_safe_run_command_reports_exit_code_and_missing_text(self):
         completed = subprocess.CompletedProcess(

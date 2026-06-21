@@ -72,6 +72,14 @@
 
 ## Completed This Turn
 
+- [x] Hardened `scripts/verify_safe.py` against verifier freezes found after
+  the speech-emergency report commit. Temporary app self-tests and isolated
+  Swift host probes now use a process-group hard timeout so pipe-holding child
+  processes cannot freeze verification, endpoint checks now have a verifier-level
+  alarm timeout, focused regressions cover both hang classes, and full
+  `tests.test_safety` passed `1137/1137`. End-to-end `scripts/verify_safe.py`
+  then passed `106/106` at
+  `runtime/verification/verify-safe-20260621-144507.json`.
 - [x] Shortened the Teams Chrome handoff fail-closed path: `open_visible_screen_follow_up_url` no longer scans every Chrome window/tab for an exact URL, opens/uses only the front Chrome window, and caps the stuck Chrome handoff at `4.0s`. Live Teams proof improved from a latency failure (`56.954s` / `54.652s`) to an honest warning within budget at `42.942s` in `runtime/full_loop_regression/20260621-072407/summary.json`; focused tests passed and full `tests.test_safety` passed `1100/1100`.
 - [x] Added a Teams live-navigation no-visible-change diagnostic: after an executed visible navigation step, Jarvis now compares the next OCR capture to the previous capture and records `visible_state_changed: false` plus a report/status label when the screen did not change. Full-loop warnings and morning status now surface this as `no visible change`; focused diagnostics passed and full `tests.test_safety` passed `1100/1100`. A live Teams attempt at `runtime/full_loop_regression/20260621-071214/summary.json` hit a separate Chrome foreground/latency failure before it could exercise the new field.
 - [x] Hardened Teams live visible-navigation against Stage Manager/window movement: OCR targets now carry window-relative points, live click/type-search AppleScript recomputes coordinates from Chrome `bounds of front window` with an absolute fallback, and chevron `‹ All teams` routes use browser-back instead of an unreliable label click. Focused tests passed, live proof improved from `click_failed` to executed `browser_back` + `type_search` at `runtime/full_loop_regression/20260621-065653/summary.json`, and full `tests.test_safety` passed `1098/1098`; Teams assignment inspection remains an honest warning because Teams still stayed on the wrong class after navigation.
