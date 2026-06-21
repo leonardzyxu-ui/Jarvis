@@ -6746,6 +6746,9 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("Pre-build gate", workboard)
         self.assertIn("failed, 3/4 passed", workboard)
         self.assertIn("Microsoft sign-in gate is visible in Chrome", workboard)
+        self.assertIn("Physical audio proof", workboard)
+        self.assertIn("Not ready for physical speaker/microphone capture", workboard)
+        self.assertIn("Strict physical-capture gates fail closed", workboard)
         self.assertIn("Time checkpoint", workboard)
         self.assertIn("Return point", workboard)
         self.assertIn("JARVIS_BUG_BACKLOG.md plus .memory.md", workboard)
@@ -7176,6 +7179,24 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("Chrome did not foreground Teams before OCR", blocker)
         self.assertNotIn("private-class", blocker)
         self.assertNotIn("teams.microsoft.com/private", blocker)
+
+    def test_workboard_physical_audio_detail_fails_closed_without_loopback(self):
+        detail = render_overnight_status.workboard_physical_audio_detail({
+            "ready_for_physical_capture": False,
+            "label": "loopback_device_missing; virtual duplex candidate(s): Microsoft Teams Audio",
+        })
+
+        self.assertIn("Not ready for physical speaker/microphone capture", detail)
+        self.assertIn("loopback_device_missing", detail)
+        self.assertIn("Strict physical-capture gates fail closed", detail)
+
+    def test_render_overnight_status_script_adds_project_root_to_import_path(self):
+        source = (PROJECT_ROOT / "scripts" / "render_overnight_status.py").read_text(encoding="utf-8")
+        root_setup = "if str(PROJECT_ROOT) not in sys.path:\n    sys.path.insert(0, str(PROJECT_ROOT))"
+
+        self.assertIn(root_setup, source)
+        self.assertLess(source.index(root_setup), source.index("def latest_physical_audio_preflight"))
+        self.assertLess(source.index(root_setup), source.index("def latest_pre_build_gate_teams_blocker"))
 
     def test_render_overnight_status_git_dirty_unknown_on_status_failure(self):
         with patch("scripts.render_overnight_status.git_status_porcelain", return_value=(False, "")):

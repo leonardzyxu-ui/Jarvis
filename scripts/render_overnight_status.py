@@ -21,6 +21,8 @@ from zoneinfo import ZoneInfo
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 OUTPUT_DIR = PROJECT_ROOT / "runtime" / "overnight_status"
 BEIJING = ZoneInfo("Asia/Shanghai")
 DEFAULT_BASE_URL = "http://127.0.0.1:8765"
@@ -2212,6 +2214,8 @@ def workboard_operator_checkpoint(context: dict[str, Any]) -> str:
         gate_detail = "not generated"
     if pre_build.get("teams_blocker"):
         gate_detail = f"{gate_detail}; {pre_build.get('teams_blocker')}"
+    physical = context.get("physical_audio") if isinstance(context.get("physical_audio"), dict) else {}
+    physical_detail = workboard_physical_audio_detail(physical)
     checkpoints = [
         (
             "Current goal",
@@ -2230,6 +2234,10 @@ def workboard_operator_checkpoint(context: dict[str, Any]) -> str:
             gate_detail,
         ),
         (
+            "Physical audio proof",
+            physical_detail,
+        ),
+        (
             "Time checkpoint",
             f"Last rendered {context['updated']}; check the clock before starting each new lane and before any promised morning report.",
         ),
@@ -2243,6 +2251,15 @@ def workboard_operator_checkpoint(context: dict[str, Any]) -> str:
         for label, value in checkpoints
     )
     return f"<section><h2>Operator Checkpoint</h2><ul class=\"checkpoint\">{rows}</ul></section>"
+
+
+def workboard_physical_audio_detail(physical: dict[str, Any]) -> str:
+    label = str(physical.get("label") or "").strip()
+    if physical.get("ready_for_physical_capture"):
+        return f"Ready for physical speaker/microphone capture{f': {label}' if label else ''}."
+    if label:
+        return f"Not ready for physical speaker/microphone capture: {label}. Strict physical-capture gates fail closed until a real loopback route is available."
+    return "Not generated yet; strict physical-capture gates fail closed until a real loopback route is available."
 
 
 def workboard_current_subtask(context: dict[str, Any]) -> str:
