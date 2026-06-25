@@ -247,6 +247,11 @@ def main() -> int:
         help="Allow live audio/app actions such as Music playback. The default suppresses them for quiet unattended probes.",
     )
     parser.add_argument(
+        "--allow-browser-actions",
+        action="store_true",
+        help="Allow live browser actions such as opening or focusing Chrome. The default suppresses them for quiet unattended probes.",
+    )
+    parser.add_argument(
         "--exercise-visible-navigation",
         action="store_true",
         help="Allow an explicit visible-screen navigation attempt. Also requires JARVIS_ALLOW_LIVE_UI_NAVIGATION=1 before any click is sent.",
@@ -311,6 +316,7 @@ def main() -> int:
             expect_routed_contains=args.expect_routed_contains,
             exercise_live_speech=args.exercise_live_speech,
             allow_audio_actions=args.allow_audio_actions,
+            allow_browser_actions=args.allow_browser_actions,
             exercise_visible_navigation=args.exercise_visible_navigation,
         )
     else:
@@ -327,6 +333,7 @@ def main() -> int:
             expect_routed_contains=args.expect_routed_contains,
             exercise_live_speech=args.exercise_live_speech,
             allow_audio_actions=args.allow_audio_actions,
+            allow_browser_actions=args.allow_browser_actions,
             exercise_visible_navigation=args.exercise_visible_navigation,
         )
 
@@ -498,6 +505,7 @@ def run_voice_loop(
     expect_routed_contains: list[str] | None = None,
     exercise_live_speech: bool = False,
     allow_audio_actions: bool = False,
+    allow_browser_actions: bool = False,
     exercise_visible_navigation: bool = False,
 ) -> dict[str, Any]:
     base_url = normalize_base_url(base_url)
@@ -521,6 +529,7 @@ def run_voice_loop(
             "no_permission_prompts": no_permission_prompts,
             "exercise_live_speech": exercise_live_speech,
             "allow_audio_actions": allow_audio_actions,
+            "allow_browser_actions": allow_browser_actions,
             "exercise_visible_navigation": exercise_visible_navigation,
             "expect_tools": expect_tools or [],
             "expect_visible_contains": expect_visible_contains or [],
@@ -585,6 +594,7 @@ def run_voice_loop(
             timeout=timeout,
             suppress_speech=not exercise_live_speech,
             suppress_audio_actions=not allow_audio_actions,
+            suppress_browser_actions=not allow_browser_actions,
         )
         stage_timings.append(stage_timing("jarvis_stream", stage_started))
         command_response = final_response_from_stream_events(stream_events)
@@ -886,6 +896,7 @@ def run_speech_audit(
     expect_routed_contains: list[str] | None = None,
     exercise_live_speech: bool = False,
     allow_audio_actions: bool = False,
+    allow_browser_actions: bool = False,
     exercise_visible_navigation: bool = False,
 ) -> dict[str, Any]:
     base_url = normalize_base_url(base_url)
@@ -902,6 +913,7 @@ def run_speech_audit(
             "speech_audit_only": True,
             "exercise_live_speech": exercise_live_speech,
             "allow_audio_actions": allow_audio_actions,
+            "allow_browser_actions": allow_browser_actions,
             "exercise_visible_navigation": exercise_visible_navigation,
             "expect_tools": expect_tools or [],
             "expect_visible_contains": expect_visible_contains or [],
@@ -916,6 +928,7 @@ def run_speech_audit(
             timeout=timeout,
             suppress_speech=not exercise_live_speech,
             suppress_audio_actions=not allow_audio_actions,
+            suppress_browser_actions=not allow_browser_actions,
         )
         command_response = final_response_from_stream_events(stream_events)
         visible_screen_follow_up = run_native_visible_screen_follow_up(
@@ -1848,11 +1861,13 @@ def stream_command_events(
     timeout: float,
     suppress_speech: bool = True,
     suppress_audio_actions: bool = True,
+    suppress_browser_actions: bool = True,
 ) -> list[dict[str, Any]]:
     payload = {
         "command": command,
         "suppress_speech": True,
         "suppress_audio_actions": bool(suppress_audio_actions),
+        "suppress_browser_actions": bool(suppress_browser_actions),
     }
     if not suppress_speech:
         payload["suppress_speech"] = False

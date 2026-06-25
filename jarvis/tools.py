@@ -172,6 +172,10 @@ AUDIO_ACTIONS_SUPPRESSED: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "jarvis_audio_actions_suppressed",
     default=False,
 )
+BROWSER_ACTIONS_SUPPRESSED: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "jarvis_browser_actions_suppressed",
+    default=False,
+)
 CODEX_JOBS: dict[str, dict[str, Any]] = {}
 CODEX_JOBS_LOCK = threading.Lock()
 CODEX_JOBS_LOADED = False
@@ -213,6 +217,18 @@ def reset_audio_actions_suppressed(token: contextvars.Token[bool]) -> None:
 
 def audio_actions_are_suppressed() -> bool:
     return bool(AUDIO_ACTIONS_SUPPRESSED.get())
+
+
+def set_browser_actions_suppressed(suppressed: bool) -> contextvars.Token[bool]:
+    return BROWSER_ACTIONS_SUPPRESSED.set(bool(suppressed))
+
+
+def reset_browser_actions_suppressed(token: contextvars.Token[bool]) -> None:
+    BROWSER_ACTIONS_SUPPRESSED.reset(token)
+
+
+def browser_actions_are_suppressed() -> bool:
+    return bool(BROWSER_ACTIONS_SUPPRESSED.get())
 
 
 def _music_play_tool_available() -> bool:
@@ -9860,6 +9876,7 @@ def teams_assignment_workflow_plan(goal: str) -> dict[str, Any]:
     """Create a safe Teams-assignment plan without touching Teams or schoolwork."""
     base = app_task_workflow_plan(goal, target_app="Microsoft Teams")
     base_phases = list(base.get("phases") or [])
+    browser_suppressed = browser_actions_are_suppressed()
     bookmark_plan = chrome_bookmark_open_plan("Teams", limit=8)
     bookmark_ready = bookmark_plan.get("status") == "planned" and bool(bookmark_plan.get("url"))
     deep_link_route = _chrome_teams_deeplink_route_from_snapshot(goal)
@@ -9968,7 +9985,12 @@ def teams_assignment_workflow_plan(goal: str) -> dict[str, Any]:
 
     clean_goal = str(base.get("goal") or goal or "").strip()
     assignment_label = "the newest Music assignment" if "music" in clean_goal.casefold() else "the assignment"
-    if deep_link_ready:
+    if browser_suppressed and (deep_link_ready or bookmark_ready):
+        reply = (
+            "I found a Teams route, but browser actions are suppressed for this QA run, so I did not open Chrome. "
+            f"I have not inspected {assignment_label} yet."
+        )
+    elif deep_link_ready:
         reply = (
             "Opening the best Teams class or assignment link I found in signed-in Chrome now. "
             f"I still have not inspected {assignment_label} until the visible Teams page read succeeds."
@@ -10005,12 +10027,13 @@ def teams_assignment_workflow_plan(goal: str) -> dict[str, Any]:
         "title": deep_link_route.get("title") if deep_link_ready else (bookmark_plan.get("title") if bookmark_ready else ""),
         "selected_bookmark": selected_bookmark if bookmark_ready else None,
         "selected_teams_deeplink": deep_link_route.get("selected_link") if deep_link_ready else None,
-        "open_chrome_to_reuse_login": bool(deep_link_ready or (bookmark_plan.get("open_chrome_to_reuse_login") if bookmark_ready else False)),
+        "browser_actions_suppressed": bool(browser_suppressed),
+        "open_chrome_to_reuse_login": False if browser_suppressed else bool(deep_link_ready or (bookmark_plan.get("open_chrome_to_reuse_login") if bookmark_ready else False)),
         "requires_chrome_login": bool(deep_link_ready or (bookmark_plan.get("requires_chrome_login") if bookmark_ready else False)),
         "read_private_browser_metadata": bool(deep_link_ready or bookmark_plan.get("read_private_content")),
-        "automatic_teams_page_inspection_supported": bool(deep_link_ready or bookmark_ready),
-        "defer_stream_final_speech": bool(deep_link_ready or bookmark_ready),
-        "teams_page_inspection_status": "chrome_deeplink_then_native_visible_read" if deep_link_ready else ("chrome_handoff_then_native_visible_read" if bookmark_ready else "bookmark_needed"),
+        "automatic_teams_page_inspection_supported": False if browser_suppressed else bool(deep_link_ready or bookmark_ready),
+        "defer_stream_final_speech": False if browser_suppressed else bool(deep_link_ready or bookmark_ready),
+        "teams_page_inspection_status": "browser_actions_suppressed" if browser_suppressed else ("chrome_deeplink_then_native_visible_read" if deep_link_ready else ("chrome_handoff_then_native_visible_read" if bookmark_ready else "bookmark_needed")),
         "teams_page_inspection_note": (
             "This build opens signed-in Teams in Chrome and the macOS app can attempt a read-only native visible-screen OCR follow-up; it still does not claim to read Teams assignments until that follow-up succeeds. Direct Teams links come only from the scoped Chrome History inventory."
         ),

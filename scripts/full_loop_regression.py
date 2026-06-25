@@ -1355,6 +1355,7 @@ def run_teams_assignment_case(
             expect_routed_contains=list(case["expect_routed_contains"]),
             exercise_live_speech=exercise_live_speech,
             allow_audio_actions=False,
+            allow_browser_actions=exercise_visible_navigation,
             exercise_visible_navigation=exercise_visible_navigation,
         )
         write_json(run_dir / "voice-loop-report.json", voice_report)

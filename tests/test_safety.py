@@ -2236,7 +2236,39 @@ class VerifySafeScriptTests(unittest.TestCase):
             )
 
         self.assertEqual(captured_payloads[0]["suppress_audio_actions"], False)
+        self.assertEqual(captured_payloads[0]["suppress_browser_actions"], True)
         self.assertEqual(events[-1]["data"]["tool"], "localos.music_play")
+
+    def test_voice_loop_stream_suppresses_browser_actions_by_default(self):
+        captured_payloads = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return iter([
+                    b"event: final\n",
+                    b'data: {"tool": "teams.assignment", "result": {"reply": "Browser guard checked."}}\n',
+                    b"\n",
+                ])
+
+        def fake_urlopen(request, timeout):
+            captured_payloads.append(json.loads(request.data.decode("utf-8")))
+            return FakeResponse()
+
+        with patch("scripts.voice_loop_qa.urllib.request.urlopen", side_effect=fake_urlopen):
+            events = voice_loop_qa.stream_command_events(
+                "http://127.0.0.1:8765",
+                "Go to Teams and find my Music assignment.",
+                timeout=1,
+            )
+
+        self.assertTrue(captured_payloads[0]["suppress_browser_actions"])
+        self.assertEqual(events[-1]["data"]["tool"], "teams.assignment")
 
     def test_voice_loop_stream_stops_reading_after_final_event(self):
         class EndlessAfterFinalResponse:
@@ -4128,6 +4160,59 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertEqual(report["result"]["visible_screen_follow_up"]["status"], "completed")
         self.assertIn("assignment-related text", report["result"]["visible_reply_preview"])
 
+    def test_voice_loop_qa_speech_audit_suppresses_browser_actions_by_default(self):
+        final_events = [
+            {
+                "event": "final",
+                "data": {
+                    "tool": "teams.assignment",
+                    "reply": "I found a Teams route, but browser actions are suppressed for this QA run.",
+                    "result": {
+                        "automatic_teams_page_inspection_supported": False,
+                        "teams_page_inspection_status": "browser_actions_suppressed",
+                    },
+                    "speech": {
+                        "spoken": False,
+                        "status": "suppressed_by_request",
+                        "reason": "final",
+                        "spoken_text": "I found a Teams route, but browser actions are suppressed for this QA run.",
+                    },
+                },
+            }
+        ]
+        stream_calls = []
+
+        def fake_stream(*args, **kwargs):
+            stream_calls.append(kwargs)
+            return final_events
+
+        with tempfile.TemporaryDirectory() as temp_dir, \
+             patch("scripts.voice_loop_qa.stream_command_events", side_effect=fake_stream), \
+             patch(
+                 "scripts.voice_loop_qa.audit_spoken_payloads",
+                 return_value={
+                     "status": "passed",
+                     "payload_count": 1,
+                     "leak_count": 0,
+                     "warnings": [],
+                     "items": [],
+                 },
+             ):
+            report = voice_loop_qa.run_speech_audit(
+                command_text="Look in Teams for my newest Music assignment.",
+                base_url="http://127.0.0.1:8765",
+                run_dir=Path(temp_dir),
+                length_scale=0.85,
+                timeout=5.0,
+                stt_provider="local",
+                no_permission_prompts=True,
+            )
+
+        self.assertTrue(stream_calls)
+        self.assertTrue(stream_calls[0]["suppress_browser_actions"])
+        self.assertFalse(report["input"]["allow_browser_actions"])
+        self.assertEqual(report["result"]["visible_screen_follow_up"]["status"], "not_needed")
+
     def test_voice_loop_qa_browser_page_followup_usefulness_rejects_automation_block(self):
         blocked = {
             "tool": "browser.read_page",
@@ -5018,9 +5103,15 @@ class VerifySafeScriptTests(unittest.TestCase):
             'elif case["id"] == EMAIL_SHARPAY_CASE["id"]:',
             1,
         )[0]
+        teams_helper = source.split("def run_teams_assignment_case(", 1)[1].split(
+            "\ndef teams_incomplete_detail_warnings",
+            1,
+        )[0]
 
         self.assertNotIn("exercise_visible_navigation=args.exercise_visible_navigation", music_branch)
+        self.assertNotIn("allow_browser_actions=exercise_visible_navigation", music_branch)
         self.assertIn("exercise_visible_navigation=args.exercise_visible_navigation", teams_branch)
+        self.assertIn("allow_browser_actions=exercise_visible_navigation", teams_helper)
 
     def test_voice_loop_qa_browser_page_usefulness_rejects_generic_screen_tool_for_teams_assignment(self):
         response = {
@@ -7361,6 +7452,8 @@ class VerifySafeScriptTests(unittest.TestCase):
                 self.assertIn(version, shipped)
                 self.assertIn(version, proof)
                 self.assertIn(version, workboard)
+        self.assertIn("0.1.495", shipped)
+        self.assertIn("voice-loop tests now suppress browser actions by default", shipped)
         self.assertIn("0.1.494", shipped)
         self.assertIn("email tool recovery", shipped)
         self.assertIn("0.1.493", shipped)
@@ -7435,6 +7528,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("report refresh self-healing", shipped)
         self.assertIn("Codex speed status", shipped)
         self.assertIn("build-and-launch", shipped.lower())
+        self.assertIn("voice-loop tests now suppress browser actions by default", shipped)
         self.assertIn("fenced code blocks stay visible on screen", shipped)
         self.assertIn("fresh full-loop proof for Leo's target prompt set", shipped)
         self.assertIn("zero warnings", shipped)
@@ -7453,7 +7547,9 @@ class VerifySafeScriptTests(unittest.TestCase):
         current_focus = memory.split("## Current Focus", 1)[1].split("\n## ", 1)[0]
         section = memory.split("## Current Live State", 1)[1].split("\n## ", 1)[0]
 
-        self.assertIn("Last updated: 2026-06-25 23:31 CST", memory)
+        self.assertIn("Last updated: 2026-06-26 01:26 CST", memory)
+        self.assertIn("suppress_browser_actions", current_focus)
+        self.assertIn("Chrome cleanup", current_focus)
         self.assertIn("af0ef40", current_focus)
         self.assertIn("0387cde", current_focus)
         self.assertIn("29a2457", current_focus)
@@ -7464,7 +7560,7 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("298e14a", current_focus)
         self.assertIn("runtime/verification/latest.json", current_focus)
         self.assertNotIn("verify-safe-20260621-132210.json", current_focus)
-        self.assertIn("Jarvis 0.1.494 build 494", section)
+        self.assertIn("Jarvis 0.1.495 build 495", section)
         self.assertIn("runtime/verification/latest.json", section)
         self.assertIn("passed 106/106", section)
         self.assertIn("distinguish stale", section)
@@ -16608,8 +16704,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.494}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-494}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.495}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-495}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('ALLOW_NON_CANONICAL_JARVIS_BUNDLE="${ALLOW_NON_CANONICAL_JARVIS_BUNDLE:-0}"', script)
         self.assertIn("Refusing to build a non-canonical Jarvis app", script)
@@ -17652,6 +17748,44 @@ Pages occupied by compressor:             10.
         self.assertNotIn("what's on this page", result["reply"])
         self.assertNotIn("copy Chrome cookies", result["reply"])
         self.assertIn("No Teams assignment was inspected", result["user_facing_safety_summary"])
+
+    def test_teams_assignment_workflow_respects_browser_action_suppression(self):
+        fake_bookmark_plan = {
+            "tool": "browser.bookmark_open",
+            "status": "planned",
+            "planned_only": True,
+            "executed": False,
+            "url": "https://teams.microsoft.com/v2/",
+            "title": "Teams",
+            "selected_bookmark": {
+                "title": "Teams",
+                "url": "https://teams.microsoft.com/v2/",
+                "domain": "teams.microsoft.com",
+            },
+            "preferred_open_lane": "chrome_authenticated",
+            "visible_browser_lane": "jarvis_webkit",
+            "requires_chrome_login": True,
+            "open_chrome_to_reuse_login": True,
+            "read_private_content": True,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_deeplinks = Path(tmpdir) / "missing-teams-deeplinks.json"
+            token = jarvis_tools.set_browser_actions_suppressed(True)
+            try:
+                with patch("jarvis.tools.chrome_bookmark_open_plan", return_value=fake_bookmark_plan), \
+                     patch("jarvis.tools.CHROME_TEAMS_DEEPLINKS_SNAPSHOT_PATH", missing_deeplinks):
+                    result = teams_assignment_workflow_plan("Look in Teams for my newest Music assignment.")
+            finally:
+                jarvis_tools.reset_browser_actions_suppressed(token)
+
+        self.assertTrue(result["browser_actions_suppressed"])
+        self.assertFalse(result["open_chrome_to_reuse_login"])
+        self.assertFalse(result["automatic_teams_page_inspection_supported"])
+        self.assertFalse(result["defer_stream_final_speech"])
+        self.assertEqual(result["teams_page_inspection_status"], "browser_actions_suppressed")
+        self.assertEqual(result["recommended_next_safe_tool"], "screen.visible_text")
+        self.assertIn("did not open Chrome", result["reply"])
+        self.assertIn("have not inspected", result["reply"])
 
     def test_teams_assignment_workflow_prefers_matching_deeplink_snapshot(self):
         fake_bookmark_plan = {
@@ -20643,7 +20777,9 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("/api/command", script_source)
         self.assertIn('"suppress_speech": True', script_source)
         self.assertIn('"suppress_audio_actions": bool(suppress_audio_actions)', script_source)
+        self.assertIn('"suppress_browser_actions": bool(suppress_browser_actions)', script_source)
         self.assertIn("--allow-audio-actions", script_source)
+        self.assertIn("--allow-browser-actions", script_source)
         self.assertIn("detect_wake_command", script_source)
         self.assertIn("faster_whisper", script_source)
         self.assertIn("LOCAL_STT_PYTHON", script_source)
@@ -26218,6 +26354,45 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(handle_mock.call_count, 2)
         self.assertTrue(events[0]["details"]["suppress_audio_actions"])
         self.assertFalse(events[1]["details"]["suppress_audio_actions"])
+
+    def test_server_scopes_suppressed_browser_actions_to_one_command(self):
+        def fake_handle(command, **kwargs):
+            suppressed = jarvis_tools.browser_actions_are_suppressed()
+            return PlannedResult(
+                command=command,
+                tool="teams.assignment",
+                summary="Browser guard checked.",
+                assessment=classify_command(command).to_dict(),
+                result={
+                    "tool": "teams.assignment",
+                    "status": "browser_suppressed" if suppressed else "planned",
+                    "executed": False,
+                    "reply": "Browser guard checked.",
+                },
+                executed=False,
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = JarvisServer()
+            server.audit = AuditLogger(Path(temp_dir) / "events.jsonl")
+            with patch.object(server.planner, "handle", side_effect=fake_handle) as handle_mock:
+                guarded = server.command(
+                    "Go to Teams and find my Music assignment.",
+                    suppress_speech=True,
+                    suppress_browser_actions=True,
+                )
+                normal = server.command(
+                    "Go to Teams and find my Music assignment.",
+                    suppress_speech=True,
+                    suppress_browser_actions=False,
+                )
+            events = server.audit.recent(2)
+
+        self.assertEqual(guarded["result"]["status"], "browser_suppressed")
+        self.assertEqual(normal["result"]["status"], "planned")
+        self.assertEqual(handle_mock.call_count, 2)
+        self.assertTrue(events[0]["details"]["suppress_browser_actions"])
+        self.assertFalse(events[1]["details"]["suppress_browser_actions"])
 
     def test_stream_command_yields_tool_status_before_email_final(self):
         fake_result = {
