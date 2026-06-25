@@ -1387,6 +1387,34 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertFalse(proof["capability_complete"])
         self.assertEqual(proof["completion_status"], "not_inspected")
 
+    def test_full_loop_teams_honesty_surfaces_safe_bookmark_route_without_url(self):
+        proof = full_loop_regression.verify_teams_assignment_honesty({
+            "result": {
+                "visible_reply_preview": (
+                    "I found a Teams route, but browser actions are suppressed for this QA run, "
+                    "so I did not open Chrome. I have not inspected the newest Music assignment yet."
+                ),
+                "command_response_result": {
+                    "browser_target_available": True,
+                    "uses_imported_bookmark_first": True,
+                    "uses_teams_deeplink_first": False,
+                    "teams_deeplink_route_status": "no_prompt_match",
+                    "teams_deeplink_row_count": 3,
+                    "browser_open_plan_status": "planned",
+                    "teams_page_inspection_status": "browser_actions_suppressed",
+                    "url": "https://teams.microsoft.com/private-team-route",
+                },
+            },
+        })
+
+        self.assertTrue(proof["passed"])
+        self.assertEqual(proof["completion_status"], "not_inspected")
+        self.assertTrue(proof["browser_target_available"])
+        self.assertTrue(proof["uses_imported_bookmark_first"])
+        self.assertFalse(proof["uses_teams_deeplink_first"])
+        self.assertEqual(proof["teams_page_inspection_status"], "browser_actions_suppressed")
+        self.assertNotIn("url", proof)
+
     def test_full_loop_teams_incomplete_warnings_surface_login_gate(self):
         warnings = full_loop_regression.teams_incomplete_detail_warnings({
             "honest_login_gate": True,
@@ -1394,6 +1422,18 @@ class VerifySafeScriptTests(unittest.TestCase):
         })
 
         self.assertIn("Teams is behind a Microsoft sign-in gate in Chrome.", warnings)
+
+    def test_full_loop_teams_incomplete_warnings_surface_suppressed_bookmark_route(self):
+        warnings = full_loop_regression.teams_incomplete_detail_warnings({
+            "browser_target_available": True,
+            "uses_imported_bookmark_first": True,
+            "teams_page_inspection_status": "browser_actions_suppressed",
+        })
+
+        self.assertIn(
+            "A safe imported Teams bookmark route is ready, but browser actions are suppressed for this QA run.",
+            warnings,
+        )
 
     def test_full_loop_teams_no_click_plan_warnings_follow_sequence_order(self):
         warnings = full_loop_regression.teams_no_click_plan_warnings({

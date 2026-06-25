@@ -1539,6 +1539,9 @@ def teams_incomplete_detail_warnings(action_proof: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
     if action_proof.get("honest_login_gate") or action_proof.get("browser_open_login_gate"):
         warnings.append("Teams is behind a Microsoft sign-in gate in Chrome.")
+    if action_proof.get("browser_target_available") and action_proof.get("teams_page_inspection_status") == "browser_actions_suppressed":
+        route = "Teams deep link" if action_proof.get("uses_teams_deeplink_first") else "imported Teams bookmark"
+        warnings.append(f"A safe {route} route is ready, but browser actions are suppressed for this QA run.")
     return warnings
 
 
@@ -1607,6 +1610,7 @@ def join_unique_reply_fragments(*fragments: str) -> str:
 
 def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, Any]:
     result = voice_report.get("result") if isinstance(voice_report.get("result"), dict) else {}
+    command_result = result.get("command_response_result") if isinstance(result.get("command_response_result"), dict) else {}
     visible_reply = str(result.get("visible_reply_preview") or "")
     follow_up = result.get("visible_screen_follow_up") if isinstance(result.get("visible_screen_follow_up"), dict) else {}
     follow_up_reply = str(follow_up.get("visible_reply_preview") or "")
@@ -1741,6 +1745,13 @@ def verify_teams_assignment_honesty(voice_report: dict[str, Any]) -> dict[str, A
         "browser_focus_expected_host": str(follow_up.get("browser_focus_expected_host") or ""),
         "browser_focus_attempted_url": str(follow_up.get("browser_focus_attempted_url") or ""),
         "browser_focus_detail": str(follow_up.get("browser_focus_detail") or ""),
+        "browser_target_available": bool(command_result.get("browser_target_available")),
+        "uses_imported_bookmark_first": bool(command_result.get("uses_imported_bookmark_first")),
+        "uses_teams_deeplink_first": bool(command_result.get("uses_teams_deeplink_first")),
+        "teams_deeplink_route_status": str(command_result.get("teams_deeplink_route_status") or ""),
+        "teams_deeplink_row_count": int(command_result.get("teams_deeplink_row_count") or 0),
+        "browser_open_plan_status": str(command_result.get("browser_open_plan_status") or ""),
+        "teams_page_inspection_status": str(command_result.get("teams_page_inspection_status") or ""),
         "capture_status": str(follow_up.get("capture_status") or ""),
         "capture_window_title": str(follow_up.get("capture_window_title") or ""),
         "capture_method": str(
