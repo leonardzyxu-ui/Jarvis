@@ -1297,6 +1297,25 @@ class VerifySafeScriptTests(unittest.TestCase):
 
         self.assertIn("Teams is behind a Microsoft sign-in gate in Chrome.", warnings)
 
+    def test_full_loop_teams_no_click_plan_warnings_follow_sequence_order(self):
+        warnings = full_loop_regression.teams_no_click_plan_warnings({
+            "assignments_navigation_plan_ready": True,
+            "all_teams_navigation_plan_ready": True,
+            "visible_navigation_sequence": [
+                {"key": "assignments"},
+                {"key": "all_teams"},
+                {"key": "requested_class_after_all_teams"},
+            ],
+        })
+
+        self.assertEqual(
+            warnings,
+            [
+                "A non-clicking Assignments navigation plan is ready; live navigation still requires an explicit safe run.",
+                "A non-clicking All teams navigation plan is ready; live navigation still requires an explicit safe run.",
+            ],
+        )
+
     def test_full_loop_teams_unreadable_page_is_honest_permission_block(self):
         proof = full_loop_regression.verify_teams_assignment_honesty({
             "result": {

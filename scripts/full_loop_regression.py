@@ -1381,20 +1381,15 @@ def run_teams_assignment_case(
                 warnings.append(teams_focus_warning(action_proof))
             if action_proof.get("requested_class_target_found"):
                 warnings.append("Visible requested-class navigation target was found for the next safe navigation step.")
-            if action_proof.get("all_teams_target_found"):
-                warnings.append("Visible All teams navigation target was found for the next safe navigation step.")
             if action_proof.get("assignments_target_found"):
                 warnings.append("Visible Assignments navigation target was found for the next safe navigation step.")
+            if action_proof.get("all_teams_target_found"):
+                warnings.append("Visible All teams navigation target was found for the next safe navigation step.")
             live_navigation_summary = visible_navigation_execution_warning(action_proof)
             if live_navigation_summary:
                 warnings.append(live_navigation_summary)
             else:
-                if action_proof.get("requested_class_navigation_plan_ready"):
-                    warnings.append("A non-clicking requested-class navigation plan is ready; live navigation still requires an explicit safe run.")
-                if action_proof.get("all_teams_navigation_plan_ready"):
-                    warnings.append("A non-clicking All teams navigation plan is ready; live navigation still requires an explicit safe run.")
-                if action_proof.get("assignments_navigation_plan_ready"):
-                    warnings.append("A non-clicking Assignments navigation plan is ready; live navigation still requires an explicit safe run.")
+                warnings.extend(teams_no_click_plan_warnings(action_proof))
         if not action_proof["passed"]:
             status = "failed"
             warnings.extend(action_proof["failures"])
@@ -1421,6 +1416,35 @@ def teams_incomplete_detail_warnings(action_proof: dict[str, Any]) -> list[str]:
     if action_proof.get("honest_login_gate") or action_proof.get("browser_open_login_gate"):
         warnings.append("Teams is behind a Microsoft sign-in gate in Chrome.")
     return warnings
+
+
+def teams_no_click_plan_warnings(action_proof: dict[str, Any]) -> list[str]:
+    labels = {
+        "requested_class": "requested-class",
+        "assignments": "Assignments",
+        "all_teams": "All teams",
+        "teams_search": "Teams Search",
+    }
+    ready_flags = {
+        "requested_class": "requested_class_navigation_plan_ready",
+        "assignments": "assignments_navigation_plan_ready",
+        "all_teams": "all_teams_navigation_plan_ready",
+        "teams_search": "teams_search_navigation_plan_ready",
+    }
+    ordered_keys: list[str] = []
+    sequence = action_proof.get("visible_navigation_sequence")
+    if isinstance(sequence, list):
+        for step in sequence:
+            key = str(step.get("key") or "") if isinstance(step, dict) else ""
+            if key in labels and action_proof.get(ready_flags[key]) and key not in ordered_keys:
+                ordered_keys.append(key)
+    for key in ("requested_class", "assignments", "all_teams", "teams_search"):
+        if action_proof.get(ready_flags[key]) and key not in ordered_keys:
+            ordered_keys.append(key)
+    return [
+        f"A non-clicking {labels[key]} navigation plan is ready; live navigation still requires an explicit safe run."
+        for key in ordered_keys
+    ]
 
 
 def teams_focus_warning(action_proof: dict[str, Any]) -> str:
