@@ -6829,6 +6829,8 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("must not launch Chrome or create fresh Chrome windows by default", workboard)
         self.assertIn("JARVIS_ALLOW_CHROME_WINDOW_CREATION=1", workboard)
         self.assertIn("newly-created Teams windows/tabs by recorded window or tab id", workboard)
+        self.assertIn("previous 46 GB memory blow-up", workboard)
+        self.assertIn("16 GB Mac", workboard)
         self.assertIn("Time checkpoint", workboard)
         self.assertIn("Return point", workboard)
         self.assertIn("JARVIS_BUG_BACKLOG.md plus .memory.md", workboard)
@@ -7276,6 +7278,8 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("must not launch Chrome or create fresh Chrome windows by default", detail)
         self.assertIn("JARVIS_ALLOW_CHROME_WINDOW_CREATION=1", detail)
         self.assertIn("recorded window or tab id", detail)
+        self.assertIn("previous 46 GB memory blow-up", detail)
+        self.assertIn("Leo's 16 GB Mac", detail)
 
     def test_render_overnight_status_script_adds_project_root_to_import_path(self):
         source = (PROJECT_ROOT / "scripts" / "render_overnight_status.py").read_text(encoding="utf-8")

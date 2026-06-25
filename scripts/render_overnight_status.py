@@ -2270,7 +2270,9 @@ def workboard_browser_safety_detail() -> str:
     return (
         "Chrome/Teams probes must not launch Chrome or create fresh Chrome windows by default; "
         "fresh-window recovery requires JARVIS_ALLOW_CHROME_WINDOW_CREATION=1, and cleanup only "
-        "closes newly-created Teams windows/tabs by recorded window or tab id."
+        "closes newly-created Teams windows/tabs by recorded window or tab id. Treat this as a "
+        "computer-safety rule: close every Chrome tab/window opened by Codex, Jarvis, or tests so "
+        "Chrome cannot recreate the previous 46 GB memory blow-up on Leo's 16 GB Mac."
     )
 
 
