@@ -188,6 +188,7 @@ from scripts.morning_status import (
     latency_smoke_summary,
     latest_teams_live_navigation_diagnostic,
     normalize_base_url,
+    pre_build_gate_cleanup_status,
     pre_build_gate_cleanup_warning,
     pre_build_gate_music_blocker,
     pre_build_gate_stale_suffix,
@@ -29155,6 +29156,28 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertEqual(summary["warnings"], 1)
         self.assertEqual(summary["detail"], "(fatal 1, warnings 1) ")
 
+    def test_morning_status_pre_build_gate_cleanup_status_reports_chrome_not_running(self):
+        status = pre_build_gate_cleanup_status(
+            {
+                "results": [
+                    {
+                        "id": "cleanup_chrome_test_tabs",
+                        "ok": True,
+                        "stdout_tail": json.dumps(
+                            {
+                                "ok": True,
+                                "reason": "chrome_not_running",
+                                "target_count": 0,
+                                "closed_count": 0,
+                            }
+                        ),
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(status, "cleanup ok; Chrome not running; 0 test tab/window targets.")
+
     def test_morning_status_prints_pre_build_gate_warning_counts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -29187,6 +29210,50 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertIn("steps full_loop_regression, cleanup_chrome_test_tabs", printed)
         self.assertIn("Last known Chrome cleanup warning from stale gate:", printed)
         self.assertNotIn("\nChrome cleanup warning: cleanup", printed)
+
+    def test_morning_status_prints_chrome_safety_for_successful_cleanup(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            gate_dir = root / "runtime" / "pre_build_gate"
+            gate_dir.mkdir(parents=True)
+            latest = gate_dir / "latest.json"
+            latest.write_text(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "status": "failed",
+                        "passed": 3,
+                        "failed": 1,
+                        "total": 4,
+                        "source_commit": "head",
+                        "report_path": str(gate_dir / "summary.json"),
+                        "results": [
+                            {"id": "full_loop_regression", "ok": False, "fatal": True},
+                            {
+                                "id": "cleanup_chrome_test_tabs",
+                                "ok": True,
+                                "fatal": False,
+                                "stdout_tail": json.dumps(
+                                    {
+                                        "ok": True,
+                                        "reason": "chrome_not_running",
+                                        "target_count": 0,
+                                        "closed_count": 0,
+                                    }
+                                ),
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("scripts.morning_status.PROJECT_ROOT", root), \
+                 patch("scripts.morning_status.git_commit_short", return_value="head"), \
+                 patch("builtins.print") as print_mock:
+                print_latest_pre_build_gate()
+
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
+        self.assertIn("Chrome safety: cleanup ok; Chrome not running; 0 test tab/window targets.", printed)
 
     def test_morning_status_marks_pre_build_gate_stale_for_head(self):
         with patch("scripts.morning_status.git_commit_short", return_value="newhead"):

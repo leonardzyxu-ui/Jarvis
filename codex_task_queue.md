@@ -4,6 +4,7 @@
 
 - [ ] Overnight run for June 25/26, 2026: keep working safely until 8:00 AM CST/Beijing on June 26, 2026, continue Jarvis hardening from the current bug backlog, and keep this queue current.
 - [ ] Chrome safety is mandatory tonight: do not open Chrome tabs/windows unless a task truly needs it; record anything Codex/Jarvis/tests open; close every Codex/Jarvis/test-created Chrome tab or window before switching lanes, before any morning report, and before ending the run.
+- [x] Make morning status explicitly show Chrome cleanup safety state so Leo can see whether Chrome is running or test tabs remain.
 - [x] Refresh the pre-build gate on current HEAD `5e6ac02` without live browser navigation so the report is not anchored to stale Teams proof.
 - [x] Add and verify a Chrome memory preflight for live browser/Teams navigation so tests refuse to touch Chrome if it is already consuming dangerous memory.
 - [x] Extend the Chrome memory preflight to passive Teams tab snapshots so cleanup bookkeeping does not touch Chrome when memory is already unsafe.
@@ -77,6 +78,11 @@
 
 ## Completed This Turn
 
+- [x] Added a Chrome safety line to `scripts/morning_status.py`: the live
+  output now says `Chrome safety from stale gate: cleanup ok; Chrome not
+  running; 0 test tab/window targets.` when the cleanup artifact proves Chrome
+  is closed and no Jarvis/Codex test tabs remain. Focused status tests passed
+  and full `python3 -m unittest tests.test_safety` passed `1168/1168`.
 - [x] Refreshed the current pre-build gate on HEAD `5e6ac02` without live
   browser navigation. The gate is current but still failed `3/4` at
   `runtime/pre_build_gate/20260626-042314/summary.json`; the fatal blocker is

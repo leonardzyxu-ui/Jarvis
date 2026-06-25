@@ -275,6 +275,10 @@ def print_latest_pre_build_gate() -> None:
     if cleanup_warning:
         prefix = "Last known Chrome cleanup warning from stale gate" if stale_suffix else "Chrome cleanup warning"
         print(f"{prefix}: {cleanup_warning}")
+    cleanup_status = pre_build_gate_cleanup_status(data)
+    if cleanup_status:
+        prefix = "Chrome safety from stale gate" if stale_suffix else "Chrome safety"
+        print(f"{prefix}: {cleanup_status}")
 
 
 def pre_build_gate_status_label(data: dict[str, Any], *, stale_suffix: str | None = None) -> str:
@@ -682,6 +686,43 @@ def pre_build_gate_cleanup_warning(data: dict[str, Any]) -> str:
         parts.append(f"{len(attempts)} cleanup attempt(s)")
         return "; ".join(parts) + "."
     return ""
+
+
+def pre_build_gate_cleanup_status(data: dict[str, Any]) -> str:
+    results = data.get("results")
+    if not isinstance(results, list):
+        return ""
+    for item in results:
+        if not isinstance(item, dict) or item.get("id") != "cleanup_chrome_test_tabs" or not item.get("ok"):
+            continue
+        detail = cleanup_stdout_detail(item)
+        reason = str(detail.get("reason") or "").strip()
+        target_count = safe_int(detail.get("target_count"))
+        closed_count = safe_int(detail.get("closed_count"))
+        if reason == "chrome_not_running":
+            return "cleanup ok; Chrome not running; 0 test tab/window targets."
+        if reason:
+            return f"cleanup ok; {closed_count} closed; {target_count} test tab/window target(s); reason {reason}."
+        return f"cleanup ok; {closed_count} closed; {target_count} test tab/window target(s)."
+    return ""
+
+
+def cleanup_stdout_detail(item: dict[str, Any]) -> dict[str, Any]:
+    text = str(item.get("stdout_tail") or item.get("stdout") or "").strip()
+    if not text:
+        return {}
+    try:
+        loaded = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def latest_teams_artifact() -> tuple[Path, dict[str, Any], dict[str, Any]] | None:
