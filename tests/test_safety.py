@@ -29474,6 +29474,10 @@ class RuntimeSurfaceTests(unittest.TestCase):
 
         printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list if call.args)
         self.assertIn("Chrome safety: cleanup ok; Chrome not running; 0 test tab/window targets.", printed)
+        self.assertIn(
+            "Chrome live-test guard: fail-closed before live browser navigation; memory cap 12000 MB; window cap 3; tab cap 20; Chrome window creation disabled unless explicitly enabled.",
+            printed,
+        )
 
     def test_morning_status_marks_pre_build_gate_stale_for_head(self):
         with patch("scripts.morning_status.git_commit_short", return_value="newhead"):

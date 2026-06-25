@@ -22,6 +22,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE_URL = "http://127.0.0.1:8765"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 MAX_VERIFICATION_AGE_SECONDS = 12 * 60 * 60
+CHROME_LIVE_TEST_MEMORY_LIMIT_MB = 12000
+CHROME_LIVE_TEST_MAX_WINDOWS = 3
+CHROME_LIVE_TEST_MAX_TABS = 20
 VERIFICATION_HIGHLIGHTS = {
     "endpoint_read_only_shell_allowlist": "shell allowlist routing",
     "endpoint_readiness": "readiness summary",
@@ -279,6 +282,7 @@ def print_latest_pre_build_gate() -> None:
     if cleanup_status:
         prefix = "Chrome safety from stale gate" if stale_suffix else "Chrome safety"
         print(f"{prefix}: {cleanup_status}")
+    print(f"Chrome live-test guard: {chrome_live_test_guard_status()}")
 
 
 def pre_build_gate_status_label(data: dict[str, Any], *, stale_suffix: str | None = None) -> str:
@@ -709,6 +713,14 @@ def pre_build_gate_cleanup_status(data: dict[str, Any]) -> str:
             return f"cleanup ok; {closed_count} closed; {target_count} test tab/window target(s); reason {reason}."
         return f"cleanup ok; {closed_count} closed; {target_count} test tab/window target(s)."
     return ""
+
+
+def chrome_live_test_guard_status() -> str:
+    return (
+        f"fail-closed before live browser navigation; memory cap {CHROME_LIVE_TEST_MEMORY_LIMIT_MB} MB; "
+        f"window cap {CHROME_LIVE_TEST_MAX_WINDOWS}; tab cap {CHROME_LIVE_TEST_MAX_TABS}; "
+        "Chrome window creation disabled unless explicitly enabled."
+    )
 
 
 def cleanup_stdout_detail(item: dict[str, Any]) -> dict[str, Any]:
