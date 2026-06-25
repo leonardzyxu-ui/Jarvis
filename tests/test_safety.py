@@ -22638,6 +22638,28 @@ class RuntimeSurfaceTests(unittest.TestCase):
         self.assertNotIn("(", spoken)
         self.assertNotIn(")", spoken)
 
+    def test_auto_speech_sanitizer_does_not_read_fenced_code_blocks(self):
+        spoken = jarvis_tools._sanitize_spoken_text(
+            "Here is the code:\n"
+            "```python\n"
+            "print('hello')\n"
+            "```\n"
+            "I can adjust it."
+        )
+        visible = jarvis_tools._sanitize_user_visible_text(
+            "Here is the code:\n"
+            "```python\n"
+            "print('hello')\n"
+            "```\n"
+            "I can adjust it."
+        )
+
+        self.assertEqual(spoken, "Here is the code, I put the code on screen. I can adjust it.")
+        self.assertNotIn("print", spoken)
+        self.assertNotIn("python", spoken.lower())
+        self.assertIn("```python", visible)
+        self.assertIn("print('hello')", visible)
+
     def test_visible_reply_sanitizer_removes_raw_links_and_email_addresses(self):
         visible = jarvis_tools._sanitize_user_visible_text(
             "Please fill in [the short feedback form](https://example.test/form?id=123) today. "

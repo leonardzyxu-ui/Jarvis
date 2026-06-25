@@ -1647,6 +1647,7 @@ def _say_voice_available(voice: str, voice_output: str = "") -> bool:
 
 def _sanitize_spoken_text(text: str) -> str:
     spoken = str(text or "").replace("\x00", " ")
+    spoken = re.sub(r"(?is)```[\w.+-]*\s*.*?```", " I put the code on screen. ", spoken)
     spoken = _strip_fast_chat_hidden_call_fragments(spoken)
     spoken = _strip_spoken_json_tool_fragments(spoken)
     spoken = re.sub(r"(?is)<think>.*?</think>", " ", spoken)
