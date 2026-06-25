@@ -2950,6 +2950,8 @@ def tts_status() -> dict[str, Any]:
     """Return text-to-speech readiness without playing audio."""
     provider = _normalize_tts_provider(TTS_PROVIDER)
     fallback_provider = _normalize_tts_provider(TTS_FALLBACK_PROVIDER)
+    with SPEECH_LOCK:
+        speech_muted = bool(SPEECH_MUTED)
     piper = _piper_readiness()
     piper_worker = _piper_worker_status()
     say_path = _find_executable("say")
@@ -3006,6 +3008,7 @@ def tts_status() -> dict[str, Any]:
         f" Automatic spoken replies are {'on' if TTS_AUTOMATIC_ENABLED else 'off'}."
     )
     reply += f" Spoken progress lines are {'on' if TTS_SPEAK_STATUS else 'off'}."
+    reply += f" Speech is currently {'muted' if speech_muted else 'unmuted'}."
     reply += " Speech interruption is available with `stop talking` or the voice.stop_speaking tool."
     reply += " Explicit speech still respects Speech Muted and the Shut Up safety check."
     if macos_available:
@@ -3026,6 +3029,7 @@ def tts_status() -> dict[str, Any]:
     reply += " This did not play audio, record audio, or request microphone permission."
     spoken_summary = (
         f"Jarvis voice is using {provider}."
+        f" Speech is currently {'muted' if speech_muted else 'unmuted'}."
         f" Automatic final replies are {'on' if TTS_AUTOMATIC_ENABLED else 'off'},"
         f" and progress lines are {'on' if TTS_SPEAK_STATUS else 'off'}."
     )
@@ -3034,6 +3038,7 @@ def tts_status() -> dict[str, Any]:
         spoken_summary = (
             "Jarvis voice is using macOS say"
             f"{voice_clause}."
+            f" Speech is currently {'muted' if speech_muted else 'unmuted'}."
             f" Automatic final replies are {'on' if TTS_AUTOMATIC_ENABLED else 'off'},"
             f" and progress lines are {'on' if TTS_SPEAK_STATUS else 'off'}."
         )
@@ -3059,6 +3064,7 @@ def tts_status() -> dict[str, Any]:
         "stop_speaking_available": True,
         "stop_speaking_tool": "voice.stop_speaking",
         "automatic_tts_enabled": TTS_AUTOMATIC_ENABLED,
+        "speech_muted": speech_muted,
         "spoken_status_enabled": TTS_SPEAK_STATUS,
         "plain_say_enabled": TTS_PLAIN_SAY,
         "voice": TTS_VOICE or "system default",

@@ -74,6 +74,15 @@
 
 ## Completed This Turn
 
+- [x] Shipped Jarvis 0.1.499 mute-state diagnostics: `tts status` now reports
+  whether speech is currently muted or unmuted, reducing confusion when
+  automatic speech is enabled but Speech Muted is active. Focused regressions
+  passed, full `python3 -m unittest tests.test_safety` passed `1162/1162`, the
+  canonical `output/Jarvis.app` rebuilt and relaunched as `0.1.499 build 499`,
+  a live suppressed `tts status` probe confirmed `speech_muted=true`,
+  `reply_has_muted_state=true`, `played_audio=false`, and
+  `scripts/verify_safe.py` passed `106/106` at
+  `runtime/verification/verify-safe-20260626-034237.json`.
 - [x] Shipped Jarvis 0.1.498 voice-diagnostics clarity: `tts status` now says
   explicit speech still respects Speech Muted and the Shut Up safety check.
   Focused TTS status regression passed; full `python3 -m unittest

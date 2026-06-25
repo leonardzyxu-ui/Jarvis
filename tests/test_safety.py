@@ -7452,6 +7452,9 @@ class VerifySafeScriptTests(unittest.TestCase):
                 self.assertIn(version, shipped)
                 self.assertIn(version, proof)
                 self.assertIn(version, workboard)
+        self.assertIn("0.1.499", shipped)
+        self.assertIn("current mute state", shipped)
+        self.assertIn("currently muted or unmuted", shipped)
         self.assertIn("0.1.498", shipped)
         self.assertIn("voice diagnostics clearer", shipped)
         self.assertIn("explicit speech still respects Speech Muted", shipped)
@@ -7554,7 +7557,9 @@ class VerifySafeScriptTests(unittest.TestCase):
         current_focus = memory.split("## Current Focus", 1)[1].split("\n## ", 1)[0]
         section = memory.split("## Current Live State", 1)[1].split("\n## ", 1)[0]
 
-        self.assertIn("Last updated: 2026-06-26 03:19 CST", memory)
+        self.assertIn("Last updated: 2026-06-26 03:36 CST", memory)
+        self.assertIn("Jarvis 0.1.499 build 499", current_focus)
+        self.assertIn("currently muted or unmuted", current_focus)
         self.assertIn("Jarvis 0.1.498 build 498", current_focus)
         self.assertIn("explicit speech still respects Speech Muted", current_focus)
         self.assertIn("Shut Up safety\n  check", current_focus)
@@ -7583,10 +7588,10 @@ class VerifySafeScriptTests(unittest.TestCase):
         self.assertIn("298e14a", current_focus)
         self.assertIn("runtime/verification/latest.json", current_focus)
         self.assertNotIn("verify-safe-20260621-132210.json", current_focus)
-        self.assertIn("Jarvis 0.1.498 build 498", section)
-        self.assertIn("explicit speech still respects Speech Muted", section)
-        self.assertIn("Jarvis 0.1.497 explicit-speech fail-closed", section)
-        self.assertIn("TTS status explain\n  that explicit speech still respects Speech Muted", section)
+        self.assertIn("Jarvis 0.1.499 build 499", section)
+        self.assertIn("TTS status state\n  whether speech is currently muted or unmuted", section)
+        self.assertIn("Jarvis 0.1.498\n  explicit-speech safety explanation", section)
+        self.assertIn("Jarvis 0.1.497 explicit-speech\n  fail-closed", section)
         self.assertIn("runtime/verification/latest.json", section)
         self.assertIn("passed 106/106", section)
         self.assertIn("distinguish stale", section)
@@ -16415,7 +16420,8 @@ Pages occupied by compressor:             10.
     def test_tts_status_does_not_play_audio(self):
         voices = "Alex en_US # sample voice\nSamantha en_US # sample voice\n"
         with patch("jarvis.tools._find_executable", return_value="/usr/bin/say"), \
-             patch("jarvis.tools._command_output", return_value=voices):
+             patch("jarvis.tools._command_output", return_value=voices), \
+             patch("jarvis.tools.SPEECH_MUTED", False):
             result = tts_status()
 
         self.assertEqual(result["tool"], "diagnostics.tts")
@@ -16426,6 +16432,7 @@ Pages occupied by compressor:             10.
         self.assertTrue(result["stop_speaking_available"])
         self.assertEqual(result["stop_speaking_tool"], "voice.stop_speaking")
         self.assertFalse(result["automatic_tts_enabled"])
+        self.assertFalse(result["speech_muted"])
         self.assertFalse(result["spoken_status_enabled"])
         self.assertEqual(result["voice"], "system default")
         self.assertIsNone(result["configured_voice"])
@@ -16435,9 +16442,21 @@ Pages occupied by compressor:             10.
         self.assertTrue(result["uses_system_say_defaults"])
         self.assertEqual(result["voice_count"], 2)
         self.assertIn('matching plain `say "text"`', result["reply"])
+        self.assertIn("Speech is currently unmuted.", result["reply"])
         self.assertIn("stop talking", result["reply"])
         self.assertIn("Explicit speech still respects Speech Muted and the Shut Up safety check.", result["reply"])
         self.assertIn("did not play audio", result["reply"])
+
+    def test_tts_status_reports_current_muted_state(self):
+        with patch("jarvis.tools._find_executable", return_value="/usr/bin/say"), \
+             patch("jarvis.tools._command_output", return_value="Alex en_US # sample voice\n"), \
+             patch("jarvis.tools.SPEECH_MUTED", True):
+            result = tts_status()
+
+        self.assertTrue(result["speech_muted"])
+        self.assertIn("Speech is currently muted.", result["reply"])
+        self.assertIn("Speech is currently muted.", result["spoken_summary"])
+        self.assertFalse(result["played_audio"])
 
     def test_app_voice_defaults_enable_macos_status_speech_without_cli_default(self):
         env = os.environ.copy()
@@ -16733,8 +16752,8 @@ Pages occupied by compressor:             10.
 
         self.assertIn('APP_NAME="${APP_NAME:-Jarvis}"', script)
         self.assertIn('BUNDLE_ID="${BUNDLE_ID:-local.leo.jarvis}"', script)
-        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.498}"', script)
-        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-498}"', script)
+        self.assertIn('APP_VERSION="${APP_VERSION:-0.1.499}"', script)
+        self.assertIn('BUILD_NUMBER="${BUILD_NUMBER:-499}"', script)
         self.assertIn('REPLACE_APP="${REPLACE_APP:-1}"', script)
         self.assertIn('ALLOW_NON_CANONICAL_JARVIS_BUNDLE="${ALLOW_NON_CANONICAL_JARVIS_BUNDLE:-0}"', script)
         self.assertIn("Refusing to build a non-canonical Jarvis app", script)
